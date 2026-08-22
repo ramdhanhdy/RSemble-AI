@@ -15,27 +15,47 @@
 //    tab cannot start, resume, retry, recover, or commit.
 // =============================================================================
 
+import "fake-indexeddb/auto";
 import { describe, it, expect, vi } from "vitest";
 import {
   createExperimentController,
   type ExperimentControllerEvent,
+  type SimpleResult,
+  type StartResult,
 } from "./experiment-controller";
 import {
   createExperimentUnitOfWork,
+  DexieExperimentStore,
   InMemoryExperimentStore,
 } from "../persistence/experiment-unit-of-work";
-import { InMemoryEvaluationRepository } from "../persistence/evaluation-repository";
-import { InMemoryRunRepository } from "../persistence/run-repository";
-import { InMemoryExecutionLease, LEASE_TTL, type LeaseInfo } from "../execution-lease";
+import {
+  createEvaluationRepository,
+  InMemoryEvaluationRepository,
+  type TaskSetMaterializationRecord,
+} from "../persistence/evaluation-repository";
+import { createRunRepository, InMemoryRunRepository } from "../persistence/run-repository";
+import {
+  createExecutionLease,
+  InMemoryExecutionLease,
+  LEASE_TTL,
+  type LeaseInfo,
+} from "../execution-lease";
 import { ExecutionOwnerRegistry } from "../execution-owner";
-import type { ExperimentRecord, EvaluationSuite, EvaluationTask } from "./evaluation-types";
+import { RSembleEvaluationDB, StorageError } from "../persistence/database";
+import type {
+  EvaluationRubric,
+  EvaluationSuite,
+  EvaluationTask,
+  ExperimentRecord,
+} from "./evaluation-types";
 import type { FullRunSummaryV2, RunRecordV2, RunSummary } from "../persistence/run-types";
 import type { RunExecutor, RunExecutorEvents, RunRequest } from "../run-executor";
 import { candidateIdForSlot } from "../pipeline";
 import { type JudgeReport, type ModelSlot } from "../../studio-data";
-import { StorageError } from "../persistence/database";
 import { rotateExperimentRoster } from "./experiment-roster-extension";
 import { createExperimentRecord } from "./experiment-engine";
+import type { MaterializedTask, MaterializedWorkloadSnapshot } from "./workload-manifest";
+import type { TaskVersion } from "../tasks/task-types";
 
 // --- Fixtures -------------------------------------------------------------------
 
@@ -339,8 +359,140 @@ function makeHarness(
   };
 }
 
-async function seedSuite(h: Harness, suite: EvaluationSuite): Promise<void> {
+async function seedSuite(h: Harness, suite: EvaluationSuite): Promise<string> {
   await h.evalRepo.saveSuite(suite, 0);
+  const record = await persistMaterialization(h, suite, { id: `mat-${suite.id}` });
+  return record.id;
+}
+function makeTaskVersionFromEvalTask(task: EvaluationTask, createdAt: number): TaskVersion {
+  return {
+    taskId: task.id,
+    version: 1,
+    title: task.title,
+    objective: task.title,
+    candidateInstruction: task.prompt,
+    defaultContextManifest: [],
+    responseContract: null,
+    taskVerifierRef: null,
+    source: { kind: "authored", legacyScopeKey: null, note: null },
+    createdAt,
+  };
+}
+
+function makeFrozenRubric(): EvaluationRubric {
+  return {
+    id: "rubric-frozen",
+    version: 1,
+    name: "Frozen Rubric",
+    description: "frozen",
+    judgeInstruction: "Grade the frozen snapshot.",
+    criteria: [
+      {
+        id: "c1",
+        kind: "graded",
+        name: "Accuracy",
+        description: "Factual correctness",
+        weight: 1,
+        anchors: { one: "1", two: "2", three: "3", four: "4", five: "5" },
+      },
+    ],
+    createdAt: 1000,
+    updatedAt: 1000,
+  };
+}
+
+function makeMaterializedSnapshot(
+  suite: EvaluationSuite,
+  overrides: Partial<MaterializedWorkloadSnapshot> = {},
+): MaterializedWorkloadSnapshot {
+  const tasks: MaterializedTask[] = suite.tasks.map((task) => ({
+    memberId: task.id,
+    taskVersionRef: { taskId: task.id, version: 1 },
+    order: task.order,
+    role: "organic",
+    stratum: null,
+    weight: 1,
+    rubricOverrideRef: task.evaluation.kind === "profile" ? { ...task.evaluation.profile } : null,
+    executionOverrides: null,
+    task: makeTaskVersionFromEvalTask(task, suite.createdAt),
+    effectiveRubricRef: task.evaluation.kind === "profile" ? { ...task.evaluation.profile } : null,
+    effectiveRubric: null,
+    evaluation: task.evaluation,
+    judgeInstructionOverride: task.judgeInstructionOverride || null,
+    verification: task.verification ?? null,
+    isArchived: false,
+    isEffectiveRubricArchived: false,
+  }));
+  return {
+    taskSetId: suite.id,
+    taskSetVersion: suite.version,
+    tasks,
+    rubrics: [],
+    defaultRubricRef:
+      suite.defaultEvaluation.kind === "profile" ? { ...suite.defaultEvaluation.profile } : null,
+    defaultRubric: null,
+    defaultModelSlots: suite.modelSlots.map((slot) => ({ ...slot })),
+    defaultJudge: {
+      providerId: suite.defaultJudge.providerId,
+      model: suite.defaultJudge.model,
+    },
+    repeatPolicy: { kind: "none" },
+    missingnessPolicy: { kind: "allow-repair" },
+    protocolDefaults: suite.reasoningPolicy
+      ? { reasoningPolicy: { ...suite.reasoningPolicy } }
+      : {},
+    protocolFingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    createdAt: suite.createdAt,
+    ...overrides,
+  };
+}
+
+function makeMaterializationRecord(
+  snapshot: MaterializedWorkloadSnapshot,
+  overrides: Partial<TaskSetMaterializationRecord> = {},
+): TaskSetMaterializationRecord {
+  return {
+    id: "mat-1",
+    taskSetId: snapshot.taskSetId,
+    taskSetVersion: snapshot.taskSetVersion,
+    protocolFingerprint: snapshot.protocolFingerprint,
+    snapshot,
+    createdAt: snapshot.createdAt,
+    ...overrides,
+  };
+}
+
+async function persistMaterialization(
+  h: Harness,
+  suite: EvaluationSuite,
+  overrides: Partial<Omit<TaskSetMaterializationRecord, "snapshot">> & {
+    snapshot?: Partial<MaterializedWorkloadSnapshot>;
+  } = {},
+): Promise<TaskSetMaterializationRecord> {
+  const { snapshot: snapshotOverrides, ...recordOverrides } = overrides;
+  const snapshot = makeMaterializedSnapshot(suite, snapshotOverrides ?? {});
+  const record = makeMaterializationRecord(snapshot, recordOverrides);
+  await h.evalRepo.persistTaskSetMaterialization(record);
+  return record;
+}
+
+type InMemoryMaterializationStore = {
+  taskSetMaterializations: Map<string, TaskSetMaterializationRecord>;
+};
+
+function storedMaterializations(h: Harness): Map<string, TaskSetMaterializationRecord> {
+  // In-memory repo keeps the append-only map private; tests mutate the stored
+  // clone to inject corrupt rows the public persist API refuses.
+  const store = h.evalRepo as unknown as InMemoryMaterializationStore;
+  return store.taskSetMaterializations;
+}
+
+async function expectZeroExecutionSideEffects(h: Harness): Promise<void> {
+  expect(h.leaseStore.lease).toBeNull();
+  expect(h.owner.get()).toBeNull();
+  expect(await h.evalRepo.listExperiments()).toHaveLength(0);
+  expect(h.executor.calls).toHaveLength(0);
+  expect(h.store.runDetails.size).toBe(0);
 }
 
 function taskIds(executor: FakeExecutor): string[] {
@@ -356,7 +508,7 @@ describe("experiment-controller — sequential execution", () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1", "t2", "t3"]));
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -423,7 +575,7 @@ describe("experiment-controller — sequential execution", () => {
   it("candidate fanout stays parallel within the active task (single executeTask call per task)", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    await h.controller.start("suite-1");
+    await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     // One executeTask per task — the executor's internal Promise.all owns
     // candidate parallelism; the controller never serializes candidates.
@@ -439,7 +591,7 @@ describe("experiment-controller — sequential execution", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2", "t3"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -478,7 +630,7 @@ describe("experiment-controller — persistence failure", () => {
       return originalCommit(fn);
     };
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -507,7 +659,7 @@ describe("experiment-controller — persistence failure", () => {
       return originalCommit(fn);
     };
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -536,7 +688,7 @@ describe("experiment-controller — pause / resume / abort", () => {
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -562,7 +714,7 @@ describe("experiment-controller — pause / resume / abort", () => {
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
     expect(h.executor.calls).toHaveLength(1);
@@ -594,7 +746,7 @@ describe("experiment-controller — pause / resume / abort", () => {
     (h.executor as { abortedSignals?: AbortSignal[] }).abortedSignals = abortedSignals;
 
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -627,7 +779,7 @@ describe("experiment-controller — retry incomplete tasks", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -679,7 +831,7 @@ describe("experiment-controller — retry incomplete tasks", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -714,7 +866,7 @@ describe("experiment-controller — retry incomplete tasks", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(true);
     await h.controller.whenIdle();
 
@@ -772,7 +924,7 @@ describe("experiment-controller — execution ownership", () => {
     });
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    await h.controller.start("suite-1");
+    await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
 
     // Paused experiment still owns in-app execution → Compare cannot start.
@@ -784,7 +936,7 @@ describe("experiment-controller — execution ownership", () => {
     await seedSuite(h, makeSuite(["t1"]));
     expect(h.owner.tryAcquire({ kind: "compare", id: "run-x" })).toBe(true);
 
-    const result = await h.controller.start("suite-1");
+    const result = await h.controller.start("mat-suite-1");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/active/i);
     expect(h.executor.calls).toHaveLength(0);
@@ -813,7 +965,7 @@ describe("experiment-controller — execution ownership", () => {
       heartbeatMs: 0,
     });
 
-    const started = await controllerB.start("suite-1");
+    const started = await controllerB.start("mat-suite-1");
     expect(started.ok).toBe(false);
     if (!started.ok) expect(started.error).toMatch(/another tab/i);
     expect(h.executor.calls).toHaveLength(0);
@@ -849,7 +1001,7 @@ describe("experiment-controller — reload and recovery", () => {
     await seedSuite(h, makeSuite(["t1", "t2"]));
 
     // Simulate a crash: experiment "running" with a running attempt + running run.
-    const started = await h.controller.start("suite-1");
+    const started = await h.controller.start("mat-suite-1");
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     // Let task 1 begin but intercept before commit: use a blocking executor on a
@@ -950,7 +1102,7 @@ describe("experiment-controller — reload and recovery", () => {
     h.store.runSummaries.set("run-crash-1", crashedSummary);
 
     const { createExperimentRecord } = await import("./experiment-engine");
-    const record = createExperimentRecord({ id: "exp-crash", suite, profiles: [], now: h.now() });
+    const record = createExperimentRecord({ id: "exp-crash", suite, rubrics: [], now: h.now() });
     const crashed: ExperimentRecord = {
       ...record,
       status: "running",
@@ -1069,7 +1221,7 @@ describe("experiment-controller — reload and recovery", () => {
     const record = createExperimentRecord({
       id: "exp-contested",
       suite,
-      profiles: [],
+      rubrics: [],
       now: h.now(),
     });
     const crashed: ExperimentRecord = {
@@ -1242,7 +1394,7 @@ describe("experiment-controller — reload and recovery", () => {
     const record = createExperimentRecord({
       id: "exp-committed",
       suite,
-      profiles: [],
+      rubrics: [],
       now: h.now(),
     });
     const crashed: ExperimentRecord = {
@@ -1299,7 +1451,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     const h = makeHarness();
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1324,7 +1476,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     });
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1362,7 +1514,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     controllerRef = h.controller;
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1392,7 +1544,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     });
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
     const callsBefore = h.executor.calls.length;
@@ -1429,7 +1581,7 @@ describe("experiment-controller — repairMissingCells ownership and release (Ta
     });
     const suite = makeSuite(["t1"]);
     await seedSuite(h, suite);
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1473,7 +1625,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("executes only the added model per task and reuses accepted outputs (compound)", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1", "t2", "t3"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
     const original = await h.evalRepo.getExperiment(expId);
@@ -1543,7 +1695,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("retries a failed added-model run with the same targeted extension plan", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1600,7 +1752,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
           : { kind: "success" },
     });
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1642,7 +1794,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("rejects duplicates, non-terminal records, invalid slots, and ownership conflicts before any paid call", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
     const callsBefore = h.executor.calls.length;
@@ -1697,7 +1849,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
       ...createExperimentRecord({
         id: "exp-running",
         suite: makeSuite(["t1"]),
-        profiles: [],
+        rubrics: [],
         now: h.now(),
       }),
       status: "running",
@@ -1728,7 +1880,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     });
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1768,7 +1920,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     });
     controllerRef = h.controller;
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
 
@@ -1797,7 +1949,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
   it("a persistence failure during extension stops before another paid task", async () => {
     const h = makeHarness();
     await seedSuite(h, makeSuite(["t1", "t2"]));
-    const startRes = await h.controller.start("suite-1");
+    const startRes = await h.controller.start("mat-suite-1");
     await h.controller.whenIdle();
     const expId = startRes.ok ? startRes.experimentId : "";
     const callsBefore = h.executor.calls.length;
@@ -1827,7 +1979,7 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
 
     // Base terminal record: both tasks completed with accepted runs.
     const base: ExperimentRecord = {
-      ...createExperimentRecord({ id: "exp-ext", suite, profiles: [], now: h.now() }),
+      ...createExperimentRecord({ id: "exp-ext", suite, rubrics: [], now: h.now() }),
       status: "completed",
       tasks: [
         {
@@ -1972,5 +2124,581 @@ describe("experiment-controller — addModelAndRun (roster extension)", () => {
     expect(after!.protocolFingerprint).toBe(rotated.protocolFingerprint);
     // No provider request was issued by recovery.
     expect(h.executor.calls).toHaveLength(0);
+  });
+});
+
+describe("experiment-controller — frozen Task Set materialization start", () => {
+  it("start consumes a persisted Task Set materialization before any lease, experiment, attempt, or executor side effect", async () => {
+    const h = makeHarness();
+    const live = makeSuite(["t1"]);
+    live.tasks[0] = { ...live.tasks[0], prompt: "LIVE PROMPT" };
+    live.modelSlots = [...live.modelSlots, makeSlot("s3", "m3")];
+    live.defaultJudge = { providerId: "openrouter", model: "live-judge" };
+    await seedSuite(h, live);
+
+    const frozenRubric = makeFrozenRubric();
+    const frozen = makeSuite(["t1"]);
+    frozen.tasks[0] = {
+      ...frozen.tasks[0],
+      prompt: "FROZEN PROMPT",
+      evaluation: { kind: "profile", profile: { id: frozenRubric.id, version: 1 } },
+    };
+    frozen.defaultEvaluation = { kind: "profile", profile: { id: frozenRubric.id, version: 1 } };
+    frozen.defaultJudge = { providerId: "openrouter", model: "frozen-judge" };
+    const record = await persistMaterialization(h, frozen, {
+      id: "mat-frozen-1",
+      snapshot: {
+        rubrics: [frozenRubric],
+        defaultRubric: frozenRubric,
+        defaultRubricRef: { id: frozenRubric.id, version: 1 },
+      },
+    });
+
+    const storedLive = await h.evalRepo.getSuite("suite-1");
+    if (storedLive)
+      storedLive.tasks[0] = { ...storedLive.tasks[0], prompt: "EVEN NEWER LIVE PROMPT" };
+
+    const acquire = vi.spyOn(h.lease, "acquire");
+    const getSuite = vi.spyOn(h.evalRepo, "getSuite");
+    const result = await h.controller.start("mat-frozen-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await h.controller.whenIdle();
+
+    expect(getSuite).not.toHaveBeenCalled();
+    expect(acquire).toHaveBeenCalledWith({ kind: "experiment", executionId: "suite-1" });
+    expect(acquire.mock.invocationCallOrder[0]).toBeGreaterThan(0);
+
+    const experiment = await h.evalRepo.getExperiment(result.experimentId);
+    expect(experiment).not.toBeNull();
+    expect(
+      "materializationId" in experiment! && experiment.materializationId === "mat-frozen-1",
+    ).toBe(true);
+    expect(experiment!.snapshot.tasks[0]).toMatchObject({
+      prompt: "FROZEN PROMPT",
+      source: { kind: "authored", legacyScopeKey: null, note: null },
+      taskVersionRef: { taskId: "t1", version: 1 },
+    });
+    expect(experiment!.snapshot.modelSlots.map((slot) => slot.id)).toEqual(["s1", "s2"]);
+    expect(experiment!.snapshot.defaultJudge).toEqual({
+      providerId: "openrouter",
+      model: "frozen-judge",
+    });
+    expect(experiment!.snapshot.profiles).toEqual([frozenRubric]);
+    expect(experiment!.protocolFingerprint).toBe(experiment!.snapshot.protocolFingerprint);
+    expect(record.protocolFingerprint).toBe(record.snapshot.protocolFingerprint);
+    expect(experiment!.protocolFingerprint).not.toBe(record.protocolFingerprint);
+
+    expect(h.executor.calls).toHaveLength(1);
+    expect(h.executor.calls[0].task.prompt).toBe("FROZEN PROMPT");
+    expect(h.executor.calls[0].slots.map((slot) => slot.id)).toEqual(["s1", "s2"]);
+    expect(h.executor.calls[0].critic).toEqual({
+      providerId: "openrouter",
+      model: "frozen-judge",
+    });
+    expect(h.executor.calls[0].evaluation).toMatchObject({
+      kind: "profile",
+      profile: frozenRubric,
+    });
+    const run = await h.runRepo.get(
+      h.executor.calls[0].source.kind === "experiment"
+        ? experiment!.tasks[0].attempts[0].runId!
+        : "",
+    );
+    expect(run).not.toBeNull();
+    if (run && run.source.kind === "experiment") {
+      expect(run.source.protocolFingerprint).toBe(experiment!.protocolFingerprint);
+      expect(run.source.suiteId).toBe("suite-1");
+      expect(run.source.suiteVersion).toBe(1);
+    }
+  });
+
+  it("missing materialization yields explicit failure and zero side effects", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+    const result = await h.controller.start("mat-missing");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/materialization/i);
+    await expectZeroExecutionSideEffects(h);
+  });
+
+  it("corrupt materialization (identity/snapshot fingerprint mismatch) yields explicit failure and zero side effects", async () => {
+    const h = makeHarness();
+    await persistMaterialization(h, makeSuite(["t1"]), { id: "mat-broken-1" });
+    const stored = storedMaterializations(h).get("mat-broken-1");
+    expect(stored).toBeDefined();
+    if (stored) stored.snapshot.protocolFingerprint = "sha256:tampered-identity-digest";
+    const result = await h.controller.start("mat-broken-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/invalid|corrupt|mismatch|materialization/i);
+      expect(result.error).not.toMatch(/^Suite .+ not found$/);
+    }
+    await expectZeroExecutionSideEffects(h);
+  });
+
+  it("mismatched materialization vs live Suite does not execute the live Suite", async () => {
+    const h = makeHarness();
+    const live = makeSuite(["t1"]);
+    live.tasks[0] = { ...live.tasks[0], prompt: "LIVE PROMPT" };
+    live.modelSlots = [...live.modelSlots, makeSlot("s3", "m3")];
+    live.defaultJudge = { providerId: "openrouter", model: "live-judge" };
+    await seedSuite(h, live);
+
+    const frozen = makeSuite(["t1"]);
+    frozen.tasks[0] = { ...frozen.tasks[0], prompt: "FROZEN PROMPT" };
+    frozen.defaultJudge = { providerId: "openrouter", model: "frozen-judge" };
+    const record = await persistMaterialization(h, frozen, { id: "mat-mismatch-1" });
+
+    const result = await h.controller.start(record.id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await h.controller.whenIdle();
+
+    const experiment = await h.evalRepo.getExperiment(result.experimentId);
+    expect(experiment!.snapshot.tasks[0].prompt).toBe("FROZEN PROMPT");
+    expect(experiment!.snapshot.tasks[0]).toMatchObject({
+      source: { kind: "authored", legacyScopeKey: null, note: null },
+    });
+    expect(h.executor.calls[0].task.prompt).toBe("FROZEN PROMPT");
+    expect(h.executor.calls[0].slots.map((slot) => slot.id)).not.toContain("s3");
+    expect(h.executor.calls[0].critic.model).toBe("frozen-judge");
+  });
+
+  it("replay of an already-consumed materialization yields explicit failure and zero new side effects", async () => {
+    const h = makeHarness();
+    const suite = makeSuite(["t1"]);
+    await persistMaterialization(h, suite, { id: "mat-replay-1" });
+
+    const first = await h.controller.start("mat-replay-1");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    await h.controller.whenIdle();
+    const afterFirst = await h.evalRepo.listExperiments();
+    expect(afterFirst).toHaveLength(1);
+    expect(
+      "materializationId" in afterFirst[0] && afterFirst[0].materializationId === "mat-replay-1",
+    ).toBe(true);
+    const executorCalls = h.executor.calls.length;
+
+    const second = await h.controller.start("mat-replay-1");
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error).toMatch(/replay|already|consumed|materialization/i);
+    expect(await h.evalRepo.listExperiments()).toHaveLength(1);
+    expect(h.executor.calls).toHaveLength(executorCalls);
+    expect(h.leaseStore.lease).toBeNull();
+    expect(h.owner.get()).toBeNull();
+  });
+
+  it("characterization: unit-of-work, owner, streams, retry, roster, judge remain unchanged when start is given a valid frozen snapshot", async () => {
+    const h = makeHarness();
+    const suite = makeSuite(["t1", "t2", "t3"]);
+    const record = await persistMaterialization(h, suite, { id: "mat-char-1" });
+    const result = await h.controller.start(record.id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await h.controller.whenIdle();
+
+    expect(taskIds(h.executor)).toEqual(["t1", "t2", "t3"]);
+    const experiment = await h.evalRepo.getExperiment(result.experimentId);
+    expect(experiment!.status).toBe("completed");
+    expect(experiment!.execution).toBeNull();
+    expect("materializationId" in experiment! && experiment.materializationId === record.id).toBe(
+      true,
+    );
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+    for (const runId of experiment!.tasks.map((task) => task.attempts[0].runId)) {
+      const run = await h.runRepo.get(runId!);
+      expect(run!.mode).toBe("rank");
+      if (run && run.source.kind === "experiment") {
+        expect(run.source.protocolFingerprint).toBe(experiment!.protocolFingerprint);
+        expect(run.source.experimentId).toBe(result.experimentId);
+      }
+    }
+
+    const retried = await h.controller.retryIncomplete(result.experimentId);
+    expect(retried.ok).toBe(false);
+    const repaired = await h.controller.repairMissingCells(result.experimentId, {
+      taskId: "t1",
+      modelKeys: ["openrouter:m1"],
+    });
+    expect(repaired.ok).toBe(false);
+  });
+
+  it("unresolved rubric selection fails closed before lease and does not fall through to holistic", async () => {
+    const h = makeHarness();
+    const frozen = makeSuite(["t1"]);
+    frozen.tasks[0] = {
+      ...frozen.tasks[0],
+      evaluation: { kind: "profile", profile: { id: "rubric-missing", version: 1 } },
+    };
+    frozen.defaultEvaluation = { kind: "profile", profile: { id: "rubric-missing", version: 1 } };
+    await persistMaterialization(h, frozen, {
+      id: "mat-unresolved-rubric-1",
+      snapshot: {
+        rubrics: [],
+        defaultRubric: null,
+        defaultRubricRef: { id: "rubric-missing", version: 1 },
+      },
+    });
+
+    const acquire = vi.spyOn(h.lease, "acquire");
+    const result = await h.controller.start("mat-unresolved-rubric-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/unresolved|rubric|materialization/i);
+      expect(result.error).not.toMatch(/holistic/i);
+    }
+    expect(acquire).not.toHaveBeenCalled();
+    await expectZeroExecutionSideEffects(h);
+    expect(h.executor.calls.every((call) => call.evaluation.kind !== "holistic")).toBe(true);
+  });
+
+  it("malformed materialization snapshot fails closed before lease instead of throwing", async () => {
+    const h = makeHarness();
+    const record = await persistMaterialization(h, makeSuite(["t1"]), { id: "mat-malformed-1" });
+    const stored = storedMaterializations(h).get("mat-malformed-1");
+    expect(stored).toBeDefined();
+    if (stored) {
+      Reflect.deleteProperty(stored.snapshot, "tasks");
+      Reflect.deleteProperty(stored.snapshot, "defaultModelSlots");
+      Reflect.deleteProperty(stored.snapshot, "defaultJudge");
+      Reflect.deleteProperty(stored.snapshot, "rubrics");
+    }
+
+    const acquire = vi.spyOn(h.lease, "acquire");
+    let thrown: unknown = null;
+    let result: StartResult | null = null;
+    try {
+      result = await h.controller.start(record.id);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) {
+      expect(result.error).toMatch(/invalid|corrupt|malformed|materialization/i);
+    }
+    expect(acquire).not.toHaveBeenCalled();
+    await expectZeroExecutionSideEffects(h);
+  });
+});
+
+describe("experiment-controller — start/retry/resume persistence-failure reliability (Milestone D)", () => {
+  it("a createExperiment failure during start releases lease and owner, returns {ok:false}, and leaves the materialization reusable", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    const originalCreate = h.evalRepo.createExperiment.bind(h.evalRepo);
+    h.evalRepo.createExperiment = async () => {
+      throw new StorageError("unavailable", "storage unavailable");
+    };
+    let thrown: unknown = null;
+    let result: StartResult | null = null;
+    try {
+      result = await h.controller.start("mat-suite-1");
+    } catch (err) {
+      thrown = err;
+    } finally {
+      h.evalRepo.createExperiment = originalCreate;
+    }
+
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) expect(result.error).toMatch(/storage unavailable/i);
+    // Lease and owner released; no draft experiment persisted.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+    expect(await h.evalRepo.listExperiments()).toHaveLength(0);
+
+    // The materialization was not burned: a fresh start succeeds.
+    const fresh = await h.controller.start("mat-suite-1");
+    expect(fresh.ok).toBe(true);
+    if (fresh.ok) {
+      await h.controller.whenIdle();
+      const experiment = await h.evalRepo.getExperiment(fresh.experimentId);
+      expect(experiment!.status).toBe("completed");
+    }
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+  it("an id collision during start never deletes a pre-existing experiment", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    // start() generates `exp-${generateId()}`; the harness's first generateId
+    // call yields "id-1", so the draft id is "exp-id-1". Pre-seed an existing
+    // experiment with that id (a different materialization) to force a
+    // storage-level conflict inside createExperiment.
+    const preExisting: ExperimentRecord = {
+      ...createExperimentRecord({
+        id: "exp-id-1",
+        suite: makeSuite(["other"]),
+        rubrics: [],
+        now: h.now(),
+      }),
+      materializationId: "mat-other",
+    };
+    await h.evalRepo.createExperiment(preExisting);
+    expect(await h.evalRepo.getExperiment("exp-id-1")).not.toBeNull();
+
+    const result = await h.controller.start("mat-suite-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/exists/i);
+
+    // The pre-existing experiment survives the failed start: the rollback must
+    // not delete a record this invocation did not create.
+    const survivor = await h.evalRepo.getExperiment("exp-id-1");
+    expect(survivor).not.toBeNull();
+    expect(survivor!.materializationId).toBe("mat-other");
+    expect(await h.evalRepo.listExperiments()).toHaveLength(1);
+
+    // Lease and owner released.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+  it("a post-create sync failure during start deletes the draft and leaves the materialization reusable", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    // createExperiment succeeds (the draft is persisted), but the follow-up
+    // running-status sync fails — the draft must be rolled back so the
+    // materialization is not burned and no orphan draft row remains.
+    const originalUpdate = h.evalRepo.updateExperiment.bind(h.evalRepo);
+    h.evalRepo.updateExperiment = async () => {
+      throw new StorageError("unavailable", "storage unavailable");
+    };
+    let thrown: unknown = null;
+    let result: StartResult | null = null;
+    try {
+      result = await h.controller.start("mat-suite-1");
+    } catch (err) {
+      thrown = err;
+    } finally {
+      h.evalRepo.updateExperiment = originalUpdate;
+    }
+
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) expect(result.error).toMatch(/storage unavailable/i);
+    // No orphan draft remains.
+    expect(await h.evalRepo.listExperiments()).toHaveLength(0);
+    // Lease and owner released.
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+
+    // The materialization was not burned: a fresh start succeeds.
+    const fresh = await h.controller.start("mat-suite-1");
+    expect(fresh.ok).toBe(true);
+    if (fresh.ok) {
+      await h.controller.whenIdle();
+      const experiment = await h.evalRepo.getExperiment(fresh.experimentId);
+      expect(experiment!.status).toBe("completed");
+    }
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("an owner-busy start writes no draft experiment and leaves the materialization reusable after owner release", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    // Another in-tab execution owns the registry.
+    expect(h.owner.tryAcquire({ kind: "compare", id: "cmp-x" })).toBe(true);
+
+    const result = await h.controller.start("mat-suite-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/another execution/i);
+
+    // No draft experiment was written; the lease was released.
+    expect(await h.evalRepo.listExperiments()).toHaveLength(0);
+    expect(h.leaseStore.lease).toBeNull();
+
+    // After the owner releases, the materialization starts fresh.
+    h.owner.release("cmp-x");
+    const fresh = await h.controller.start("mat-suite-1");
+    expect(fresh.ok).toBe(true);
+    if (fresh.ok) {
+      await h.controller.whenIdle();
+      const experiment = await h.evalRepo.getExperiment(fresh.experimentId);
+      expect(experiment!.status).toBe("completed");
+    }
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("a persistence failure during retryIncomplete releases lease and owner and returns {ok:false}", async () => {
+    const h = makeHarness({
+      behavior: (request) =>
+        request.source.kind === "experiment" && request.source.taskId === "t1"
+          ? { kind: "one-candidate-fails" }
+          : { kind: "success" },
+    });
+    await seedSuite(h, makeSuite(["t1"]));
+    const startRes = await h.controller.start("mat-suite-1");
+    await h.controller.whenIdle();
+    const expId = startRes.ok ? startRes.experimentId : "";
+
+    const originalUpdate = h.evalRepo.updateExperiment.bind(h.evalRepo);
+    h.evalRepo.updateExperiment = async () => {
+      throw new StorageError("unavailable", "storage unavailable");
+    };
+    let thrown: unknown = null;
+    let result: SimpleResult | null = null;
+    try {
+      result = await h.controller.retryIncomplete(expId);
+    } catch (err) {
+      thrown = err;
+    } finally {
+      h.evalRepo.updateExperiment = originalUpdate;
+    }
+
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) expect(result.error).toMatch(/storage unavailable/i);
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("a persistence failure during resume retains lease and owner and leaves the experiment resumable", async () => {
+    let controllerRef: Harness["controller"] | null = null;
+    const h = makeHarness({
+      midTask: () => {
+        void controllerRef!.requestPause();
+      },
+    });
+    controllerRef = h.controller;
+    await seedSuite(h, makeSuite(["t1", "t2"]));
+    const startRes = await h.controller.start("mat-suite-1");
+    expect(startRes.ok).toBe(true);
+    await h.controller.whenIdle();
+    // Paused with queued work retains ownership.
+    expect(h.owner.get()).not.toBeNull();
+
+    const originalUpdate = h.evalRepo.updateExperiment.bind(h.evalRepo);
+    h.evalRepo.updateExperiment = async () => {
+      throw new StorageError("unavailable", "storage unavailable");
+    };
+    let thrown: unknown = null;
+    let result: SimpleResult | null = null;
+    try {
+      result = await h.controller.resume();
+    } catch (err) {
+      thrown = err;
+    } finally {
+      h.evalRepo.updateExperiment = originalUpdate;
+    }
+
+    expect(thrown).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.ok).toBe(false);
+    if (result && !result.ok) expect(result.error).toMatch(/storage unavailable/i);
+    // The durable record is still paused; lease + owner retained.
+    const expId = startRes.ok ? startRes.experimentId : "";
+    const durable = await h.evalRepo.getExperiment(expId);
+    expect(durable!.status).toBe("paused");
+    expect(h.owner.get()).not.toBeNull();
+    expect(h.leaseStore.lease).not.toBeNull();
+
+    // A subsequent resume succeeds.
+    const resumed = await h.controller.resume();
+    expect(resumed.ok).toBe(true);
+    await h.controller.whenIdle();
+    const final = await h.evalRepo.getExperiment(expId);
+    expect(final!.status).toBe("completed");
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+
+  it("recoverOnStartup rolls back a stranded draft and frees its materialization", async () => {
+    const h = makeHarness();
+    await seedSuite(h, makeSuite(["t1"]));
+
+    // Simulate a stranded draft: created but never transitioned to running
+    // (e.g. a crash between createExperiment and the running-status sync).
+    const suite = makeSuite(["t1"]);
+    const draft: ExperimentRecord = {
+      ...createExperimentRecord({ id: "exp-strand", suite, rubrics: [], now: h.now() }),
+      materializationId: "mat-suite-1",
+    };
+    await h.evalRepo.createExperiment(draft);
+    expect(await h.evalRepo.getExperiment("exp-strand")).not.toBeNull();
+    // The stranded draft currently burns the materialization.
+    const blocked = await h.controller.start("mat-suite-1");
+    expect(blocked.ok).toBe(false);
+
+    const recovered = await h.controller.recoverOnStartup();
+    expect(recovered).toBeGreaterThan(0);
+
+    // The stranded draft is gone.
+    expect(await h.evalRepo.getExperiment("exp-strand")).toBeNull();
+
+    // The materialization is reusable again.
+    const fresh = await h.controller.start("mat-suite-1");
+    expect(fresh.ok).toBe(true);
+    if (fresh.ok) {
+      await h.controller.whenIdle();
+      const experiment = await h.evalRepo.getExperiment(fresh.experimentId);
+      expect(experiment!.status).toBe("completed");
+    }
+    expect(h.owner.get()).toBeNull();
+    expect(h.leaseStore.lease).toBeNull();
+  });
+});
+describe("experiment-controller — Dexie persist to start ordering", () => {
+  it("persist then start acquires lease before createExperiment and beginTask", async () => {
+    const db = new RSembleEvaluationDB("t8-repair-" + Math.random().toString(36).slice(2));
+    await db.open();
+    const runRepo = createRunRepository(db);
+    const evalRepo = createEvaluationRepository(db, runRepo);
+    const uow = createExperimentUnitOfWork(new DexieExperimentStore(db));
+    const lease = createExecutionLease(db, { now: () => 10_000 });
+    const owner = new ExecutionOwnerRegistry();
+    let idCounter = 0;
+    const generateId = () => `dexie-${++idCounter}`;
+    const executor = makeFakeExecutor({
+      now: () => 10_000,
+      generateId,
+      behavior: () => ({ kind: "success" }),
+    });
+    const controller = createExperimentController({
+      evalRepo,
+      uow,
+      runRepo,
+      lease,
+      owner,
+      executor,
+      generateId,
+      now: () => 10_000,
+      heartbeatMs: 0,
+    });
+
+    const suite = makeSuite(["t1"]);
+    const record = makeMaterializationRecord(makeMaterializedSnapshot(suite), {
+      id: "mat-dexie-order-1",
+    });
+    await evalRepo.persistTaskSetMaterialization(record);
+
+    const acquire = vi.spyOn(lease, "acquire");
+    const create = vi.spyOn(evalRepo, "createExperiment");
+    const begin = vi.spyOn(uow, "beginTask");
+    const result = await controller.start(record.id);
+    expect(result.ok).toBe(true);
+    if (result.ok) await controller.whenIdle();
+
+    expect(acquire).toHaveBeenCalledWith({ kind: "experiment", executionId: suite.id });
+    expect(create).toHaveBeenCalled();
+    expect(begin).toHaveBeenCalled();
+    expect(acquire.mock.invocationCallOrder[0]!).toBeLessThan(create.mock.invocationCallOrder[0]!);
+    expect(create.mock.invocationCallOrder[0]!).toBeLessThan(begin.mock.invocationCallOrder[0]!);
+
+    await lease.dispose?.();
+    db.close();
+    await db.delete();
   });
 });

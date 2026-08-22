@@ -3,6 +3,7 @@ dist
 dist-ssr
 coverage
 *.local
+.hermes
 
 # Environment files 
 .env
@@ -18,6 +19,9 @@ coverage
 
 # Local coding-agent configuration
 WATCHDOG.yml
+WATCHDOG.md
+AGENTS.md
+.omp/
 
 idea.md
 CLAUDE.md

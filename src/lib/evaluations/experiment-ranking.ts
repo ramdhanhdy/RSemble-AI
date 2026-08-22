@@ -17,7 +17,7 @@
 // =============================================================================
 
 import type { ModelAggregate } from "./experiment-aggregation";
-import { WINNER_EPSILON } from "./evaluation-profile";
+import { WINNER_EPSILON } from "./evaluation-rubric";
 
 export interface ExperimentDisplayRanking {
   /** Complete models sorted by §16.1 key: mean desc → Q̄ desc → C̄ desc → id asc. */

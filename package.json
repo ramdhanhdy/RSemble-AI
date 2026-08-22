@@ -19,10 +19,15 @@
     "qa:evaluations-identity": "node scripts/cdp-evaluations-identity-qa.mjs",
     "qa:roster-extension": "node scripts/cdp-experiment-roster-extension-qa.mjs",
     "qa:suite-reliability": "node scripts/cdp-suite-reliability-qa.mjs",
+    "qa:compare-results": "node scripts/cdp-compare-results-qa.mjs",
+    "qa:evidence-matrix": "node scripts/cdp-evidence-matrix-qa.mjs",
+    "qa:research-lab": "node scripts/qa-research-lab.mjs",
+    "qa:model-evidence-profiles": "node scripts/qa-model-evidence-profiles.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "qa:model-evidence-profiles-production": "node scripts/qa-model-evidence-profiles-production.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -86,7 +86,9 @@ export function ExperimentProgress({
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="max-w-[18rem] truncate font-mono text-sm text-text">{experiment.id}</h1>
-          <span className="text-xs text-text-muted">Suite v{experiment.snapshot.suiteVersion}</span>
+          <span className="text-xs text-text-muted">
+            Task Set v{experiment.snapshot.suiteVersion}
+          </span>
           <StatusMark status={experiment.status} />
         </div>
         <p className="text-xs text-text-muted">
@@ -147,10 +149,10 @@ export function ExperimentProgress({
             </button>
           )}
           <Link
-            to={`/evaluations/${experiment.suiteId}`}
+            to={`/evaluations/sets/${experiment.suiteId}`}
             className="flex min-h-[44px] items-center px-3 text-sm text-text-secondary transition-colors duration-150 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            Back to suite
+            Back to task set
           </Link>
         </div>
         {controllerUnavailable && (

@@ -28,6 +28,7 @@ function renderWithRouter(initialEntry = "/runs", repo: InMemoryRunRepository): 
     root.render(
       <RepositoryContext.Provider
         value={{
+          taskRepo: null,
           runRepo: repo,
           evalRepo: null,
           fusionRepo: null,
@@ -189,6 +190,29 @@ describe("RunsWorkspace", () => {
     expect(h.$$("a[href^='/runs/']")).toHaveLength(1);
     // Detail panel visible with record content
     expect(h.$("[data-run-detail]")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("legacy /runs/:id route moves focus to the exact detail heading", async () => {
+    stubMatchMedia(true);
+    const repo = new InMemoryRunRepository();
+    await seedRepo(repo, [["run-1", 1000]]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+
+    const h = renderWithRouter("/runs/run-1", repo);
+    await settle();
+    const heading = h.$("[data-detail-heading]");
+    expect(heading).toBeTruthy();
+    expect(document.activeElement).toBe(heading);
     cleanup(h);
   });
 

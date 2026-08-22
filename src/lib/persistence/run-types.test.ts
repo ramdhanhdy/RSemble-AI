@@ -3,7 +3,7 @@
 //
 // Each test constructs a known-valid record then mutates a single field to
 // assert the validator rejects exactly that defect. Covers the 11 run-record
-// validation requirements plus the evaluation profile/task/suite/profile-record
+// validation requirements plus the evaluation rubric/task/suite/rubric-record
 // rules from the workbench plan.
 // =============================================================================
 
@@ -11,16 +11,16 @@ import { describe, expect, it } from "vitest";
 import type { ModelSlot } from "../../studio-data";
 import {
   type EvaluationCriterion,
-  type EvaluationProfile,
+  type EvaluationRubric,
   type EvaluationSuite,
   type EvaluationTask,
-  isEvaluationProfile,
-  isEvaluationProfileRef,
+  isEvaluationRubric,
+  isRubricVersionRef,
   isEvaluationSelection,
   isEvaluationSuite,
   isEvaluationTask,
   isExperimentRecord,
-  isProfileRecord,
+  isRubricRecord,
   isTaskEvaluationSelection,
 } from "../evaluations/evaluation-types";
 import {
@@ -152,7 +152,7 @@ const validCriterion: EvaluationCriterion = {
   anchors: { one: "bad", three: "ok", five: "great" },
 };
 
-function validProfile(): EvaluationProfile {
+function validRubric(): EvaluationRubric {
   return {
     id: "p-1",
     version: 1,
@@ -753,9 +753,9 @@ describe("isRunRecordV2 structural guards", () => {
     expect(isRunRecordV2(r)).toBe(false);
   });
 
-  it("rejects an invalid evaluation profile", () => {
+  it("rejects an invalid evaluation rubric", () => {
     const r = validRunRecord();
-    r.evaluation.profile = { id: "p", version: 1 } as unknown as EvaluationProfile;
+    r.evaluation.profile = { id: "p", version: 1 } as unknown as EvaluationRubric;
     expect(isRunRecordV2(r)).toBe(false);
   });
 });
@@ -1163,10 +1163,10 @@ describe("isRunRecordV2 accepted-evidence cross-reference validation", () => {
 // Evaluation domain validators
 // ===========================================================================
 
-describe("isEvaluationCriterion / isEvaluationProfile anchors + weights", () => {
+describe("isEvaluationCriterion / isEvaluationRubric anchors + weights", () => {
   it("accepts a valid criterion with 1/3/5 anchors", () => {
     const c = clone(validCriterion);
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c] })).toBe(true);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [c] })).toBe(true);
   });
 
   it("rejects a criterion missing the five anchor", () => {
@@ -1174,57 +1174,57 @@ describe("isEvaluationCriterion / isEvaluationProfile anchors + weights", () => 
     (c.anchors as Record<string, unknown>).five = undefined;
     delete (c.anchors as Record<string, unknown>).five;
     expect(
-      isEvaluationProfile({ ...validProfile(), criteria: [c as unknown as EvaluationCriterion] }),
+      isEvaluationRubric({ ...validRubric(), criteria: [c as unknown as EvaluationCriterion] }),
     ).toBe(false);
   });
 
   it("rejects a criterion missing the one anchor", () => {
     const c = clone(validCriterion);
     delete (c.anchors as unknown as Record<string, unknown>).one;
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c] })).toBe(false);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [c] })).toBe(false);
   });
 
-  it("rejects a profile whose criteria all have non-positive weights", () => {
+  it("rejects a rubric whose criteria all have non-positive weights", () => {
     const c = clone(validCriterion);
     c.weight = 0;
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c] })).toBe(false);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [c] })).toBe(false);
   });
 
-  it("accepts a profile where at least one criterion has a positive weight", () => {
+  it("accepts a rubric where at least one criterion has a positive weight", () => {
     const zero = clone(validCriterion);
     zero.id = "c-0";
     zero.weight = 0;
     const positive = clone(validCriterion);
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [zero, positive] })).toBe(true);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [zero, positive] })).toBe(true);
   });
   it("rejects a negative criterion weight", () => {
     const c = clone(validCriterion);
     c.weight = -1;
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c] })).toBe(false);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [c] })).toBe(false);
   });
 
   it("rejects a NaN criterion weight", () => {
     const c = clone(validCriterion);
     c.weight = NaN;
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c] })).toBe(false);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [c] })).toBe(false);
   });
 
   it("rejects an empty anchor-one string", () => {
     const c = clone(validCriterion);
     c.anchors.one = "";
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c] })).toBe(false);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [c] })).toBe(false);
   });
 
   it("rejects an empty anchor-three string", () => {
     const c = clone(validCriterion);
     c.anchors.three = "";
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c] })).toBe(false);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [c] })).toBe(false);
   });
 
   it("rejects an empty anchor-five string", () => {
     const c = clone(validCriterion);
     c.anchors.five = "";
-    expect(isEvaluationProfile({ ...validProfile(), criteria: [c] })).toBe(false);
+    expect(isEvaluationRubric({ ...validRubric(), criteria: [c] })).toBe(false);
   });
 });
 
@@ -1237,13 +1237,13 @@ describe("isTaskEvaluationSelection discrimination", () => {
     expect(isTaskEvaluationSelection({ kind: "holistic" })).toBe(true);
   });
 
-  it("accepts a pinned-profile selection with a valid ref", () => {
+  it("accepts a pinned-rubric selection with a valid ref", () => {
     expect(isTaskEvaluationSelection({ kind: "profile", profile: { id: "p", version: 1 } })).toBe(
       true,
     );
   });
 
-  it("rejects a pinned-profile selection with an invalid ref", () => {
+  it("rejects a pinned-rubric selection with an invalid ref", () => {
     expect(isTaskEvaluationSelection({ kind: "profile", profile: { id: "", version: 1 } })).toBe(
       false,
     );
@@ -1258,15 +1258,15 @@ describe("isTaskEvaluationSelection discrimination", () => {
     expect(isTaskEvaluationSelection(null)).toBe(false);
   });
 
-  it("isEvaluationSelection distinguishes holistic from profile", () => {
+  it("isEvaluationSelection distinguishes holistic from rubric", () => {
     expect(isEvaluationSelection({ kind: "holistic" })).toBe(true);
     expect(isEvaluationSelection({ kind: "profile", profile: { id: "p", version: 2 } })).toBe(true);
     expect(isEvaluationSelection({ kind: "inherit" })).toBe(false);
   });
 
-  it("isEvaluationProfileRef rejects a missing version", () => {
-    expect(isEvaluationProfileRef({ id: "p" })).toBe(false);
-    expect(isEvaluationProfileRef({ id: "p", version: 1 })).toBe(true);
+  it("isRubricVersionRef rejects a missing version", () => {
+    expect(isRubricVersionRef({ id: "p" })).toBe(false);
+    expect(isRubricVersionRef({ id: "p", version: 1 })).toBe(true);
   });
 });
 
@@ -1354,10 +1354,10 @@ describe("isEvaluationSuite structural validity", () => {
   });
 });
 
-describe("ProfileRecord archive state", () => {
-  it("isProfileRecord accepts an unarchived record", () => {
+describe("RubricRecord archive state", () => {
+  it("isRubricRecord accepts an unarchived record", () => {
     expect(
-      isProfileRecord({
+      isRubricRecord({
         id: "p",
         revision: 1,
         latestVersion: 3,
@@ -1368,9 +1368,9 @@ describe("ProfileRecord archive state", () => {
     ).toBe(true);
   });
 
-  it("isProfileRecord accepts an archived record with a timestamp", () => {
+  it("isRubricRecord accepts an archived record with a timestamp", () => {
     expect(
-      isProfileRecord({
+      isRubricRecord({
         id: "p",
         revision: 1,
         latestVersion: 3,
@@ -1381,9 +1381,9 @@ describe("ProfileRecord archive state", () => {
     ).toBe(true);
   });
 
-  it("isProfileRecord rejects a non-number archivedAt", () => {
+  it("isRubricRecord rejects a non-number archivedAt", () => {
     expect(
-      isProfileRecord({
+      isRubricRecord({
         id: "p",
         revision: 1,
         latestVersion: 3,
@@ -1394,16 +1394,16 @@ describe("ProfileRecord archive state", () => {
     ).toBe(false);
   });
 
-  it("isEvaluationProfile does not require archivedAt (immutable version)", () => {
-    const p = validProfile();
+  it("isEvaluationRubric does not require archivedAt (immutable version)", () => {
+    const p = validRubric();
     // No archivedAt field present — still valid.
-    expect(isEvaluationProfile(p)).toBe(true);
+    expect(isEvaluationRubric(p)).toBe(true);
     expect("archivedAt" in p).toBe(false);
   });
 
-  it("isProfileRecord rejects a prohibited key", () => {
+  it("isRubricRecord rejects a prohibited key", () => {
     expect(
-      isProfileRecord({
+      isRubricRecord({
         id: "p",
         revision: 1,
         latestVersion: 3,
@@ -1433,7 +1433,7 @@ describe("isExperimentRecord", () => {
         modelSlots: [validSlot1, validSlot2],
         defaultJudge: { providerId: "openrouter", model: "foo" },
         defaultEvaluation: { kind: "holistic" },
-        profiles: [validProfile()],
+        profiles: [validRubric()],
         protocolFingerprint: "fp",
         createdAt: 1,
       },
@@ -1503,7 +1503,7 @@ describe("experiment repair provenance schema (Task 8)", () => {
         modelSlots: [validSlot1, validSlot2],
         defaultJudge: { providerId: "openrouter", model: "foo" },
         defaultEvaluation: { kind: "holistic" },
-        profiles: [validProfile()],
+        profiles: [validRubric()],
         protocolFingerprint: "fp",
         createdAt: 1,
       },

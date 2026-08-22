@@ -1,0 +1,422 @@
+// =============================================================================
+// RSemble AI — Archive v3 contract tests (Child 06 Task 11)
+//
+// Tests pure archive v3 contracts, types, schema/entity counts, manifest,
+// validators, digests, ordering, reference-graph constraints, duplicate checks,
+// prohibited-content checks, and rejection of unknown keys (e.g. legacy fusion).
+// Tests deterministic legacy Fusion archive detection and receipt format (REV-2/REV-3).
+// =============================================================================
+
+import { describe, expect, it } from "vitest";
+import {
+  ARCHIVE_V3_FORMAT_VERSION,
+  ARCHIVE_V3_STORAGE_VERSION,
+  ARCHIVE_V3_COLLECTION_KEYS,
+  computeArchiveV3PayloadDigest,
+  detectLegacyFusionArchive,
+  isWorkbenchArchiveV3,
+  validateArchiveV3,
+} from "./archive-v3-types";
+import { buildValidArchiveV3Fixture, cloneArchiveV3 } from "./archive-v3-fixtures";
+import { createModelRollupVersion } from "../model-rollups/model-rollup-types";
+
+const ROLLUP_MEMBER = "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const ROLLUP_RECORD = {
+  id: "rollup:history",
+  name: "History shelf",
+  latestVersion: 1,
+  revision: 0,
+  createdAt: 1_000,
+  updatedAt: 1_000,
+  archivedAt: null,
+};
+
+function archiveWithRollupHistory(latestVersion: number, versionNumbers: number[]) {
+  const archive = buildValidArchiveV3Fixture();
+  const versions = versionNumbers.map((version) =>
+    createModelRollupVersion({
+      rollupId: ROLLUP_RECORD.id,
+      version,
+      name: ROLLUP_RECORD.name,
+      memberConfigurationIds: [ROLLUP_MEMBER],
+      aggregationPolicy: "stratified_only",
+      createdAt: 1_000,
+    }),
+  );
+  archive.modelRollups = {
+    records: [{ ...ROLLUP_RECORD, latestVersion }],
+    versions,
+  };
+  archive.manifest.counts.modelRollups = 1;
+  archive.manifest.counts.modelRollupVersions = versions.length;
+  archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+  return archive;
+}
+
+function expectInvalidRollupHistory(latestVersion: number, versionNumbers: number[]) {
+  const result = validateArchiveV3(archiveWithRollupHistory(latestVersion, versionNumbers));
+  expect(result.valid).toBe(false);
+  expect(
+    result.errors.some(
+      (error) =>
+        error.field === "modelRollups.records[0].latestVersion" &&
+        error.message.includes(`exactly versions 1..${latestVersion}`),
+    ),
+  ).toBe(true);
+}
+
+describe("archive v3 — constants and structure", () => {
+  it("defines format version 3 and storage version 1", () => {
+    expect(ARCHIVE_V3_FORMAT_VERSION).toBe(3);
+    expect(ARCHIVE_V3_STORAGE_VERSION).toBe(1);
+  });
+
+  it("contains all 11 canonical collection keys without any fusion key", () => {
+    expect(ARCHIVE_V3_COLLECTION_KEYS).toEqual([
+      "manifest",
+      "runs",
+      "rubrics",
+      "suites",
+      "experiments",
+      "tasks",
+      "taskSets",
+      "evidence",
+      "comparisons",
+      "lab",
+      "modelRollups",
+    ]);
+    expect(ARCHIVE_V3_COLLECTION_KEYS).not.toContain("fusion");
+  });
+});
+
+describe("validateArchiveV3 — happy path fixture validation", () => {
+  it("validates a fully populated valid archive v3 fixture", () => {
+    const fixture = buildValidArchiveV3Fixture();
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(isWorkbenchArchiveV3(fixture)).toBe(true);
+  });
+
+  it("computes a deterministic sha256 payload digest that matches manifest", () => {
+    const fixture = buildValidArchiveV3Fixture();
+    const digest = computeArchiveV3PayloadDigest(fixture);
+    expect(digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(fixture.manifest.payloadDigest).toBe(digest);
+  });
+});
+
+describe("validateArchiveV3 — Model Rollup append-only history topology", () => {
+  it("rejects a history that is missing version 1", () => {
+    expectInvalidRollupHistory(2, [2]);
+  });
+
+  it("rejects a historical version gap", () => {
+    expectInvalidRollupHistory(3, [1, 3]);
+  });
+
+  it("rejects a persisted version greater than latestVersion", () => {
+    expectInvalidRollupHistory(2, [1, 2, 3]);
+  });
+
+  it("rejects latestVersion pointing to an incomplete history", () => {
+    expectInvalidRollupHistory(3, [1, 2]);
+  });
+
+  it("rejects duplicate version topology", () => {
+    expectInvalidRollupHistory(1, [1, 1]);
+  });
+});
+
+describe("validateArchiveV3 — manifest & count integrity", () => {
+  it("rejects when formatVersion is not 3", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    const manifest = fixture.manifest as unknown as Record<string, unknown>;
+    manifest.formatVersion = 2;
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field.includes("formatVersion"))).toBe(true);
+  });
+
+  it("rejects when an entity count does not match the actual array length", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.manifest.counts.labRecipeRecords += 1;
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field.includes("manifest.counts.labRecipeRecords"))).toBe(
+      true,
+    );
+  });
+
+  it("rejects when payload digest is tampered", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.manifest.payloadDigest =
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field.includes("payloadDigest"))).toBe(true);
+  });
+});
+
+describe("validateArchiveV3 — REV-2 deleted stores stay deleted", () => {
+  it("rejects if any legacy fusion key is attached at top level", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    const raw = fixture as unknown as Record<string, unknown>;
+    raw.fusion = { recipes: [] };
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some(
+        (e) =>
+          e.message.includes("legacy") ||
+          e.message.includes("fusion") ||
+          e.field.includes("fusion"),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("detectLegacyFusionArchive — REV-3 rejection with receipt", () => {
+  it("detects v2 archive containing non-empty legacy fusion collections", () => {
+    const legacyV2Archive = {
+      manifest: {
+        formatVersion: 2,
+        storageVersion: 1,
+        exportedAt: 1000,
+        producer: "rsemble-ai",
+        counts: {
+          runSummaries: 0,
+          runDetails: 0,
+          rubricIdentities: 0,
+          rubricVersions: 0,
+          suites: 0,
+          experiments: 0,
+          fusionRecipes: 1,
+          fusionPlaybooks: 1,
+          taskRecords: 0,
+          taskVersions: 0,
+          taskArtifacts: 0,
+          taskArtifactBytes: 0,
+          taskInstances: 0,
+          taskFamilies: 0,
+          taskFamilyAssignments: 0,
+          taskFamilyRelations: 0,
+          taskFacetAnnotations: 0,
+          taskMigrationCrosswalks: 0,
+        },
+        payloadDigest: "sha256:abcd",
+        disclosure: { scope: "local", notes: null },
+      },
+      runs: { summaries: [], details: [] },
+      rubrics: { identities: [], versions: [] },
+      suites: [],
+      experiments: [],
+      fusion: {
+        recipes: [{ id: "r1", version: 1, name: "Legacy Recipe" }],
+        poolManifests: [],
+        studies: [],
+        trials: [],
+        attempts: [],
+        observations: [],
+        playbooks: [{ id: "p1", studyId: "s1" }],
+      },
+      tasks: {
+        tasks: [],
+        taskVersions: [],
+        taskArtifacts: [],
+        taskArtifactBytes: [],
+        taskInstances: [],
+        taskFamilies: [],
+        taskFamilyAssignments: [],
+        taskFamilyRelations: [],
+        taskFacetAnnotations: [],
+        taskMigrationCrosswalks: [],
+      },
+    };
+
+    const receipt = detectLegacyFusionArchive(legacyV2Archive, "legacy-backup.json");
+    expect(receipt).not.toBeNull();
+    expect(receipt!.format).toBe("unsupported_fusion_archive_shape");
+    expect(receipt!.rejectedCollections).toContain("fusionRecipes");
+    expect(receipt!.rejectedCollections).toContain("fusionPlaybooks");
+    expect(receipt!.sourceLabel).toBe("legacy-backup.json");
+    expect(typeof receipt!.rejectedAt).toBe("number");
+    expect(receipt!.reason).toContain("retired Fusion Study collections");
+  });
+
+  it("returns null for valid v3 archive", () => {
+    const fixture = buildValidArchiveV3Fixture();
+    const receipt = detectLegacyFusionArchive(fixture, "v3.json");
+    expect(receipt).toBeNull();
+  });
+
+  it("returns null for clean non-fusion v2 archive with empty fusion collections", () => {
+    const nonFusionV2 = {
+      manifest: {
+        formatVersion: 2,
+        storageVersion: 1,
+        counts: {
+          fusionRecipes: 0,
+          fusionPoolManifests: 0,
+          fusionStudies: 0,
+          fusionTrials: 0,
+          fusionAttempts: 0,
+          fusionObservations: 0,
+          fusionPlaybooks: 0,
+        },
+      },
+      fusion: {
+        recipes: [],
+        poolManifests: [],
+        studies: [],
+        trials: [],
+        attempts: [],
+        observations: [],
+        playbooks: [],
+      },
+    };
+    const receipt = detectLegacyFusionArchive(nonFusionV2, "clean-v2.json");
+    expect(receipt).toBeNull();
+  });
+});
+
+describe("validateArchiveV3 — prohibited content scan", () => {
+  it("rejects credentials embedded in Lab Recipe fields", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    const record = fixture.lab.recipeRecords[0] as unknown as Record<string, unknown>;
+    record.apiKey = "sk-prohibited-key-123456";
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.message.includes("prohibited"))).toBe(true);
+  });
+
+  it("rejects credentials embedded in Policy Study definition", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    const def = fixture.lab.studies[0].definition as unknown as Record<string, unknown>;
+    def.secret = "sk-prohibited-key-123456";
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.message.includes("prohibited"))).toBe(true);
+  });
+});
+
+describe("validateArchiveV3 — reference graph validation", () => {
+  it("rejects when study definition references a non-existent model pool version", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].definition.modelPool.poolId = "missing-pool";
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field.includes("lab.studies"))).toBe(true);
+  });
+
+  it("rejects when study trial references a non-existent study", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.trials[0].studyId = "missing-study";
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field.includes("lab.trials"))).toBe(true);
+  });
+
+  it("rejects when study attempt references identical fromTrialId and toTrialId", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    if (fixture.lab.attempts.length > 0) {
+      fixture.lab.attempts[0].toTrialId = fixture.lab.attempts[0].fromTrialId;
+      fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+      const result = validateArchiveV3(fixture);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.field.includes("lab.attempts"))).toBe(true);
+    }
+  });
+
+  it("rejects an attempt whose source or successor trial belongs to another study", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    const otherStudy = { ...fixture.lab.studies[0], id: "study-2", reportRef: null };
+    const otherTrial = {
+      ...fixture.lab.trials[0],
+      id: "trial-2",
+      studyId: "study-2",
+      observationIds: [],
+    };
+    fixture.lab.studies.push(otherStudy);
+    fixture.lab.trials.push(otherTrial);
+    fixture.lab.attempts[0].toTrialId = "trial-2";
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /same study|studyId.*trial/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects an observation whose referenced trial belongs to another study", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    const otherStudy = { ...fixture.lab.studies[0], id: "study-2", reportRef: null };
+    const otherTrial = {
+      ...fixture.lab.trials[0],
+      id: "trial-2",
+      studyId: "study-2",
+      observationIds: [],
+    };
+    fixture.lab.studies.push(otherStudy);
+    fixture.lab.trials.push(otherTrial);
+    fixture.lab.observations[0].trialId = "trial-2";
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /same study|studyId.*trial/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a completed study whose reportRef is not a same-study persisted playbook id", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].reportRef = "pb:sha256:" + "a".repeat(64);
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /reportRef|playbook/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects a completed study whose reportRef is null", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].status = "completed";
+    fixture.lab.studies[0].reportRef = null;
+    fixture.lab.studies[0].archivedAt = null;
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some((e) => /reportRef|lab\.studies/i.test(`${e.field} ${e.message}`)),
+    ).toBe(true);
+  });
+
+  it("accepts an archived study whose retained reportRef still names a same-study playbook", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].status = "archived";
+    fixture.lab.studies[0].archivedAt = 2_000;
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("rejects an archived study whose retained reportRef does not name a same-study playbook", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.studies[0].status = "archived";
+    fixture.lab.studies[0].archivedAt = 2_000;
+    fixture.lab.studies[0].reportRef = "pb:sha256:" + "a".repeat(64);
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /reportRef|playbook/i.test(e.message))).toBe(true);
+  });
+
+  it("rejects when recipe version digest does not match recomputed digest", () => {
+    const fixture = cloneArchiveV3(buildValidArchiveV3Fixture());
+    fixture.lab.recipeVersions[0].digest =
+      "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    const result = validateArchiveV3(fixture);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field.includes("lab.recipeVersions"))).toBe(true);
+  });
+});

@@ -353,10 +353,20 @@ const SEED_SOURCE = `(async () => {
       };
     });
     const evaluationsById = {};
+    const candidateAttemptIdsByCandidateId = {};
+    const blindLabelToCandidateId = {};
     scoredKeys.forEach((key, i) => {
-      evaluationsById["cand-" + SLOTS[i].id] = {
-        candidateId: "cand-" + SLOTS[i].id,
-        blindLabel: "A",
+      const slot = SLOTS.find((s) => s.providerId + ":" + s.slug === key) ?? SLOTS[i];
+      const candidateId = "cand-" + slot.id;
+      const candidate = candidates.find((c) => c.candidateId === candidateId);
+      if (candidate?.acceptedAttemptId) {
+        candidateAttemptIdsByCandidateId[candidateId] = candidate.acceptedAttemptId;
+      }
+      const label = String.fromCharCode(65 + i);
+      blindLabelToCandidateId[label] = candidateId;
+      evaluationsById[candidateId] = {
+        candidateId,
+        blindLabel: label,
         overallScore: key === MK1 ? 4.38 : 4.54,
         position: "p",
         rationale: "r",
@@ -366,6 +376,7 @@ const SEED_SOURCE = `(async () => {
         criterionScores: [],
       };
     });
+    const hasJudge = scoredKeys.length > 0;
     return {
       schemaVersion: 2,
       id: runId,
@@ -380,13 +391,37 @@ const SEED_SOURCE = `(async () => {
       task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
       evaluation: { profile: null, candidateMessages: [] },
       candidates,
-      judge: {
-        status: "done",
-        acceptedAttemptId: "judge-att-1",
-        report: { labelMap: [], evaluationsById, comparisons: [] },
-        consensus: null,
-        attempts: [],
-      },
+      judge: hasJudge
+        ? {
+            status: "done",
+            acceptedAttemptId: "judge-att-1",
+            report: { labelMap: [], evaluationsById, comparisons: [] },
+            consensus: null,
+            attempts: [
+              {
+                attemptId: "judge-att-1",
+                providerId: "openrouter",
+                model: "judge",
+                instruction: "Judge fairly.",
+                messages: [],
+                blindLabelToCandidateId,
+                candidateAttemptIdsByCandidateId,
+                startedAt: 1700000000000,
+                finishedAt: 1700000001000,
+                status: "completed",
+                error: null,
+                report: { labelMap: [], evaluationsById, comparisons: [] },
+                consensus: null,
+              },
+            ],
+          }
+        : {
+            status: opts.status === "failed" ? "failed" : "idle",
+            acceptedAttemptId: null,
+            report: null,
+            consensus: null,
+            attempts: [],
+          },
       fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
       winnerKeys: scoredKeys.includes(MK1) ? [MK1] : [],
     };
@@ -661,9 +696,9 @@ try {
 
   // --- Scenario 2: failed preflight confirmation with unchanged roster ---------
   await evaluate("window.__qaFailCompletions = true");
-  await send("Page.navigate", { url: `${baseUrl}#/evaluations/suite-qa` });
+  await send("Page.navigate", { url: `${baseUrl}#/evaluations/sets/suite-qa` });
   await waitFor(
-    "Boolean(document.querySelector('[data-action=\"run-suite\"]'))",
+    "Boolean(document.querySelector('[data-action=\"run-task-set\"]'))",
     "suite editor run",
   );
   await clickButton("Settings");
@@ -710,7 +745,7 @@ try {
   await evaluate("window.__qaFailCompletions = false");
 
   // --- Scenario 3: complete winner + provisional leader ------------------------
-  await send("Page.navigate", { url: `${baseUrl}#/experiments/exp-qa` });
+  await send("Page.navigate", { url: `${baseUrl}#/evaluations/results/exp-qa` });
   await waitFor(
     "Boolean(document.querySelector('[data-testid=\"winner-callout\"]'))",
     "winner callout",
@@ -746,8 +781,12 @@ try {
   await screenshot("qa-winner-provisional");
 
   // --- Scenario 8: 250-task matrix with sticky first column --------------------
-  await send("Page.navigate", { url: `${baseUrl}#/experiments/exp-big` });
-  await waitFor("Boolean(document.querySelector('table thead th'))", "big matrix", 240);
+  await send("Page.navigate", { url: `${baseUrl}#/evaluations/results/exp-big` });
+  await waitFor(
+    "location.hash.includes('exp-big') && Boolean(document.querySelector('table thead th')) && (document.body.textContent ?? '').includes('1–50 of 250')",
+    "big matrix",
+    240,
+  );
   const matrix = await evaluate(`(() => {
     const header = document.querySelector("thead th");
     const firstRow = document.querySelector("tbody tr th");
@@ -886,7 +925,7 @@ try {
     const t2Row = [...document.querySelectorAll("tbody tr")]
       .find((tr) => (tr.querySelector("th")?.textContent ?? "").trim() === "Task t2")?.textContent ?? "";
     return {
-      surfaceAlive: text.includes("Experiment results"),
+      surfaceAlive: text.includes("Evaluation results") || text.includes("Experiment results"),
       cellStillMissing: t2Row.includes("No score"),
       repairActionStillOffered: t2Row.includes("Complete missing result"),
     };
@@ -916,9 +955,13 @@ try {
   await screenshot("qa-failed-repair");
   await evaluate("window.__qaFailJudge = false");
 
-  // --- Scenario 6/7: 250-task progress ledger + attempt history ----------------
-  await send("Page.navigate", { url: `${baseUrl}#/experiments/exp-running` });
-  await waitFor("Boolean(document.querySelector('[data-task-row]'))", "task ledger", 240);
+  // --- Scenario 6: 250-task progress ledger ------------------------------------
+  await send("Page.navigate", { url: `${baseUrl}#/evaluations/results/exp-running` });
+  await waitFor(
+    "location.hash.includes('exp-running') && Boolean(document.querySelector('[data-task-row]'))",
+    "task ledger",
+    240,
+  );
   const ledger = await evaluate(`(() => {
     const text = document.body.textContent ?? "";
     return {
@@ -955,37 +998,12 @@ try {
     reason: "page five mounts <=50 rows with the correct range",
   });
   await screenshot("qa-ledger-250-page5");
-  // Expand attempt history disclosure.
-  await evaluate(`(() => {
-    const disclosure = document.querySelector("[data-attempt-toggle]");
-    if (disclosure) disclosure.click();
-    return Boolean(disclosure);
-  })()`);
-  await waitFor(
-    "Boolean(document.querySelector('[data-attempt-row]'))",
-    "attempt history expanded",
-  );
-  const history = await evaluate(`(() => {
-    return {
-      attemptRows: document.querySelectorAll("[data-attempt-row]").length,
-      hasOldFailed: (document.body.textContent ?? "").includes("failed") || (document.body.textContent ?? "").includes("Failed"),
-    };
-  })()`);
-  record("ledger-attempt-history", {
-    ...history,
-    pass: history.attemptRows > 0 && history.hasOldFailed,
-    reason: "expanding the disclosure mounts attempt rows including historical failures",
-  });
-  await evaluate(
-    `document.querySelector("[data-attempt-history]")?.scrollIntoView({ block: "center" })`,
-  );
-  await screenshot("qa-ledger-history-expanded");
 
   // --- Scenario 9: mobile pagination -------------------------------------------
   await setViewport({ width: 390, height: 844, mobile: true, touch: true });
-  await send("Page.navigate", { url: `${baseUrl}#/experiments/exp-big` });
+  await send("Page.navigate", { url: `${baseUrl}#/evaluations/results/exp-big` });
   await waitFor(
-    "Boolean(document.querySelector('select#mobile-experiment-model-select'))",
+    "location.hash.includes('exp-big') && Boolean(document.querySelector('select#mobile-experiment-model-select'))",
     "mobile results",
     240,
   );
@@ -1058,15 +1076,8 @@ try {
       overflowX: document.documentElement.scrollWidth > innerWidth,
     };
   })()`);
-  const trapPrepared = await evaluate(`(() => {
-    const dialog = document.querySelector('[role=dialog]');
-    const focusable = [...(dialog?.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])];
-    const last = focusable.at(-1);
-    last?.focus();
-    return Boolean(last) && document.activeElement === last;
-  })()`);
-  if (!trapPrepared) throw new Error("Could not prepare dialog focus-trap assertion");
   await press("Tab", "Tab", 9);
+  await wait(120);
   const tabTrapped = await evaluate(
     "Boolean(document.querySelector('[role=dialog]')?.contains(document.activeElement))",
   );

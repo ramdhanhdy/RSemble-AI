@@ -3,15 +3,20 @@
 //
 // Extracted from rsemble.tsx (Plan 007 Workstream D). These are pure render
 // helpers for the Compare workspace: the command-drawer close glyph, the ARIA
-// split separator, the collapsed focus-mode command strip, pane labels, and the
-// offline banner. They are intentionally presentational — all orchestration and
-// Compare state live above AppRoutes and stay mounted across navigation.
+// split separator, the collapsed focus-mode command strip, pane labels, the
+// offline banner, and the Previous comparisons history section integration.
+// They are intentionally presentational — all orchestration and Compare state
+// live above AppRoutes and stay mounted across navigation.
 // =============================================================================
 
 import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 import type { StudioState } from "../studio-engine";
 import { Play, Square } from "lucide-react";
 import { BrandAvatar } from "./brand-icons";
+import { ComparisonList, type ComparisonListProps } from "../workspaces/compare/ComparisonList";
+
+export { ComparisonList };
+export type { ComparisonListProps };
 
 export function CloseIcon() {
   return (
@@ -148,5 +153,27 @@ export function NoKeyBanner() {
         enable live runs.
       </span>
     </div>
+  );
+}
+
+/**
+ * Previous comparisons section helper for Compare shell integration (spec §6.1).
+ */
+export function PreviousComparisonsSection({
+  repo,
+  selectedId,
+  onNewComparison,
+  modelKeys,
+  className = "",
+}: ComparisonListProps) {
+  return (
+    <section aria-label="Previous comparisons" className={`flex flex-col gap-3 ${className}`}>
+      <ComparisonList
+        repo={repo}
+        selectedId={selectedId}
+        onNewComparison={onNewComparison}
+        modelKeys={modelKeys}
+      />
+    </section>
   );
 }

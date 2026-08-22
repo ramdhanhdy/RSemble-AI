@@ -14,6 +14,7 @@ function withRepo(node: React.ReactNode) {
   return (
     <RepositoryContext.Provider
       value={{
+        taskRepo: null,
         runRepo: new InMemoryRunRepository(),
         evalRepo: null,
         fusionRepo: null,

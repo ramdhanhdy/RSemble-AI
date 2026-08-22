@@ -22,14 +22,14 @@ interface Harness {
   $: (s: string) => HTMLElement | null;
 }
 
-function renderButton(): Harness {
+function renderButton(props: { href?: string; subject?: "run" | "record" } = {}): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() =>
     root.render(
       <MemoryRouter>
-        <CopyLinkButton />
+        <CopyLinkButton {...props} />
       </MemoryRouter>,
     ),
   );
@@ -71,6 +71,33 @@ describe("CopyLinkButton (Slice 5 G3)", () => {
     });
     expect(writeText).toHaveBeenCalledWith("http://localhost/#/runs/run-1?candidate=c1");
     expect(h.$('[data-action="copy-link"]')?.textContent).toContain("Copied!");
+    cleanup(h);
+  });
+
+  it("copies a canonical Records hash route when loaded through a legacy run URL", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    Object.defineProperty(window, "location", {
+      value: {
+        ...window.location,
+        href: "http://localhost/#/runs/run-1",
+        origin: "http://localhost",
+        pathname: "/",
+        search: "",
+        hash: "#/runs/run-1",
+      },
+      writable: true,
+    });
+    const h = renderButton({ href: "/records/task-execution/run-1", subject: "record" });
+    const button = h.$('[data-action="copy-link"]')!;
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(writeText).toHaveBeenCalledWith("http://localhost/#/records/task-execution/run-1");
+    expect(h.$('[data-action="copy-link-status"]')?.textContent).toContain(
+      "this record on this device",
+    );
     cleanup(h);
   });
 

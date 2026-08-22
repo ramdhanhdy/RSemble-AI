@@ -20,9 +20,11 @@ import {
 } from "../lib/persistence/repository-context";
 import { RSembleEvaluationDB } from "../lib/persistence/database";
 import { importWorkbenchArchive, type WorkbenchArchiveV1 } from "../lib/persistence/archive";
+import { computeArchiveV3PayloadDigest } from "../lib/persistence/archive-v3-types";
 import type { EvaluationSuite } from "../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../lib/persistence/run-types";
-
+import * as fx from "../lib/persistence/archive-v2-fixtures";
+import * as v3fx from "../lib/persistence/archive-v3-fixtures";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 interface Harness {
@@ -60,6 +62,20 @@ async function settle() {
   await act(async () => {
     for (let i = 0; i < 20; i++) await flush();
   });
+}
+
+/** Poll until `arr` reaches the expected length, with a generous timeout. */
+async function waitForDownload(
+  arr: { length: number },
+  expected: number,
+  maxTicks = 200,
+): Promise<void> {
+  for (let i = 0; i < maxTicks; i++) {
+    if (arr.length >= expected) return;
+    await act(async () => {
+      await flush();
+    });
+  }
 }
 
 // --- Fixtures -------------------------------------------------------------------
@@ -168,6 +184,7 @@ function contextValue(
   storageState: RepositoryContextValue["storageState"],
 ): RepositoryContextValue {
   return {
+    taskRepo: null,
     runRepo: null,
     evalRepo: null,
     fusionRepo: null,
@@ -235,37 +252,214 @@ describe("DataArchiveActions — disabled states", () => {
   });
 });
 
-describe("DataArchiveActions — import flow", () => {
-  it("imports a crafted archive file and reports Created/Skipped/Conflicts", async () => {
+describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
+  it("previews rather than importing on selection: shows counts and requires explicit confirmation", async () => {
     const h = renderActions(contextValue(db, "ready"));
+    const importButton = h.$('button[data-action="import"]') as HTMLButtonElement;
+    importButton.focus();
     const archive = archiveWithSuites([makeSuite("suite-a"), makeSuite("suite-b")]);
     const file = new File([JSON.stringify(archive)], "archive.json", {
       type: "application/json",
     });
     await chooseFile(h, file);
 
-    const status = h.$('[role="status"]');
-    expect(status).not.toBeNull();
-    expect(status!.textContent).toContain("Created 2 · Skipped 0 · Conflicts 0");
+    // Selection previewed: zero writes before explicit confirmation.
+    expect(await db.suites.count()).toBe(0);
+    const status = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
+    expect(status).toContain("Import preview");
+    expect(status).toContain("2 to create");
+    expect(status).toContain("format v1");
+    const confirm = h.$('button[data-action="confirm-import"]') as HTMLButtonElement | null;
+    const cancel = h.$('button[data-action="cancel-import"]') as HTMLButtonElement | null;
+    expect(confirm).not.toBeNull();
+    expect(cancel).not.toBeNull();
+
+    await act(async () => {
+      confirm!.click();
+      await flush();
+    });
+    await settle();
+
     expect(await db.suites.count()).toBe(2);
+    const result = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
+    expect(result).toContain('Imported 2 records — 0 reused ("archive.json")');
+    // Focus returns to the Import data trigger after the flow completes.
+    expect(document.activeElement).toBe(h.$('button[data-action="import"]'));
   });
 
-  it("reports conflicting IDs without overwriting existing data", async () => {
-    await importWorkbenchArchive(db, archiveWithSuites([makeSuite("suite-a", "Original")]));
+  it("cancel closes the preview, writes nothing, and restores focus to the import button", async () => {
     const h = renderActions(contextValue(db, "ready"));
-    const archive = archiveWithSuites([makeSuite("suite-a", "Changed")]);
+    const importButton = h.$('button[data-action="import"]') as HTMLButtonElement;
+    importButton.focus();
+    const archive = archiveWithSuites([makeSuite("suite-keep-out")]);
     const file = new File([JSON.stringify(archive)], "archive.json", {
       type: "application/json",
     });
     await chooseFile(h, file);
+    expect(h.$('button[data-action="cancel-import"]')).not.toBeNull();
 
-    const status = h.$('[role="status"]');
-    expect(status!.textContent).toContain("Created 0 · Skipped 0 · Conflicts 1");
-    expect(status!.textContent).toContain("suite-a");
-    const row = await db.suites.get("suite-a");
-    expect((row?.suite as EvaluationSuite).name).toBe("Original");
+    await act(async () => {
+      (h.$('button[data-action="cancel-import"]') as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+    expect(await db.suites.count()).toBe(0);
+    expect(document.activeElement).toBe(h.$('button[data-action="import"]'));
   });
 
+  it("a legacy v2 fusion archive renders unsupported rejection banner with Close button and writes nothing (REV-3)", async () => {
+    const h = renderActions(contextValue(db, "ready"));
+    const archive = fx.buildValidArchiveV2Fixture();
+    const file = new File([JSON.stringify(archive)], "legacy-fusion.json", {
+      type: "application/json",
+    });
+    await chooseFile(h, file);
+
+    // No writes
+    expect(await db.suites.count()).toBe(0);
+    const status = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
+    expect(status).toContain("Unsupported legacy archive format");
+    expect(status).toContain("retired Fusion Study collections");
+    expect(status).toContain("fusionRecipes");
+    expect(status).toContain("fusionPlaybooks");
+
+    // Confirm import is NOT present; Close button is present
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+    const closeBtn = h.$('button[data-action="close-unsupported"]') as HTMLButtonElement | null;
+    expect(closeBtn).not.toBeNull();
+
+    await act(async () => {
+      closeBtn!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(await db.suites.count()).toBe(0);
+  });
+
+  it("a v3 archive previews all collections and confirms atomically (REV-1)", async () => {
+    const h = renderActions(contextValue(db, "ready"));
+    const archive = v3fx.buildValidArchiveV3Fixture();
+    const file = new File([JSON.stringify(archive)], "v3.json", { type: "application/json" });
+    const originalError = console.error;
+    const actWarnings: string[] = [];
+    console.error = (...args: unknown[]) => {
+      const text = args.map((a) => (typeof a === "string" ? a : String(a))).join(" ");
+      if (text.includes("not wrapped in act")) {
+        actWarnings.push(text);
+        return;
+      }
+      originalError(...args);
+    };
+    try {
+      await chooseFile(h, file);
+      // No writes during preview.
+      expect(await db.suites.count()).toBe(0);
+      expect(await db.tasks.count()).toBe(0);
+      expect(await db.labRecipeRecords.count()).toBe(0);
+      const status = h
+        .$$('[role="status"]')
+        .map((el) => el.textContent ?? "")
+        .join("\n");
+      expect(status).toContain("format v3");
+      expect(status).toContain("suites: 1");
+      expect(status).toContain("lab.recipeRecords: 1");
+      expect(status).toContain("lab.studies: 1");
+
+      await act(async () => {
+        (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
+        await flush();
+      });
+      await settle();
+
+      expect(await db.suites.count()).toBe(1);
+      expect(await db.tasks.count()).toBe(1);
+      expect(await db.taskArtifactBytes.count()).toBe(1);
+      expect(await db.labRecipeRecords.count()).toBe(1);
+      expect(await db.studies.count()).toBe(1);
+      const result = h
+        .$$('[role="status"]')
+        .map((el) => el.textContent ?? "")
+        .join("\n");
+      expect(result).toContain("Imported");
+      expect(result).toContain('"v3.json"');
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  it("a non-identical collision in v3 is previewed with IDs and the commit aborts without any write", async () => {
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+    const incoming = v3fx.buildValidArchiveV3Fixture();
+    incoming.suites[0] = { ...incoming.suites[0], name: "changed" };
+    incoming.manifest.payloadDigest = computeArchiveV3PayloadDigest(incoming);
+    const h = renderActions(contextValue(db, "ready"));
+    const file = new File([JSON.stringify(incoming)], "v3.json", { type: "application/json" });
+    await chooseFile(h, file);
+
+    const status = h
+      .$$('[role="status"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
+    expect(status).toContain("1 collision");
+    expect(status).toContain("suites/suite-1");
+
+    await act(async () => {
+      (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
+      await flush();
+    });
+    await settle();
+
+    const alertText = h
+      .$$('[role="alert"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
+    expect(alertText).toContain(
+      "Import aborted: 1 collision — colliding records were left unchanged.",
+    );
+    // Nothing was written anywhere; the pre-existing suite is untouched.
+    expect((await db.suites.get("suite-1"))?.suite).toMatchObject({ name: "Suite suite-1" });
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+    // The preview is cleared with the abort.
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+  });
+
+  it("surfaces v3 validation failure without echoing prohibited content and writes nothing", async () => {
+    const secret = "sk-ant-oat01-not-a-real-key";
+    const poisoned = v3fx.buildValidArchiveV3Fixture();
+    (poisoned.lab.recipeRecords[0] as unknown as Record<string, unknown>).notes = secret;
+    poisoned.manifest.payloadDigest = computeArchiveV3PayloadDigest(poisoned);
+
+    const h = renderActions(contextValue(db, "ready"));
+    const file = new File([JSON.stringify(poisoned)], "poisoned.json", {
+      type: "application/json",
+    });
+    await chooseFile(h, file);
+
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+    const alertText = h
+      .$$('[role="alert"]')
+      .map((el) => el.textContent ?? "")
+      .join("\n");
+    expect(alertText).toContain("The archive is invalid — nothing was imported.");
+    expect(alertText).not.toContain(secret);
+    expect(await db.suites.count()).toBe(0);
+  });
+});
+
+describe("DataArchiveActions — legacy import error handling (preview path, no writes)", () => {
   it("shows an invalid-archive line for malformed JSON without importing", async () => {
     const h = renderActions(contextValue(db, "ready"));
     const file = new File(["{not json"], "archive.json", { type: "application/json" });
@@ -275,6 +469,7 @@ describe("DataArchiveActions — import flow", () => {
     expect(alert).not.toBeNull();
     expect(alert!.textContent).toContain("The archive is invalid — nothing was imported.");
     expect(await db.suites.count()).toBe(0);
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
   });
 
   it("lists validation errors for a schema-mismatched archive", async () => {
@@ -288,6 +483,7 @@ describe("DataArchiveActions — import flow", () => {
     expect(alert).not.toBeNull();
     expect(alert!.textContent).toMatch(/schema/i);
     expect(await db.suites.count()).toBe(0);
+    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
   });
 });
 
@@ -312,5 +508,193 @@ describe("imported Markdown safety invariant (plan 8.1 item 8)", () => {
     expect(h.container.querySelector("img")).toBeNull();
     expect(h.container.textContent).toContain('<script>alert("x")</script>');
     expect(h.container.textContent).toContain("<img src=x onerror=alert(1)>");
+  });
+});
+
+// --- Task 10B: v2 export flow ---------------------------------------------------
+
+/** Seed a complete canonical corpus so the v2 export exercises every stage. */
+async function seedV2Corpus(target: RSembleEvaluationDB): Promise<void> {
+  const bytes = new TextEncoder().encode("candidate-visible artifact text");
+  await target.runSummaries.put(fx.runSummaryRow(fx.makeRunSummary("run-1")));
+  await target.runDetails.put(fx.runDetailRow(fx.makeRunDetail("run-1")));
+  await target.profiles.put(fx.profileRow(fx.makeRubricRecord("rubric-1")));
+  await target.profileVersions.put(fx.profileVersionRow(fx.makeRubricVersion("rubric-1", 1)));
+  await target.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+  await target.experiments.put(fx.experimentRow(fx.makeExperiment("exp-1", "suite-1")));
+  if (target.tables.some((t) => t.name === "fusionRecipes")) {
+    await (target as any).fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
+    await (target as any).poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
+    await (target as any).fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
+    await (target as any).fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
+    await (target as any).fusionAttempts.put(
+      fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")),
+    );
+    await (target as any).fusionObservations.put(
+      fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
+    );
+    await (target as any).fusionPlaybooks.put(
+      fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")),
+    );
+  }
+  await target.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
+  await target.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));
+  await target.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-1", bytes)));
+  await target.taskArtifactBytes.put(fx.taskArtifactBytesRow("art-1", bytes));
+  await target.taskInstances.put(
+    fx.taskInstanceRow(fx.makeTaskInstance("inst-1", "task-1", 1, "art-1")),
+  );
+  await target.taskFamilies.put(fx.taskFamilyRow(fx.makeTaskFamily("fam-1")));
+  await target.taskFamilyAssignments.put(
+    fx.taskFamilyAssignmentRow(fx.makeTaskFamilyAssignment("fa-1", "task-1", 1, "fam-1")),
+  );
+  await target.taskFamilyRelations.put(
+    fx.taskFamilyRelationRow(fx.makeTaskFamilyRelation("rel-1", "fam-1", "fam-1")),
+  );
+  await target.taskFacetAnnotations.put(
+    fx.taskFacetAnnotationRow(fx.makeTaskFacetAnnotation("ann-1", "task-1")),
+  );
+  await target.taskMigrationCrosswalk.put(
+    fx.taskMigrationCrosswalkRow(fx.makeCrosswalk("task-1", 1)),
+  );
+}
+
+describe("DataArchiveActions — v2 export flow", () => {
+  it("downloads the complete task-first v2 archive and reports the exported entity total", async () => {
+    await seedV2Corpus(db);
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement | null;
+    expect(exportButton).not.toBeNull();
+    await act(async () => {
+      exportButton!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(downloaded.length).toBe(1);
+    expect(downloaded[0].download).toMatch(/^rsemble-archive-v2-\d{8}-\d{6}\.json$/);
+    const status = h.$('[role="status"]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toMatch(/exported/i);
+    clickSpy.mockRestore();
+  });
+
+  it("cancels a running export before delivery — no download, truthful guidance", async () => {
+    await seedV2Corpus(db);
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement;
+    await act(async () => {
+      exportButton.click();
+      await flush();
+    });
+    const cancelButton = h.$('button[data-action="cancel-export"]') as HTMLButtonElement | null;
+    expect(cancelButton).not.toBeNull();
+    await act(async () => {
+      cancelButton!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(downloaded.length).toBe(0);
+    expect(h.container.textContent).toContain("Export was cancelled — no archive was delivered.");
+    clickSpy.mockRestore();
+  });
+
+  it("blocks an unsafe export before download with redacted entity/type diagnostics", async () => {
+    const secret = fx.makeRunDetail("run-secret");
+    secret.task.prompt = "Bearer abc123def456 is the header to use";
+    await db.runDetails.put(fx.runDetailRow(secret));
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v2"]') as HTMLButtonElement;
+    await act(async () => {
+      exportButton.click();
+      await flush();
+    });
+    await settle();
+
+    expect(downloaded.length).toBe(0);
+    const alert = h.$('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain("runs.details");
+    expect(alert!.textContent).toContain("run-secret");
+    expect(alert!.textContent).not.toContain("Bearer abc123def456");
+    clickSpy.mockRestore();
+  });
+});
+
+describe("DataArchiveActions — v3 export flow (REV-1)", () => {
+  it("downloads the complete canonical v3 archive and reports the exported entity total", async () => {
+    await v3fx.seedCompleteV3Corpus(db);
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v3"]') as HTMLButtonElement | null;
+    expect(exportButton).not.toBeNull();
+    await act(async () => {
+      exportButton!.click();
+      await flush();
+    });
+    await waitForDownload(downloaded, 1);
+
+    expect(downloaded.length).toBe(1);
+    expect(downloaded[0].download).toMatch(/^rsemble-archive-v3-\d{8}-\d{6}\.json$/);
+    const status = h.$('[role="status"]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toMatch(/exported/i);
+    clickSpy.mockRestore();
+  });
+
+  it("cancels a running v3 export before delivery — no download, truthful guidance", async () => {
+    await v3fx.seedCompleteV3Corpus(db);
+    const downloaded: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloaded.push(this);
+    });
+
+    const h = renderActions(contextValue(db, "ready"));
+    const exportButton = h.$('button[data-action="export-v3"]') as HTMLButtonElement;
+    await act(async () => {
+      exportButton.click();
+      await flush();
+    });
+    const cancelButton = h.$('button[data-action="cancel-export-v3"]') as HTMLButtonElement | null;
+    expect(cancelButton).not.toBeNull();
+    await act(async () => {
+      cancelButton!.click();
+      await flush();
+    });
+    await settle();
+
+    expect(downloaded.length).toBe(0);
+    expect(h.container.textContent).toContain("Export was cancelled — no archive was delivered.");
+    clickSpy.mockRestore();
   });
 });

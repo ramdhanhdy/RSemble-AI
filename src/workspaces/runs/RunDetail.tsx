@@ -23,7 +23,7 @@ import {
   rankValueFromResults,
   rankScoreOf,
   isFloored,
-} from "../../lib/evaluations/evaluation-profile";
+} from "../../lib/evaluations/evaluation-rubric";
 import { inputUsageLabel } from "../../lib/cost";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
@@ -37,6 +37,7 @@ export function RunDetail({
   focusCandidateId,
   focusJudgeAttemptId,
   onOpenInCompare,
+  copyHref,
 }: {
   record: RunRecordV2 | null;
   /** Deep-linked immutable candidate id (`?candidate=`). When present and
@@ -48,6 +49,8 @@ export function RunDetail({
   /** Run Detail → Open in Compare (Slice 5). Optional; wired by the root
    *  shell, omitted in route-only test renders. */
   onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+  /** Canonical deep-link route copied even when this detail loaded via /runs. */
+  copyHref?: string;
 }) {
   const vm = formatRunDetail(record);
 
@@ -98,6 +101,7 @@ export function RunDetail({
                   section={section}
                   record={record}
                   onOpenInCompare={onOpenInCompare}
+                  copyHref={copyHref}
                 />
               );
             case "timeline":
@@ -146,6 +150,7 @@ function HeaderSection({
   section,
   record,
   onOpenInCompare,
+  copyHref,
 }: {
   section: {
     title?: string;
@@ -164,6 +169,7 @@ function HeaderSection({
   };
   record: RunRecordV2;
   onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+  copyHref?: string;
 }) {
   const startedAt = section.startedAt ?? record.createdAt;
   const hasCompletion = section.completedAt !== null && section.completedAt !== undefined;
@@ -179,7 +185,11 @@ function HeaderSection({
           {record.mode}
         </span>
       </div>
-      <h2 className="text-lg font-semibold leading-snug text-text">
+      <h2
+        data-detail-heading=""
+        tabIndex={-1}
+        className="text-lg font-semibold leading-snug text-text focus:outline-none"
+      >
         {section.title ?? record.task.title}
       </h2>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-muted">
@@ -243,7 +253,7 @@ function HeaderSection({
             Open in Compare
           </button>
         )}
-        <CopyLinkButton />
+        <CopyLinkButton href={copyHref} subject={copyHref ? "record" : "run"} />
       </div>
     </header>
   );
@@ -482,12 +492,12 @@ function ProvenanceSection({ section }: { section: Record<string, unknown> }) {
       aria-label="Experiment provenance"
       className="flex flex-wrap items-center gap-1.5 py-4 text-sm"
     >
-      <Link to={`/experiments/${experimentId}`} className={linkCls}>
-        Experiment
+      <Link to={`/evaluations/results/${experimentId}`} className={linkCls}>
+        Evaluation
       </Link>
       <span className="text-text-muted">·</span>
-      <Link to={`/evaluations/${suiteId}`} className={linkCls}>
-        Suite v{suiteVersion}
+      <Link to={`/evaluations/sets/${suiteId}`} className={linkCls}>
+        Task Set v{suiteVersion}
       </Link>
       <span className="text-text-muted">·</span>
       <span className="inline-flex min-h-[44px] items-center font-mono text-text-secondary">
@@ -498,8 +508,8 @@ function ProvenanceSection({ section }: { section: Record<string, unknown> }) {
         {boundAttempt ? `${attemptId.slice(0, 8)}…` : attemptId}
         <span className="sr-only">{attemptId}</span>
       </span>
-      <Link to={`/experiments/${experimentId}`} className={`${linkCls} ml-auto`}>
-        Back to experiment
+      <Link to={`/evaluations/results/${experimentId}`} className={`${linkCls} ml-auto`}>
+        Back to evaluation
       </Link>
     </nav>
   );
@@ -771,9 +781,9 @@ function JudgeSection({
                     </span>
                     <span className="ml-auto font-mono text-text tabular-nums">
                       {(() => {
-                        const profile = record.evaluation.profile;
-                        if (profile) {
-                          const rv = rankValueFromResults(ev.criterionScores, profile);
+                        const rubric = record.evaluation.profile;
+                        if (rubric) {
+                          const rv = rankValueFromResults(ev.criterionScores, rubric);
                           if (rv !== null) {
                             const rs = rankScoreOf(rv);
                             const floored = isFloored(rv);

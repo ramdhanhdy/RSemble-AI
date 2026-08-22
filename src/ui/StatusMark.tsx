@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import {
+  Archive,
   BadgeCheck,
   Check,
   CircleDashed,
@@ -29,6 +30,7 @@ export type StatusMarkStatus =
   | "failed"
   | "aborted"
   | "interrupted"
+  | "archived"
   | "ready"
   | "reusable";
 
@@ -77,6 +79,7 @@ const STATUS_MAP: Record<StatusMarkStatus, StatusConfig> = {
   failed: { label: "Failed", icon: XCircle, color: "text-error", spin: false },
   aborted: { label: "Aborted", icon: Square, color: "text-text-muted", spin: false },
   interrupted: { label: "Interrupted", icon: Unplug, color: "text-warning", spin: false },
+  archived: { label: "Archived", icon: Archive, color: "text-text-muted", spin: false },
   ready: { label: "Ready", icon: CirclePlay, color: "text-accent", spin: false },
   reusable: { label: "Reusable", icon: BadgeCheck, color: "text-text-muted", spin: false },
 };

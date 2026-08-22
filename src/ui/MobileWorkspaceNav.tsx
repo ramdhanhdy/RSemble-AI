@@ -1,12 +1,15 @@
 // =============================================================================
-// MobileWorkspaceNav — fixed three-item bottom navigation (<768px).
-// See spec §5.3. Each item has an icon + visible text, is >=44px high, uses
-// aria-current="page", and accounts for safe-area insets. Workspace content
-// reserves bottom padding so controls are not obscured.
+// MobileWorkspaceNav — fixed four-item bottom navigation (<768px). Child 08
+// spec §G.6: exactly the same four destinations as the desktop nav, in the
+// same order with the same icons. Each item has an icon + visible text, is
+// >=44px high, uses aria-current="page", and accounts for safe-area insets.
+// The active item keeps text-accent plus a static 2px TOP accent bar (mirror
+// of the desktop bottom bar, since this nav sits at the screen bottom).
+// Records is never a bottom-nav item — it is reached via the header utility.
 // =============================================================================
 
 import { NavLink } from "react-router-dom";
-import { GitCompare, History, FlaskConical, type LucideIcon } from "lucide-react";
+import { Cpu, FlaskConical, GitCompare, TestTubes, type LucideIcon } from "lucide-react";
 
 interface WorkspaceLink {
   to: string;
@@ -16,10 +19,10 @@ interface WorkspaceLink {
 
 const WORKSPACES: readonly WorkspaceLink[] = [
   { to: "/compare", label: "Compare", icon: GitCompare },
-  { to: "/runs", label: "Runs", icon: History },
   { to: "/evaluations", label: "Evaluations", icon: FlaskConical },
+  { to: "/lab", label: "Lab", icon: TestTubes },
+  { to: "/models", label: "Models", icon: Cpu },
 ] as const;
-
 export function MobileWorkspaceNav() {
   return (
     <nav
@@ -36,7 +39,7 @@ export function MobileWorkspaceNav() {
           data-testid="mobile-nav-item"
           className={({ isActive }) =>
             `flex min-h-[44px] flex-1 flex-col items-center justify-center gap-0.5 py-1 text-xs font-medium transition-colors duration-150 ${
-              isActive ? "text-accent" : "text-text-secondary"
+              isActive ? "text-accent shadow-[inset_0_2px_0_0_#00e5ff]" : "text-text-secondary"
             }`
           }
         >

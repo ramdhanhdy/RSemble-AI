@@ -40,11 +40,12 @@ import type {
 } from "../../studio-data";
 import type { StageStatus } from "../../studio-engine";
 import {
-  isEvaluationProfile,
+  isEvaluationRubric,
   isExperimentTaskExecutionPlan,
-  type EvaluationProfileSnapshot,
+  type RubricSnapshot,
   type ExperimentTaskExecutionPlan,
 } from "../evaluations/evaluation-types";
+import type { PlaybookCompatibilityReceipt } from "../studies/policy/playbook-compatibility";
 
 // --- Status enums -------------------------------------------------------------
 
@@ -155,7 +156,7 @@ export interface FullRunSummaryV2 {
   evaluationProfileId: string | null;
   evaluationProfileVersion: number | null;
   /** Score domain for display (spec §16.3): "compliance" when the run used a
-   *  compliance-only profile (winner score = C in [0,1]). */
+   *  compliance-only rubric (winner score = C in [0,1]). */
   scoreDomain?: "rank" | "compliance";
   detailAvailable: true;
   searchText: string;
@@ -249,8 +250,13 @@ export interface FusionAttemptRecord {
   usage?: UsageBreakdown;
   inputEstimate?: InputUsageEstimate;
   cost?: CostRecord;
+  playbookRef?: {
+    playbookId: string;
+    studyId?: string;
+    definitionFingerprint?: string;
+    compatibility?: PlaybookCompatibilityReceipt;
+  } | null;
 }
-
 // --- Full run record ----------------------------------------------------------
 
 export interface RunRecordV2 {
@@ -267,7 +273,7 @@ export interface RunRecordV2 {
   task: { title: string; prompt: string; systemPrompt: string; temperature: number };
   /** Attachment metadata for the run's task — absent for older records. */
   attachments?: TaskAttachmentMeta[];
-  evaluation: { profile: EvaluationProfileSnapshot | null; candidateMessages: ChatMessage[] };
+  evaluation: { profile: RubricSnapshot | null; candidateMessages: ChatMessage[] };
   /** Requested/effective effort snapshot; absent on pre-policy schema-v2 runs. */
   reasoning?: RunReasoningProvenance;
   candidates: PersistedCandidate[];
@@ -659,7 +665,10 @@ function isFusionAttemptRecord(v: unknown): v is FusionAttemptRecord {
     (v.result === null || isString(v.result)) &&
     (v.usage === undefined || isUsageBreakdown(v.usage)) &&
     (v.inputEstimate === undefined || isInputUsageEstimate(v.inputEstimate)) &&
-    (v.cost === undefined || isCostRecord(v.cost))
+    (v.cost === undefined || isCostRecord(v.cost)) &&
+    (v.playbookRef === undefined ||
+      v.playbookRef === null ||
+      (isRecord(v.playbookRef) && isString(v.playbookRef.playbookId)))
   );
 }
 
@@ -872,32 +881,27 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
   if (v.judge.report !== null && !isJudgeReport(v.judge.report)) return null;
   if (v.judge.consensus !== null && !isConsensusBreakdown(v.judge.consensus)) return null;
 
-  const repaired = structuredClone(v) as Record<string, any>;
-  const candidates = repaired.candidates as Array<Record<string, any>>;
+  const repaired = structuredClone(v) as unknown as RunRecordV2;
+  const candidates = repaired.candidates;
   const invalidCandidateIds = new Set<string>();
   for (const candidate of candidates) {
-    if (!isRecord(candidate) || !Array.isArray(candidate.attempts)) return null;
     if (candidate.acceptedAttemptId === null) continue;
     const accepted = candidate.attempts.find(
       (attempt) =>
-        isRecord(attempt) &&
         attempt.attemptId === candidate.acceptedAttemptId &&
         attempt.status === "completed" &&
         attempt.output !== null &&
         attempt.output !== undefined,
     );
     if (!accepted) {
-      invalidCandidateIds.add(String(candidate.candidateId));
+      invalidCandidateIds.add(candidate.candidateId);
       candidate.acceptedAttemptId = null;
     }
   }
 
   const acceptedMap: Record<string, string> = {};
   for (const candidate of candidates) {
-    if (
-      typeof candidate.candidateId === "string" &&
-      typeof candidate.acceptedAttemptId === "string"
-    ) {
+    if (candidate.acceptedAttemptId !== null) {
       acceptedMap[candidate.candidateId] = candidate.acceptedAttemptId;
     }
   }
@@ -910,11 +914,10 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
     );
   };
 
-  const judge = repaired.judge as Record<string, any>;
+  const judge = repaired.judge;
   if (judge.acceptedAttemptId !== null) {
     const accepted = judge.attempts.find(
-      (attempt: unknown) =>
-        isRecord(attempt) &&
+      (attempt) =>
         attempt.attemptId === judge.acceptedAttemptId &&
         attempt.status === "completed" &&
         attempt.report !== null &&
@@ -927,11 +930,10 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
     }
   }
 
-  const fusion = repaired.fusion as Record<string, any>;
+  const fusion = repaired.fusion;
   if (fusion.acceptedAttemptId !== null) {
     const accepted = fusion.attempts.find(
-      (attempt: unknown) =>
-        isRecord(attempt) &&
+      (attempt) =>
         attempt.attemptId === fusion.acceptedAttemptId &&
         attempt.status === "completed" &&
         attempt.result !== null &&
@@ -944,10 +946,10 @@ export function repairRunRecordForCompatibility(v: unknown): RunRecordV2 | null 
   if (Array.isArray(repaired.winnerKeys)) {
     const invalidModels = new Set(
       candidates
-        .filter((candidate) => invalidCandidateIds.has(String(candidate.candidateId)))
+        .filter((candidate) => invalidCandidateIds.has(candidate.candidateId))
         .map((candidate) => candidate.modelKey),
     );
-    repaired.winnerKeys = repaired.winnerKeys.filter((key: unknown) => !invalidModels.has(key));
+    repaired.winnerKeys = repaired.winnerKeys.filter((key) => !invalidModels.has(key));
   }
 
   return isRunRecordV2(repaired) ? repaired : null;
@@ -981,7 +983,7 @@ export function isRunRecordV2(v: unknown): v is RunRecordV2 {
   if (
     !isRecord(evaluation) ||
     !isChatMessageArray(evaluation.candidateMessages) ||
-    (evaluation.profile !== null && !isEvaluationProfile(evaluation.profile))
+    (evaluation.profile !== null && !isEvaluationRubric(evaluation.profile))
   ) {
     return false;
   }

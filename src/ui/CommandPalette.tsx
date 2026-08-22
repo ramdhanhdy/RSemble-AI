@@ -5,16 +5,19 @@ import { Command } from "cmdk";
 import {
   ClipboardList,
   CornerDownLeft,
+  Cpu,
   FlaskConical,
   Gauge,
   GitCompare,
   History,
   Layers,
   Link2,
+  ListChecks,
   Maximize2,
   Plus,
   Power,
   Search,
+  TestTubes,
 } from "lucide-react";
 import type { WorkspaceKind } from "./useActionShortcuts";
 
@@ -42,6 +45,8 @@ interface CommandPaletteProps {
   activeExperimentId?: string | null;
   onViewExperiment?: () => void;
   onAbortExperiment?: () => void;
+  /** Focus the Records search surface: drawer at >=1024, /records below. */
+  onFindRecord?: () => void;
 }
 
 interface Command {
@@ -51,6 +56,8 @@ interface Command {
   icon: typeof Power;
   hint?: string[];
   disabled?: boolean;
+  /** Extra search keywords (cmdk matches these beyond the label). */
+  keywords?: string[];
   run: () => void;
 }
 
@@ -68,6 +75,7 @@ export function CommandPalette({
   canRun,
   workspace = "compare",
   onNavigate,
+  onFindRecord,
   activeExperimentId = null,
   onViewExperiment,
   onAbortExperiment,
@@ -79,6 +87,9 @@ export function CommandPalette({
   }, [open]);
 
   const commands = useMemo<Command[]>(() => {
+    // Child 08 §G.7: Navigate is exactly these six destinations in this
+    // order. "Go to Records" carries the old Runs muscle-memory keywords;
+    // there is no "Go to Runs" command anywhere.
     const navigateCommands: Command[] = [
       {
         id: "nav-compare",
@@ -88,18 +99,53 @@ export function CommandPalette({
         run: () => onNavigate?.("/compare"),
       },
       {
-        id: "nav-runs",
-        label: "Go to Runs",
-        group: "Navigate",
-        icon: History,
-        run: () => onNavigate?.("/runs"),
-      },
-      {
         id: "nav-evaluations",
         label: "Go to Evaluations",
         group: "Navigate",
         icon: FlaskConical,
         run: () => onNavigate?.("/evaluations"),
+      },
+      {
+        id: "nav-lab",
+        label: "Go to Lab",
+        group: "Navigate",
+        icon: TestTubes,
+        run: () => onNavigate?.("/lab"),
+      },
+      {
+        id: "nav-models",
+        label: "Go to Models",
+        group: "Navigate",
+        icon: Cpu,
+        run: () => onNavigate?.("/models"),
+      },
+      {
+        id: "nav-records",
+        label: "Go to Records",
+        group: "Navigate",
+        icon: History,
+        keywords: ["runs", "history", "ledger", "audit"],
+        run: () => onNavigate?.("/records"),
+      },
+      {
+        // Canonical Tasks are a secondary workspace (canonical-tasks spec §7):
+        // reachable here, never from primary navigation.
+        id: "nav-tasks",
+        label: "Go to Tasks",
+        group: "Navigate",
+        icon: ListChecks,
+        run: () => onNavigate?.("/tasks"),
+      },
+    ];
+    const findRecordCommands: Command[] = [
+      {
+        // §G.7: focus the Records search — drawer (>=1024) or /records with
+        // its filter focused (<1024). No Child 09 global search.
+        id: "find-record",
+        label: "Find record by ID…",
+        group: "Records",
+        icon: Search,
+        run: () => onFindRecord?.(),
       },
     ];
     const compareCommands: Command[] =
@@ -174,6 +220,7 @@ export function CommandPalette({
     return [
       ...navigateCommands,
       ...compareCommands,
+      ...findRecordCommands,
       {
         id: "open-connections",
         label: "Open connections",
@@ -196,6 +243,7 @@ export function CommandPalette({
     onExport,
     workspace,
     onNavigate,
+    onFindRecord,
     activeExperimentId,
     onViewExperiment,
     onAbortExperiment,
@@ -258,7 +306,7 @@ export function CommandPalette({
                 <Command.Item
                   key={command.id}
                   value={command.label}
-                  keywords={[command.group]}
+                  keywords={[command.group, ...(command.keywords ?? [])]}
                   disabled={command.disabled}
                   onSelect={() => execute(command)}
                   className="flex min-h-[44px] w-full items-center gap-3 rounded-md px-2.5 py-2 text-left data-[selected=true]:bg-card-hover data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50"

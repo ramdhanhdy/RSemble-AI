@@ -12,7 +12,7 @@ import {
 } from "./OutputPane";
 import { initialState, type StudioState } from "../studio-engine";
 import type { Candidate } from "../studio-data";
-import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-profile-adhoc";
+import { HOLISTIC_EVALUATION } from "../lib/evaluations/evaluation-rubric-adhoc";
 
 const candidate: Candidate = {
   id: "live-1",
@@ -592,6 +592,7 @@ describe("OutputPane recent runs", () => {
       root.render(
         <RepositoryContext.Provider
           value={{
+            taskRepo: null,
             runRepo: repo,
             evalRepo: null,
             fusionRepo: null,
@@ -627,6 +628,7 @@ describe("OutputPane recent runs", () => {
       root.render(
         <RepositoryContext.Provider
           value={{
+            taskRepo: null,
             runRepo: repo,
             evalRepo: null,
             fusionRepo: null,
@@ -648,5 +650,29 @@ describe("OutputPane recent runs", () => {
     expect(links.some((l) => l.getAttribute("href") === "/runs/run-2")).toBe(true);
     act(() => root.unmount());
     container.remove();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OutputPane — done-footer copy button 44px target (Plan Task 13)
+// ---------------------------------------------------------------------------
+
+describe("OutputPane — done-footer copy button 44px target", () => {
+  it("meets the 44px minimum height while a finished candidate streams live", () => {
+    const html = renderToStaticMarkup(
+      <OutputPane
+        state={makeOutputPaneState({
+          running: true,
+          judgeStatus: "done",
+          judgeError: null,
+        })}
+        onRetryJudge={() => {}}
+      />,
+    );
+    // The done footer copy affordance shows during the run, before the
+    // RankResult/FuseResult summary replaces the live cards.
+    expect(html).toContain('aria-label="Copy Model A answer"');
+    const copyButton = html.match(/<button[^>]*aria-label="Copy Model A answer"[^>]*>/);
+    expect(copyButton?.[0] ?? "").toContain("min-h-[44px]");
   });
 });

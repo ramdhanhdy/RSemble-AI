@@ -22,12 +22,14 @@ import {
   createEvaluationRepository,
   type EvaluationRepository,
 } from "../persistence/evaluation-repository";
+import { createEvidenceRepository } from "../persistence/evidence-repository";
 import { RepositoryContext, type RepositoryContextValue } from "../persistence/repository-context";
 import { ExecutionOwnerProvider } from "../execution-owner-context";
+import { candidateIdForSlot } from "../pipeline";
 import { ExperimentControllerProvider } from "./experiment-controller-context";
 import { useExperimentController } from "./experiment-controller-hooks";
-import { candidateIdForSlot } from "../pipeline";
 import type { RunRecordV2, FullRunSummaryV2 } from "../persistence/run-types";
+import type { ExperimentRecord } from "./evaluation-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -168,6 +170,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     await blockingLease.acquire({ kind: "compare", executionId: "live-run" });
 
     const value: RepositoryContextValue = {
+      taskRepo: null,
       runRepo,
       evalRepo,
       fusionRepo: null,
@@ -214,6 +217,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     expect((await runRepo.get("run-stuck"))?.status).toBe("running");
 
     const value: RepositoryContextValue = {
+      taskRepo: null,
       runRepo,
       evalRepo,
       fusionRepo: null,
@@ -237,6 +241,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     // Wait on the condition, not a fixed clock: the sweep is a fire-and-forget
     // async effect whose latency varies under load.
     await waitUntil(async () => (await runRepo.get("run-stuck"))?.status === "interrupted");
+    await settle(0);
 
     const recovered = await runRepo.get("run-stuck");
     expect(recovered?.status).toBe("interrupted");
@@ -258,6 +263,7 @@ describe("ExperimentControllerProvider startup recovery", () => {
     const evalRepo = createEvaluationRepository(db, runRepo);
 
     const value: RepositoryContextValue = {
+      taskRepo: null,
       runRepo,
       evalRepo,
       fusionRepo: null,
@@ -286,6 +292,351 @@ describe("ExperimentControllerProvider startup recovery", () => {
     // Startup recovery must not fabricate history: no runs exist, none are created.
     expect(await runRepo.list({ limit: 10 })).toHaveLength(0);
 
+    cleanup(h);
+    db.close();
+    await db.delete();
+  });
+});
+
+// --- Startup evidence reindex (Wave A3 seam) -----------------------------------
+
+const FP = `sha256:${"f".repeat(64)}`;
+
+function terminalEvaluationSource(id: string): {
+  record: RunRecordV2;
+  summary: FullRunSummaryV2;
+} {
+  const attemptId = `att-${id}`;
+  const record: RunRecordV2 = {
+    schemaVersion: 2,
+    id,
+    revision: 1,
+    execution: { ownerId: "tab-1", fence: 1 },
+    createdAt: 0,
+    updatedAt: 5,
+    completedAt: 10,
+    status: "completed",
+    mode: "rank",
+    source: {
+      kind: "experiment",
+      experimentId: `exp-${id}`,
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      protocolFingerprint: FP,
+      taskId: "task-1",
+      experimentTaskAttemptId: attemptId,
+      trial: 0,
+    },
+    task: { title: "T", prompt: "prompt text", systemPrompt: "system text", temperature: 0 },
+    evaluation: {
+      profile: {
+        id: "rub-1",
+        version: 3,
+        name: "Rubric",
+        description: "",
+        judgeInstruction: "",
+        criteria: [],
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      candidateMessages: [],
+    },
+    candidates: [
+      {
+        candidateId: "cand-1",
+        slotId: "slot-1",
+        modelKey: "openrouter:model-m1",
+        providerId: "openrouter",
+        model: "model-m1",
+        slug: "model-m1",
+        acceptedAttemptId: attemptId,
+        attempts: [
+          {
+            attemptId,
+            messages: [{ role: "user", content: "solve it" }],
+            startedAt: 0,
+            finishedAt: 10,
+            status: "completed",
+            output: "candidate output",
+            tokensIn: null,
+            tokensOut: null,
+            error: null,
+          },
+        ],
+      },
+    ],
+    judge: {
+      status: "done",
+      acceptedAttemptId: "j-1",
+      report: {
+        labelMap: [{ label: "A", candidateId: "cand-1" }],
+        evaluationsById: {
+          "cand-1": {
+            candidateId: "cand-1",
+            blindLabel: "A",
+            overallScore: 4,
+            position: "1",
+            rationale: "good",
+            strengths: [],
+            deductions: [],
+            missedRequirements: [],
+            criterionScores: [
+              { criterionId: "quality", label: "quality", kind: "graded", score: 4, rationale: "" },
+            ],
+          },
+        },
+        comparisons: [],
+      },
+      consensus: null,
+      attempts: [
+        {
+          attemptId: "j-1",
+          providerId: "openrouter",
+          model: "org/judge",
+          instruction: "judge instruction text",
+          messages: [],
+          blindLabelToCandidateId: { A: "cand-1" },
+          candidateAttemptIdsByCandidateId: { "cand-1": attemptId },
+          startedAt: 0,
+          finishedAt: 10,
+          status: "completed",
+          error: null,
+          report: null,
+          consensus: null,
+        },
+      ],
+    },
+    fusion: { status: "idle", acceptedAttemptId: null, attempts: [] },
+    winnerKeys: [],
+  };
+  const summary: FullRunSummaryV2 = {
+    kind: "full",
+    schemaVersion: 2,
+    id,
+    revision: 1,
+    createdAt: 0,
+    completedAt: 10,
+    status: "completed",
+    mode: "rank",
+    source: record.source,
+    taskTitle: "T",
+    taskExcerpt: "prompt text",
+    modelKeys: ["openrouter:model-m1"],
+    winnerKeys: [],
+    scoresByModelKey: {},
+    judgeModelKey: null,
+    evaluationProfileId: null,
+    evaluationProfileVersion: null,
+    detailAvailable: true,
+    searchText: "prompt text",
+  };
+  return { record, summary };
+}
+
+function terminalExperiment(experimentId: string, runId: string): ExperimentRecord {
+  return {
+    id: experimentId,
+    revision: 1,
+    suiteId: "suite-1",
+    suiteVersion: 1,
+    protocolFingerprint: FP,
+    status: "completed",
+    execution: null,
+    snapshot: {
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      tasks: [
+        {
+          id: "task-1",
+          title: "T",
+          prompt: "prompt text",
+          systemPrompt: "system text",
+          evaluation: { kind: "inherit" },
+          judgeInstructionOverride: "",
+          order: 0,
+          taskVersionRef: { taskId: "task-canon", version: 2 },
+        } as ExperimentRecord["snapshot"]["tasks"][number] & {
+          taskVersionRef: { taskId: string; version: number };
+        },
+      ],
+      modelSlots: [
+        {
+          id: "s1",
+          providerId: "openrouter",
+          provider: "X",
+          model: "M1",
+          slug: "model-m1",
+          enabled: true,
+        },
+      ],
+      defaultJudge: { providerId: "openrouter", model: "org/judge" },
+      defaultEvaluation: { kind: "holistic" },
+      profiles: [],
+      protocolFingerprint: FP,
+      createdAt: 0,
+    },
+    tasks: [
+      {
+        taskId: "task-1",
+        selectedAttemptId: `att-${runId}`,
+        attempts: [
+          {
+            id: `att-${runId}`,
+            runId,
+            trial: 0,
+            status: "completed",
+            startedAt: 0,
+            finishedAt: 10,
+            error: null,
+          },
+        ],
+      },
+    ],
+    createdAt: 0,
+    updatedAt: 0,
+  };
+}
+
+describe("ExperimentControllerProvider startup evidence reindex", () => {
+  it("backfills a committed evaluation source on mount without touching the run", async () => {
+    const db = new RSembleEvaluationDB(
+      "test-evidence-backfill-" + Math.random().toString(36).slice(2),
+    );
+    await db.open();
+    const runRepo = createRunRepository(db);
+    const evalRepo = createEvaluationRepository(db, runRepo);
+    const { record, summary } = terminalEvaluationSource("run-eval");
+    const experiment = terminalExperiment("exp-run-eval", "run-eval");
+    await runRepo.create(record, summary);
+    await db.experiments.put({
+      id: experiment.id,
+      experiment,
+      revision: experiment.revision,
+      suiteId: experiment.suiteId,
+      suiteVersion: experiment.suiteVersion,
+      protocolFingerprint: experiment.protocolFingerprint,
+      createdAt: experiment.createdAt,
+      status: experiment.status,
+    });
+    // Exact records as persisted — the reindex must not rewrite any of them.
+    const beforeDetail = await runRepo.get("run-eval");
+    const beforeSummary = (await db.runSummaries.get("run-eval"))?.summary;
+    const beforeExperiment = (await db.experiments.get("exp-run-eval"))?.experiment;
+
+    const value: RepositoryContextValue = {
+      taskRepo: null,
+      runRepo,
+      evalRepo,
+      fusionRepo: null,
+      db,
+      storageState: "ready",
+      retry: () => undefined,
+    };
+    const h = render(
+      <MemoryRouter>
+        <RepositoryContext.Provider value={value}>
+          <ExecutionOwnerProvider>
+            <ExperimentControllerProvider>
+              <div />
+            </ExperimentControllerProvider>
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const evidenceRepo = createEvidenceRepository(db);
+    await waitUntil(
+      async () => (await evidenceRepo.getIndexJob("run-eval"))?.status === "complete",
+    );
+    // Evaluation completion and the exact source records are untouched.
+    expect((await runRepo.get("run-eval"))?.status).toBe("completed");
+    expect(await runRepo.get("run-eval")).toEqual(beforeDetail);
+    expect((await db.runSummaries.get("run-eval"))?.summary).toEqual(beforeSummary);
+    expect((await db.experiments.get("exp-run-eval"))?.experiment).toEqual(beforeExperiment);
+
+    cleanup(h);
+    db.close();
+    await db.delete();
+  });
+
+  it("records an owning error job when a source cannot be derived", async () => {
+    const db = new RSembleEvaluationDB(
+      "test-evidence-error-" + Math.random().toString(36).slice(2),
+    );
+    await db.open();
+    const runRepo = createRunRepository(db);
+    const evalRepo = createEvaluationRepository(db, runRepo);
+    // The run committed but its experiment record is missing: derivation
+    // fails and the failure lands on the owning index-job row only.
+    const { record, summary } = terminalEvaluationSource("run-eval");
+    await runRepo.create(record, summary);
+
+    const value: RepositoryContextValue = {
+      taskRepo: null,
+      runRepo,
+      evalRepo,
+      fusionRepo: null,
+      db,
+      storageState: "ready",
+      retry: () => undefined,
+    };
+    const h = render(
+      <MemoryRouter>
+        <RepositoryContext.Provider value={value}>
+          <ExecutionOwnerProvider>
+            <ExperimentControllerProvider>
+              <div />
+            </ExperimentControllerProvider>
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const evidenceRepo = createEvidenceRepository(db);
+    await waitUntil(async () => (await evidenceRepo.getIndexJob("run-eval"))?.status === "error");
+    const job = await evidenceRepo.getIndexJob("run-eval");
+    expect(job?.errorKind).toBe("source-unresolvable");
+    expect(await evidenceRepo.countObservations()).toBe(0);
+    // The exact run keeps its terminal status and summary.
+    expect((await runRepo.get("run-eval"))?.status).toBe("completed");
+    expect((await db.runSummaries.get("run-eval"))?.status).toBe("completed");
+
+    cleanup(h);
+    db.close();
+    await db.delete();
+  });
+
+  it("stays silent when no evidence sources exist", async () => {
+    const db = new RSembleEvaluationDB(
+      "test-evidence-silent-" + Math.random().toString(36).slice(2),
+    );
+    await db.open();
+    const runRepo = createRunRepository(db);
+    const evalRepo = createEvaluationRepository(db, runRepo);
+    const value: RepositoryContextValue = {
+      taskRepo: null,
+      runRepo,
+      evalRepo,
+      fusionRepo: null,
+      db,
+      storageState: "ready",
+      retry: () => undefined,
+    };
+    const h = render(
+      <MemoryRouter>
+        <RepositoryContext.Provider value={value}>
+          <ExecutionOwnerProvider>
+            <ExperimentControllerProvider>
+              <div />
+            </ExperimentControllerProvider>
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settle(250);
+    // No sources: no job markers, no observations, no fabricated history.
+    expect(await db.evidenceIndexJobs.count()).toBe(0);
+    expect(await db.observations.count()).toBe(0);
     cleanup(h);
     db.close();
     await db.delete();

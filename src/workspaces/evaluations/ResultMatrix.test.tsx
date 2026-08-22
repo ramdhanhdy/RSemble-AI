@@ -578,7 +578,7 @@ describe("ResultMatrix — recovery actions (spec §11.1)", () => {
     const h = renderWithRecovery();
     const rows = h.$$("tbody tr");
     const cell = tdCells(rows[1])[2];
-    const action = cell.querySelector("button");
+    const action = cell.querySelector("button[data-recovery-action]");
     expect(action).not.toBeNull();
     expect(action?.textContent).toContain("Complete missing result");
     cleanup(h);
@@ -588,7 +588,7 @@ describe("ResultMatrix — recovery actions (spec §11.1)", () => {
     const h = renderWithRecovery();
     const rows = h.$$("tbody tr");
     const cell = tdCells(rows[2])[2]; // no-accepted-attempt, no run
-    const action = cell.querySelector("button");
+    const action = cell.querySelector("button[data-recovery-action]");
     expect(action).not.toBeNull();
     expect(action?.textContent).toContain("Retry incomplete task");
     cleanup(h);
@@ -598,11 +598,15 @@ describe("ResultMatrix — recovery actions (spec §11.1)", () => {
     const onRepairRequest = vi.fn();
     const h = renderWithRecovery(REPAIRABLE, onRepairRequest);
     const rows = h.$$("tbody tr");
-    const action = tdCells(rows[1])[2].querySelector("button") as HTMLButtonElement;
+    const action = tdCells(rows[1])[2].querySelector(
+      "button[data-recovery-action]",
+    ) as HTMLButtonElement;
     act(() => action.click());
     expect(onRepairRequest).toHaveBeenCalledWith("t2", KEY_C);
     // fallback cell reports its task too
-    const fallback = tdCells(rows[2])[2].querySelector("button") as HTMLButtonElement;
+    const fallback = tdCells(rows[2])[2].querySelector(
+      "button[data-recovery-action]",
+    ) as HTMLButtonElement;
     act(() => fallback.click());
     expect(onRepairRequest).toHaveBeenCalledWith("t3", KEY_C);
     cleanup(h);
@@ -622,14 +626,16 @@ describe("ResultMatrix — recovery actions (spec §11.1)", () => {
 
   it("renders no action buttons when no recovery handler is wired", () => {
     const h = renderMatrix();
-    expect(h.$$("tbody button")).toHaveLength(0);
+    expect(h.$$("tbody button[data-recovery-action]")).toHaveLength(0);
     cleanup(h);
   });
 
   it("keeps 44px action targets with keyboard focus-visible rings", () => {
     const h = renderWithRecovery();
     const rows = h.$$("tbody tr");
-    const action = tdCells(rows[1])[2].querySelector("button") as HTMLButtonElement;
+    const action = tdCells(rows[1])[2].querySelector(
+      "button[data-recovery-action]",
+    ) as HTMLButtonElement;
     expect(action.className).toContain("min-h-[44px]");
     expect(action.className).toContain("focus-visible:ring-2");
     expect(action.className).toContain("focus-visible:ring-accent");
@@ -739,8 +745,8 @@ describe("ExperimentResults — summary (plan 7.2 #13)", () => {
     const runLink = h.$$("a").find((a) => a.getAttribute("href") === "/runs/run-f1");
     expect(runLink).not.toBeUndefined();
     // summary chrome
-    expect(h.container.textContent).toContain("Suite v2");
-    const backLink = h.$$("a").find((a) => a.getAttribute("href") === "/evaluations/suite-1");
+    expect(h.container.textContent).toContain("Task Set v2");
+    const backLink = h.$$("a").find((a) => a.getAttribute("href") === "/evaluations/sets/suite-1");
     expect(backLink).not.toBeUndefined();
     cleanup(h);
   });

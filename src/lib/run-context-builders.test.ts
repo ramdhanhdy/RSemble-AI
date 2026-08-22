@@ -27,7 +27,7 @@ function sampleSource(overrides: Partial<FrozenContextSource> = {}): FrozenConte
     prompt: "hello",
     systemPrompt: "sys",
     temperature: 0.7,
-    evaluation: { profileId: "p1", profileVersion: 1 } as never,
+    evaluation: { rubricId: "p1", rubricVersion: 1 } as never,
     slots: [slot],
     critic: { providerId: "openrouter", model: "judge" },
     judgeInstruction: "",

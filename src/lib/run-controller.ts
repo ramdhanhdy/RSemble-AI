@@ -3,18 +3,25 @@
 // Owns fanout → judge → fusion, abort, retry, and fusion triggering.
 // =============================================================================
 
-import { type Candidate } from "../studio-data";
+import { type Candidate, type BlindCandidate } from "../studio-data";
 import {
   buildFanoutJobs,
+  candidateFullText,
   isUsableCandidate,
   checkFusionEligibility,
   checkAttachmentEligibility,
 } from "./pipeline";
-import { resolveEvaluationProfile } from "./evaluations/evaluation-profile-adhoc";
-import { rankValueFromResults, isComplianceOnlyProfile } from "./evaluations/evaluation-profile";
+import { resolveEvaluationRubric } from "./evaluations/evaluation-rubric-adhoc";
+import { rankValueFromResults, isComplianceOnlyRubric } from "./evaluations/evaluation-rubric";
 import { evaluateComparePreflight, type ComparePreflight } from "./compare-preflight";
 import type { RunRecorder } from "./persistence/run-recorder";
 import type { ExecutionFence } from "./persistence/run-types";
+import type { ComparisonRepository } from "./persistence/comparison-repository";
+import type { TaskRepository } from "./persistence/task-repository";
+import {
+  executePreCallPersistence,
+  type PreCallPersistenceResult,
+} from "./compare/pre-call-persistence";
 import { HEARTBEAT_INTERVAL, type ExecutionLease, type LeaseInfo } from "./execution-lease";
 import { createExecutionHeartbeat, type ExecutionHeartbeat } from "./execution-heartbeat";
 import { createRunExecutor, type RunExecutorEvents } from "./run-executor";
@@ -26,6 +33,24 @@ import {
 } from "./run-context-builders";
 import type { StudioState, Action, RunEvaluationContext } from "../studio-engine";
 import type { StreamDeltaBuffer } from "./stream-buffer";
+import {
+  revalidatePlaybookCostPreflight,
+  type PlaybookCostPreflightInput,
+  type PlaybookRunBinding,
+} from "./compare/playbook-execution";
+import {
+  evaluatePlaybookCompatibility,
+  modelConfigRefForIdentity,
+} from "./studies/policy/playbook-compatibility";
+import type {
+  ComparisonTaskBinding,
+  PolicyPlaybookAttachment,
+  ComparisonMode,
+} from "./compare/comparison-result-types";
+import { renderRecipeMessages, renderRefineWinnerMessages } from "./evaluations/fusion-recipes";
+import type { FusionRecipeVersion } from "./evaluations/fusion-study-types";
+import { getProvider } from "./providers/registry";
+import type { ChatMessage } from "./providers/types";
 
 export interface RunControllerDeps {
   stateRef: React.MutableRefObject<StudioState>;
@@ -42,6 +67,9 @@ export interface RunControllerDeps {
    *  localStorage addRun calls. When absent (storage unavailable), the
    *  controller keeps evidence in memory only — never falls back to addRun. */
   recorder?: RunRecorder;
+  comparisonRepo?: ComparisonRepository | null;
+  /** Canonical Task repository for resolving Task Versions and instances (spec §5). */
+  taskRepo?: TaskRepository | null;
   /** Root-provided readiness snapshot so every paid entry point uses the same
    * deterministic preflight result. Tests may omit it; the local fallback still
    * enforces task/cardinality/attachment gates without network calls. */
@@ -56,6 +84,7 @@ export function createRunController(deps: RunControllerDeps) {
   const { stateRef, dispatch, runEpochRef, abortControllersRef, streamBuffer, recorder } = deps;
   const random = deps.random ?? Math.random;
   const now = deps.now ?? (() => Date.now());
+  let runCounter = 0;
   const executor = createRunExecutor({ random, now });
   const preflight =
     deps.preflight ??
@@ -276,14 +305,14 @@ export function createRunController(deps: RunControllerDeps) {
             attachmentsToJudge: s.attachmentsToJudge,
             reasoningPolicy: s.reasoningPolicy,
           });
-        const runId = `run-${now()}-${random().toString(36).slice(2, 8)}`;
+        const runId = runIdRef.current ?? `run-${now()}-${random().toString(36).slice(2, 8)}`;
         runIdRef.current = runId;
         // The eligibility gate may have filtered slots for this run
         // (spec §5.1 auto-disable) — placeholders must match what the executor
         // actually fans out, or the candidate roster would include ghosts.
         const jobs = buildFanoutJobs(slotsOverride ?? s.slots);
         const placeholders = buildPlaceholders(jobs, now());
-        if (recorder) {
+        if (recorder && !runIdRef.current) {
           await assertCurrentLease(leaseToken);
           await recorder.begin({
             runId,
@@ -297,10 +326,10 @@ export function createRunController(deps: RunControllerDeps) {
                 temperature: s.temperature,
               }),
             },
-            // Persist the resolved evaluation profile so run evidence (and
+            // Persist the resolved evaluation rubric so run evidence (and
             // summary provenance) reflects the actual frozen scoring protocol.
             evaluation: {
-              profile: resolveEvaluationProfile(context.evaluation),
+              profile: resolveEvaluationRubric(context.evaluation),
               candidateMessages: [],
             },
             // The eligibility gate may have filtered slots — the record must
@@ -438,16 +467,16 @@ export function createRunController(deps: RunControllerDeps) {
             // the mutable command-pane mode after execution begins.
             mode: frozenContext?.mode ?? capturedMode,
             consensus: input.consensus!,
-            // Resolve the frozen profile once per Judge result, not once per
+            // Resolve the frozen rubric once per Judge result, not once per
             // candidate (spec §16.3 domain consistency; avoids redundant work).
             scoresById: (() => {
-              const profile = frozenContext
-                ? resolveEvaluationProfile(frozenContext.evaluation)
+              const rubric = frozenContext
+                ? resolveEvaluationRubric(frozenContext.evaluation)
                 : null;
               return Object.fromEntries(
                 Object.entries(input.report.evaluationsById).map(([cid, ev]) => {
-                  if (profile) {
-                    const rv = rankValueFromResults(ev.criterionScores, profile);
+                  if (rubric) {
+                    const rv = rankValueFromResults(ev.criterionScores, rubric);
                     if (rv !== null) return [cid, rv];
                   }
                   return [cid, ev.overallScore];
@@ -457,10 +486,10 @@ export function createRunController(deps: RunControllerDeps) {
             // Compliance-only runs carry C in [0,1]; live surfaces must render
             // it as a C-labeled percentage, never a floored rankScore (§16.3).
             scoreDomain: (() => {
-              const profile = frozenContext
-                ? resolveEvaluationProfile(frozenContext.evaluation)
+              const rubric = frozenContext
+                ? resolveEvaluationRubric(frozenContext.evaluation)
                 : null;
-              return isComplianceOnlyProfile(profile) ? "compliance" : "rank";
+              return isComplianceOnlyRubric(rubric) ? "compliance" : "rank";
             })(),
             report: input.report,
           });
@@ -494,6 +523,7 @@ export function createRunController(deps: RunControllerDeps) {
   }
 
   const runFanout = async () => {
+    runIdRef.current = null;
     const s = stateRef.current;
     const gate = preflight(s);
     if (!gate.ok) {
@@ -549,11 +579,59 @@ export function createRunController(deps: RunControllerDeps) {
       attachmentsToJudge: s.attachmentsToJudge,
       reasoningPolicy: s.reasoningPolicy,
     });
+
+    // Atomic pre-call persistence sequence (spec §5 steps 1–5):
+    // Persist envelope, immutable input snapshot, and canonical Task Instance/linkage
+    // BEFORE any paid provider call.
+    const shouldPersist = Boolean(
+      recorder || deps.comparisonRepo || deps.taskRepo || s.taskBinding,
+    );
+    let preCallResult: PreCallPersistenceResult | null = null;
+    if (shouldPersist) {
+      try {
+        preCallResult = await executePreCallPersistence(
+          {
+            recorder,
+            comparisonRepo: deps.comparisonRepo,
+            taskRepo: deps.taskRepo,
+            now,
+            mintRunId: () => `run-${now()}-${++runCounter}-${random().toString(36).slice(2, 8)}`,
+          },
+          {
+            mode: s.mode,
+            prompt: s.prompt,
+            systemPrompt: s.systemPrompt,
+            temperature: s.temperature,
+            slots,
+            critic: s.critic,
+            judgeInstruction: s.judgeInstruction,
+            evaluation: s.evaluation,
+            attachments: s.attachments,
+            attachmentsToJudge: s.attachmentsToJudge,
+            reasoningPolicy: s.reasoningPolicy,
+            taskBinding: s.taskBinding ?? null,
+          },
+        );
+        runIdRef.current = preCallResult.runId;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        dispatch({ type: "FANOUT_BLOCKED", reason: `Pre-call persistence failed: ${message}` });
+        return;
+      }
+    }
+
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
 
     if (!(await acquireSharedLease(`compare-${epoch}`, abort))) {
+      if (recorder && runIdRef.current) {
+        try {
+          await recorder.markAborted(runIdRef.current);
+        } catch {
+          // best-effort
+        }
+      }
       dispatch({
         type: "FANOUT_BLOCKED",
         reason:
@@ -885,6 +963,368 @@ export function createRunController(deps: RunControllerDeps) {
       }
     })();
   };
+  const runWithPlaybook = async (binding: PlaybookRunBinding): Promise<void> => {
+    runIdRef.current = null;
+    if (!binding.preflightConfirmedAt || binding.preflightConfirmedAt <= 0) {
+      dispatch({
+        type: "FANOUT_BLOCKED",
+        reason: "Explicit preflight confirmation is required before running with a playbook.",
+      });
+      return;
+    }
+
+    const s = stateRef.current;
+    const slots = s.slots;
+    const enabledSlots = slots.filter((sl) => sl.enabled);
+    const candidateConfigurations = enabledSlots.map((sl) =>
+      modelConfigRefForIdentity(sl.providerId, sl.model),
+    );
+    const rawState = s as unknown as Record<string, unknown>;
+    const taskSetCtx =
+      (typeof rawState.taskSetContext === "object" && rawState.taskSetContext !== null
+        ? (rawState.taskSetContext as { taskSetId: string; version: number })
+        : null) ??
+      binding.taskSetContext ??
+      null;
+
+    const resolvedTaskBinding: ComparisonTaskBinding | null =
+      s.taskBinding ??
+      (binding.taskBinding &&
+      binding.taskBinding.kind === "canonical" &&
+      typeof binding.taskBinding.taskVersion === "number"
+        ? {
+            kind: "canonical",
+            taskId: binding.taskBinding.taskId,
+            taskVersion: binding.taskBinding.taskVersion,
+          }
+        : binding.taskBinding?.kind === "ad_hoc"
+          ? binding.taskBinding
+          : null);
+    // F4: pin the session judge (critic) and rubric against the study's
+    // sealed judge1/judge2 and rubric so the run record stays truthful about
+    // the judge/rubric actually used.
+    const sessionRubric =
+      s.evaluation.kind === "profile" && s.evaluation.ref
+        ? { rubricId: s.evaluation.ref.id, version: s.evaluation.ref.version }
+        : null;
+    const compatibility = evaluatePlaybookCompatibility({
+      playbookId: binding.playbookId,
+      playbook: binding.playbook,
+      study: binding.study,
+      pinnedTaskSetVersion: binding.pinnedTaskSetVersion ?? undefined,
+      poolVersion: binding.poolVersion,
+      candidateConfigurations,
+      taskBinding: resolvedTaskBinding,
+      taskSetContext: taskSetCtx,
+      judge: { providerId: s.critic.providerId, model: s.critic.model },
+      rubric: sessionRubric,
+    });
+
+    if (!compatibility.ok) {
+      dispatch({
+        type: "FANOUT_BLOCKED",
+        reason: `Playbook compatibility check failed: ${compatibility.reason}`,
+      });
+      return;
+    }
+    const rec = binding.playbook.recommendation;
+    const isAdoptSynthesis =
+      rec.kind === "adopt" && (rec.policy === "fuse" || rec.policy === "refine");
+    if (isAdoptSynthesis && !binding.recipeVersion) {
+      dispatch({
+        type: "FANOUT_BLOCKED",
+        reason: `Playbook policy '${rec.policy}' requires a resolved fusion recipe version.`,
+      });
+      return;
+    }
+    // F5: revalidate the confirmed cost preflight at run start. Pricing may
+    // have changed (or the preflight been tampered with) between confirmation
+    // and execution; block before any provider call when the live re-estimate
+    // no longer matches the confirmed total.
+    const preflightInput: PlaybookCostPreflightInput = {
+      prompt: s.prompt,
+      slots,
+      critic: { providerId: s.critic.providerId, model: s.critic.model },
+      recommendation: rec,
+      synthesizer:
+        isAdoptSynthesis && binding.recipeVersion
+          ? {
+              providerId: binding.recipeVersion.synthesizer.providerId,
+              model: binding.recipeVersion.synthesizer.model,
+            }
+          : null,
+    };
+    const preflightCheck = revalidatePlaybookCostPreflight(binding, preflightInput);
+    if (!preflightCheck.ok) {
+      dispatch({ type: "FANOUT_BLOCKED", reason: preflightCheck.reason });
+      return;
+    }
+    const runMode: ComparisonMode = isAdoptSynthesis ? "fuse" : "rank";
+    const frozenContext = buildFrozenContext({
+      mode: runMode,
+      prompt: s.prompt,
+      systemPrompt: s.systemPrompt,
+      temperature: s.temperature,
+      evaluation: s.evaluation,
+      slots,
+      critic: { ...s.critic },
+      judgeInstruction: s.judgeInstruction,
+      attachments: s.attachments,
+      attachmentsToJudge: s.attachmentsToJudge,
+      reasoningPolicy: s.reasoningPolicy,
+    });
+
+    const policyPlaybookAttachment: PolicyPlaybookAttachment = {
+      playbookId: binding.playbookId,
+      studyId: binding.study.id,
+      definitionFingerprint: binding.study.definitionFingerprint,
+      compatibility: compatibility.receipt,
+    };
+
+    let preCallResult: PreCallPersistenceResult | null = null;
+    try {
+      preCallResult = await executePreCallPersistence(
+        {
+          recorder,
+          comparisonRepo: deps.comparisonRepo,
+          taskRepo: deps.taskRepo,
+          now,
+          mintRunId: () => `run-${now()}-${++runCounter}-${random().toString(36).slice(2, 8)}`,
+        },
+        {
+          mode: runMode,
+          prompt: s.prompt,
+          systemPrompt: s.systemPrompt,
+          temperature: s.temperature,
+          slots,
+          critic: s.critic,
+          judgeInstruction: s.judgeInstruction,
+          evaluation: s.evaluation,
+          attachments: s.attachments,
+          attachmentsToJudge: s.attachmentsToJudge,
+          reasoningPolicy: s.reasoningPolicy,
+          taskBinding: resolvedTaskBinding,
+          policyPlaybook: policyPlaybookAttachment,
+        },
+      );
+      runIdRef.current = preCallResult.runId;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      dispatch({ type: "FANOUT_BLOCKED", reason: `Pre-call persistence failed: ${message}` });
+      return;
+    }
+
+    const epoch = ++runEpochRef.current;
+    abortControllersRef.current.clear();
+    const abort = freshAbort();
+
+    if (!(await acquireSharedLease(`compare-${epoch}`, abort))) {
+      if (recorder && runIdRef.current) {
+        try {
+          await recorder.markAborted(runIdRef.current);
+        } catch {
+          // best-effort
+        }
+      }
+      dispatch({
+        type: "FANOUT_BLOCKED",
+        reason:
+          deps.lease === null
+            ? "Shared execution storage is unavailable; Compare is blocked to prevent duplicate paid runs."
+            : "Another execution is active in this browser. Wait for it to finish before comparing.",
+      });
+      return;
+    }
+    const leaseToken = activeLeaseRef.current;
+    const leaseScope = leaseEpoch;
+
+    try {
+      const events = makeEvents(epoch, false, slots, frozenContext, leaseToken ?? undefined);
+      await executor.executeTask(
+        {
+          source: { kind: "adhoc" },
+          mode: "rank",
+          task: { ...frozenContext.task! },
+          evaluation: frozenContext.evaluation,
+          slots: frozenContext.slots!,
+          critic: frozenContext.critic!,
+          judgeInstruction: frozenContext.judgeInstruction!,
+          attachments: frozenContext.attachments,
+          attachmentsToJudge: frozenContext.attachmentsToJudge,
+          reasoningPolicy: { ...frozenContext.reasoningPolicy! },
+        },
+        events,
+        abort.signal,
+      );
+
+      if (runEpochRef.current !== epoch || abort.signal.aborted) return;
+
+      const s2 = stateRef.current;
+      const done = s2.candidates.filter(isUsableCandidate);
+      if (done.length < 2) {
+        dispatch({
+          type: "INSUFFICIENT_CANDIDATES",
+          done: done.length,
+          failed: s2.candidates.length - done.length,
+        });
+        return;
+      }
+
+      if (s2.judgeStatus !== "done" || s2.judgeReport === null) {
+        return;
+      }
+
+      if (isAdoptSynthesis) {
+        const recorded =
+          recorder && runIdRef.current ? await recorder.getRecord(runIdRef.current) : null;
+        const acceptedJudgeAttemptId = recorded?.judge.acceptedAttemptId ?? "";
+        const acceptedJudge = recorded?.judge.attempts.find(
+          (a) => a.attemptId === acceptedJudgeAttemptId,
+        );
+        const blindLabelToCandidateId: Record<string, string> = acceptedJudge
+          ? acceptedJudge.blindLabelToCandidateId
+          : {};
+        const candidateAttemptIdsByCandidateId: Record<string, string> =
+          acceptedAttemptIdsByCandidate(recorded);
+        const blindCandidates: BlindCandidate[] = [];
+        for (const c of done) {
+          const label =
+            Object.entries(blindLabelToCandidateId).find(([_, cid]) => cid === c.id)?.[0] ?? "";
+          if (label) {
+            blindCandidates.push({
+              label,
+              content: candidateFullText(c),
+              candidateId: c.id,
+            });
+          }
+        }
+        blindCandidates.sort((a, b) => a.label.localeCompare(b.label));
+
+        const recipe = binding.recipeVersion!;
+        const recipeVersion: FusionRecipeVersion = {
+          id: recipe.recipeId,
+          version: recipe.version,
+          recipeFamily: recipe.recipeFamily,
+          promptVersion: recipe.promptVersion,
+          judgeAnalysisMode: recipe.judgeAnalysisMode,
+          rubricAccess: recipe.rubricAccess,
+          verification: recipe.verification,
+          synthesizer: recipe.synthesizer,
+        };
+
+        let messages: ChatMessage[];
+        if (rec.policy === "fuse") {
+          messages = renderRecipeMessages(recipeVersion, {
+            prompt: s.prompt,
+            profile: resolveEvaluationRubric(s.evaluation),
+            blindCandidates,
+            judgeReport: s2.judgeReport,
+            consensus: s2.consensus,
+            judgeInstruction: s.judgeInstruction,
+            attachments: s.attachments,
+          });
+        } else {
+          const evals = Object.entries(s2.judgeReport.evaluationsById).map(([cid, ev]) => {
+            const label =
+              Object.entries(blindLabelToCandidateId).find(([_, id]) => id === cid)?.[0] ?? "A";
+            return {
+              label,
+              score: ev.overallScore,
+              content: blindCandidates.find((b) => b.candidateId === cid)?.content ?? "",
+            };
+          });
+          const sorted = [...evals].sort((a, b) => b.score - a.score);
+          const winnerEval = sorted[0];
+          const winnerLabel = winnerEval ? winnerEval.label : (blindCandidates[0]?.label ?? "A");
+          const winnerContent = winnerEval
+            ? winnerEval.content
+            : done[0]
+              ? candidateFullText(done[0])
+              : "";
+
+          messages = renderRefineWinnerMessages({
+            prompt: s.prompt,
+            rubric: resolveEvaluationRubric(s.evaluation),
+            winnerLabel,
+            winnerContent,
+            blindCandidates,
+            rubricAccess: recipeVersion.rubricAccess,
+            verification: recipeVersion.verification,
+            judgeInstruction: s.judgeInstruction,
+            attachments: s.attachments,
+          });
+        }
+
+        const synthesizer = recipeVersion.synthesizer;
+        const provider = getProvider(synthesizer.providerId);
+        const fusionAttemptId = `fa-${now()}-${random().toString(36).slice(2, 8)}`;
+
+        dispatch({ type: "FUSION_START" });
+        if (recorder && runIdRef.current) {
+          await recorder.beginFusionAttempt(
+            runIdRef.current,
+            fusionAttemptId,
+            {
+              providerId: synthesizer.providerId,
+              model: synthesizer.model,
+              messages,
+              sourceJudgeAttemptId: acceptedJudgeAttemptId,
+              candidateAttemptIdsByCandidateId,
+              startedAt: now(),
+              playbookRef: {
+                playbookId: binding.playbookId,
+                studyId: binding.study.id,
+                definitionFingerprint: binding.study.definitionFingerprint,
+                compatibility: compatibility.receipt,
+              },
+            },
+            fenceFromLease(leaseToken),
+          );
+        }
+
+        try {
+          const text = await provider.chatCompletion({
+            model: synthesizer.model,
+            messages,
+            temperature: 0.3,
+            signal: abort.signal,
+          });
+          if (recorder && runIdRef.current) {
+            await recorder.finishFusionAttempt(
+              runIdRef.current,
+              fusionAttemptId,
+              {
+                status: "completed",
+                result: text,
+                finishedAt: now(),
+                error: null,
+              },
+              fenceFromLease(leaseToken),
+            );
+          }
+          dispatch({ type: "FUSION_RESULT", text });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (recorder && runIdRef.current) {
+            await recorder.finishFusionAttempt(
+              runIdRef.current,
+              fusionAttemptId,
+              {
+                status: "failed",
+                result: null,
+                finishedAt: now(),
+                error: { message },
+              },
+              fenceFromLease(leaseToken),
+            );
+          }
+          dispatch({ type: "FUSION_FAILED", error: message });
+        }
+      }
+    } finally {
+      await releaseSharedLease(leaseToken, leaseScope);
+    }
+  };
 
   return {
     runFanout,
@@ -892,5 +1332,6 @@ export function createRunController(deps: RunControllerDeps) {
     retryCandidate,
     retryJudge,
     triggerFusion,
+    runWithPlaybook,
   };
 }

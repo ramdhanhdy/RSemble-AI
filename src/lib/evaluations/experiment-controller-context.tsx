@@ -20,6 +20,11 @@ import {
 import { createExecutionLease, type ExecutionLease } from "../execution-lease";
 import { createRunExecutor } from "../run-executor";
 import { useExecutionOwner } from "../execution-owner-context";
+import {
+  createEvidenceIndexingRuntime,
+  type EvidenceIndexingRuntime,
+} from "../persistence/evidence-reindex";
+import type { EvaluationSourceResolver } from "../evidence/derive-observations";
 import { createExperimentController, type ExperimentController } from "./experiment-controller";
 import {
   ExperimentControllerContext,
@@ -33,9 +38,25 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
   const composed = useMemo<{
     controller: ExperimentController;
     lease: ExecutionLease;
+    evidenceRuntime: EvidenceIndexingRuntime;
   } | null>(() => {
     if (!db || !evalRepo || !runRepo) return null;
     const lease = createExecutionLease(db);
+    // Local evidence-indexing runtime (evidence spec §4, §11): the post-commit
+    // derivation queue plus the bounded, lease-guarded reindex pass. Both
+    // resolve persisted verifier outcomes from the repository-backed seam and
+    // are separate from the paid-execution owner and the experiment unit of
+    // work. Neither ever invokes a provider or executes a verifier.
+    const sourceResolver: EvaluationSourceResolver = {
+      getExperiment: (id) => evalRepo.getExperiment(id),
+      getRun: (id) => runRepo.get(id),
+    };
+    const evidenceRuntime = createEvidenceIndexingRuntime({
+      db,
+      resolver: sourceResolver,
+      // No reindexOwnerId: the runtime mints a unique owner per tab/provider
+      // instance so concurrent startup passes serialize under the lease.
+    });
     const controller = createExperimentController({
       evalRepo,
       uow: createExperimentUnitOfWork(new DexieExperimentStore(db)),
@@ -46,8 +67,16 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
       generateId: () => crypto.randomUUID(),
       now: () => Date.now(),
       heartbeatMs: 0, // 0 selects the controller default (3000ms) lease-renew cadence
+      onTaskTerminalCommitted: (event) => {
+        if (event.status !== "completed" && event.status !== "partial") return;
+        void evidenceRuntime.persistThenEnqueue({
+          sourceKind: "evaluation",
+          sourceResultId: event.runId,
+          sourceRevision: event.runRevision,
+        });
+      },
     });
-    return { controller, lease };
+    return { controller, lease, evidenceRuntime };
   }, [db, evalRepo, runRepo, owner]);
   const controller = composed?.controller ?? null;
   const [recoveredController, setRecoveredController] = useState<ExperimentController | null>(null);
@@ -75,6 +104,14 @@ export function ExperimentControllerProvider({ children }: { children: ReactNode
         // Sweep is idempotent; a later startup retries.
       }
       if (!cancelled) setRecoveredController(controller);
+      // Bounded local evidence backfill/reindex (spec §11.3): silent when no
+      // work exists; failures land on the owning index-job rows without ever
+      // changing Evaluation completion. The storage-work lease serializes
+      // tabs; never awaits the paid-execution recovery above.
+      void composed.evidenceRuntime.reindex().catch(() => {
+        // Contained: the next startup (or reindex retry) resumes via the
+        // deterministic cursor.
+      });
     })();
     return () => {
       cancelled = true;

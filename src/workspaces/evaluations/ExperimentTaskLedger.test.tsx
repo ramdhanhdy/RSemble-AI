@@ -72,7 +72,10 @@ afterEach(() => {
 
 function makeController(): ExperimentController {
   return {
-    start: vi.fn(async (): Promise<StartResult> => ({ ok: true, experimentId: "exp-1" })),
+    start: vi.fn(async (_materializationId: string): Promise<StartResult> => ({
+      ok: true,
+      experimentId: "exp-1",
+    })),
     requestPause: vi.fn(async () => {}),
     resume: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
     abort: vi.fn(async () => {}),

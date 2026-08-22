@@ -11,11 +11,17 @@ import type {
   ExperimentSnapshot,
 } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
-import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
+import type {
+  ExperimentController,
+  SimpleResult,
+  StartResult,
+} from "../../lib/evaluations/experiment-controller";
 import type { CandidateEvaluation, ModelSlot } from "../../studio-data";
 import { RepositoryContext } from "../../lib/persistence/repository-context";
 import { StorageError } from "../../lib/persistence/database";
 
+import { InMemoryEvidenceRepository } from "../../lib/persistence/evidence-repository";
+import { observationIdFor } from "../../lib/evidence/evidence-validation";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 interface Harness {
@@ -223,6 +229,26 @@ function makeWinnerProvisionalExperiment(): {
   return { experiment, runs };
 }
 
+describe("ExperimentResults — header and task set backlink", () => {
+  it("renders Evaluation results · Task Set vN header and Back to task set link", async () => {
+    const { experiment, runs } = makeWinnerProvisionalExperiment();
+    const resolveRun = vi.fn(async (runId: string) => runs[runId] ?? null);
+
+    const h = renderWithRouter(
+      <ExperimentResults experiment={experiment} resolveRunRecord={resolveRun} />,
+    );
+    await settle();
+
+    const text = h.container.textContent ?? "";
+    expect(text).toContain(`Evaluation results · Task Set v${experiment.suiteVersion}`);
+    const back = h.$(`a[href="/evaluations/sets/${experiment.suiteId}"]`);
+    expect(back).toBeTruthy();
+    expect(back?.textContent).toContain("Back to task set");
+    expect(back?.className).toContain("min-h-[44px]");
+    cleanup(h);
+  });
+});
+
 describe("ExperimentResults — winner and provisional ranking", () => {
   it("crowns the complete-coverage winner, not the higher-mean incomplete model", async () => {
     const { experiment, runs } = makeWinnerProvisionalExperiment();
@@ -312,16 +338,25 @@ describe("ExperimentResults — winner and provisional ranking", () => {
 });
 
 describe("ExperimentResults — terminal recovery (Task 7)", () => {
-  function makeController(retryResult: { ok: boolean; error?: string } = { ok: true }) {
+  function makeController(retryResult: SimpleResult = { ok: true }): ExperimentController {
     return {
-      retryIncomplete: vi.fn(async () => retryResult),
-      repairMissingCells: vi.fn(async () => ({ ok: true })),
-      addModelAndRun: vi.fn(async () => ({ ok: true, experimentId: "exp-1" })),
+      start: vi.fn(async (_materializationId: string): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       requestPause: vi.fn(async () => {}),
+      resume: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      abort: vi.fn(async () => {}),
+      retryIncomplete: vi.fn(async (): Promise<SimpleResult> => retryResult),
+      repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      addModelAndRun: vi.fn(async (): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
       whenIdle: vi.fn(async () => {}),
-    } as unknown as ExperimentController;
+    };
   }
 
   function makeFailedExperiment(): {
@@ -446,16 +481,26 @@ describe("ExperimentResults — terminal recovery (Task 7)", () => {
 });
 
 describe("ExperimentResults — recovery controls (Task 12)", () => {
-  function makeController(overrides: Partial<Record<string, unknown>> = {}) {
+  function makeController(overrides: Partial<ExperimentController> = {}): ExperimentController {
     return {
-      retryIncomplete: vi.fn(async () => ({ ok: true })),
-      repairMissingCells: vi.fn(async () => ({ ok: true })),
+      start: vi.fn(async (_materializationId: string): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       requestPause: vi.fn(async () => {}),
+      resume: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      abort: vi.fn(async () => {}),
+      retryIncomplete: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      addModelAndRun: vi.fn(async (): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
       whenIdle: vi.fn(async () => {}),
       ...overrides,
-    } as unknown as ExperimentController;
+    };
   }
 
   /** Desktop media query so the full result matrix (with cell actions) renders. */
@@ -1288,16 +1333,22 @@ describe("ExperimentResults — add model (roster extension)", () => {
 
   function makeControllerWithAddModel(
     result: { ok: true; experimentId: string } | { ok: false; error: string },
-  ) {
+  ): ExperimentController {
     return {
-      retryIncomplete: vi.fn(async () => ({ ok: true })),
-      repairMissingCells: vi.fn(async () => ({ ok: true })),
-      addModelAndRun: vi.fn(async () => result),
+      start: vi.fn(async (_materializationId: string): Promise<StartResult> => ({
+        ok: true,
+        experimentId: "exp-1",
+      })),
       requestPause: vi.fn(async () => {}),
+      resume: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      abort: vi.fn(async () => {}),
+      retryIncomplete: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      repairMissingCells: vi.fn(async (): Promise<SimpleResult> => ({ ok: true })),
+      addModelAndRun: vi.fn(async (): Promise<StartResult> => result),
       recoverOnStartup: vi.fn(async () => 0),
       subscribe: vi.fn(() => () => {}),
       whenIdle: vi.fn(async () => {}),
-    } as unknown as ExperimentController;
+    };
   }
 
   const READY = ["openrouter" as const];
@@ -1588,6 +1639,7 @@ describe("ExperimentResults — add model (roster extension)", () => {
     const h = renderWithRouter(
       <RepositoryContext.Provider
         value={{
+          taskRepo: null,
           runRepo: null,
           evalRepo: evalRepo as never,
           fusionRepo: null,
@@ -1679,6 +1731,7 @@ describe("ExperimentResults — add model (roster extension)", () => {
     const h = renderWithRouter(
       <RepositoryContext.Provider
         value={{
+          taskRepo: null,
           runRepo: null,
           evalRepo: evalRepo as never,
           fusionRepo: null,
@@ -1749,6 +1802,7 @@ describe("ExperimentResults — add model (roster extension)", () => {
     const h = renderWithRouter(
       <RepositoryContext.Provider
         value={{
+          taskRepo: null,
           runRepo: null,
           evalRepo: evalRepo as never,
           fusionRepo: null,
@@ -1809,6 +1863,118 @@ describe("ExperimentResults — add model (roster extension)", () => {
     expect(document.body.textContent).toContain("Add model to results");
     const alert = document.body.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain("Another tab owns the lease.");
+    cleanup(h);
+  });
+});
+
+describe("ExperimentResults — Evidence receipt integration (F1-blocker)", () => {
+  it("loads observation through context-provided evidenceRepo when evidenceRepo prop is omitted", async () => {
+    const evidenceRepo = new InMemoryEvidenceRepository();
+    const runId = "run_f1_test";
+    const taskId = "t1";
+    const modelKey = "umans:model";
+
+    const SHA = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const baseObs = {
+      id: "",
+      sourceKind: "evaluation" as const,
+      sourceResultId: runId,
+      executionLineageId: "lineage_1",
+      runId,
+      sourceTaskCellId: "cell_1",
+      taskId,
+      taskVersion: 1,
+      taskInstanceId: "inst_1",
+      taskFamilyId: null,
+      modelConfigurationId: `mc:${SHA}`,
+      candidateAttemptId: `att-${taskId}`,
+      assessmentRef: {
+        judgeAttemptId: `att-${taskId}`,
+        judgeProviderId: "openrouter",
+        judgeModel: "judge",
+        blindLabelMapping: {},
+        candidateAttemptIdsByCandidateId: {},
+        rubricRef: null,
+        verifierRef: null,
+        verifierOutcome: null,
+      },
+      protocolFingerprint: SHA,
+      rubricRef: null,
+      evaluatorSnapshot: {
+        kind: "model_judge" as const,
+        providerId: "openrouter",
+        model: "judge",
+        resolvedVersion: "1",
+        instructionDigest: SHA,
+        reasoningEffort: null,
+        toolScaffoldSignature: null,
+      },
+      verifierSnapshot: null,
+      outcome: {
+        judgeAccepted: true,
+        overallScore: 85,
+        criterionValues: [],
+        verifierPassed: null,
+      },
+      observedAt: 1000,
+      observationSchemaVersion: 1,
+    };
+    const obs = { ...baseObs, id: observationIdFor(baseObs) };
+    await evidenceRepo.putObservation(obs);
+    await evidenceRepo.putDecision({
+      observationId: obs.id,
+      ruleVersion: 1,
+      status: "eligible" as const,
+      evidenceClass: "comparable" as const,
+      allowedUses: ["task_descriptive" as const, "within_model_profile" as const],
+      reasonCodes: ["canonical_task_resolved" as const],
+      comparabilityCohortId: SHA,
+      decidedAt: 1000,
+    });
+    const run = makeRun(runId, { [modelKey]: 4.5 });
+    const experiment: ExperimentRecord = {
+      id: "exp-f1",
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      protocolFingerprint: "sha256:abc",
+      execution: null,
+      snapshot: makeSnapshot([taskId]),
+      tasks: [makeTaskState(taskId, runId)],
+      status: "completed",
+      revision: 1,
+      createdAt: 1000,
+      updatedAt: 1100,
+    };
+    const h = renderWithRouter(
+      <RepositoryContext.Provider
+        value={{
+          taskRepo: null,
+          runRepo: null,
+          evalRepo: null,
+          fusionRepo: null,
+          evidenceRepo,
+          db: null,
+          storageState: "ready",
+          retry: () => undefined,
+        }}
+      >
+        <ExperimentResults
+          experiment={experiment}
+          resolveRunRecord={async (id) => (id === runId ? run : null)}
+        />
+      </RepositoryContext.Provider>,
+    );
+    await settle();
+    await settle();
+
+    const receiptButtons = h.$$('button[aria-label*="Evidence receipt:"]');
+    const scoredReceiptButton = receiptButtons.find((b) =>
+      b.getAttribute("aria-label")?.includes("Eligible"),
+    );
+    expect(scoredReceiptButton).toBeDefined();
+    expect(scoredReceiptButton?.getAttribute("aria-label")).toContain("Eligible");
+    expect(scoredReceiptButton?.getAttribute("aria-label")).toContain("Comparable");
+
     cleanup(h);
   });
 });

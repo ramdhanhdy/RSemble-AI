@@ -49,8 +49,8 @@ describe("SuiteSettings reasoning controls", () => {
           suite={suite}
           onChange={() => undefined}
           models={[]}
-          profileRecords={[]}
-          resolveProfileLabel={() => ""}
+          rubricRecords={[]}
+          resolveRubricLabel={() => ""}
         />
       </ModelProbeProvider>,
     );

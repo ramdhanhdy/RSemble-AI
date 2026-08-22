@@ -2,12 +2,22 @@
 // KindEyebrow — entity identity eyebrow (identity spec §5.1).
 //
 // One consistent grammar across every Evaluations surface: Suite = Workload,
-// Profile = Rubric. The 11px uppercase-tracked eyebrow carries a glyph plus
+// Rubric = Rubric. The 11px uppercase-tracked eyebrow carries a glyph plus
 // the kind word — never shape or color alone (DESIGN.md). The one-line
 // definition is exposed as a title tooltip for first-contact learning.
 // =============================================================================
 
-import { ListChecks, Scale, type LucideIcon } from "lucide-react";
+import {
+  Boxes,
+  Combine,
+  Cpu,
+  FileSearch,
+  Layers,
+  ListChecks,
+  Scale,
+  TestTubes,
+  type LucideIcon,
+} from "lucide-react";
 
 const KINDS = {
   suite: {
@@ -19,6 +29,38 @@ const KINDS = {
     word: "Rubric",
     icon: Scale,
     def: "Scoring criteria with 1/3/5 anchors. It judges, it does not run.",
+  },
+  study: {
+    word: "Policy Study",
+    // Child 08 §G.5 binding identity: Lab/Policy Study = TestTubes, never
+    // Evaluation's FlaskConical where the six record types interleave.
+    icon: TestTubes,
+    def: "A pinned policy comparison that ends in a Policy Playbook.",
+  },
+  recipe: {
+    word: "Fusion Recipe",
+    icon: Combine,
+    def: "An immutable description of how synthesis is performed.",
+  },
+  pool: {
+    word: "Model Pool",
+    icon: Boxes,
+    def: "An experimental selection manifest of exact model configurations.",
+  },
+  "model-configuration": {
+    word: "Model Configuration",
+    icon: Cpu,
+    def: "An exact provider, model, and reasoning configuration under test.",
+  },
+  observation: {
+    word: "Observation",
+    icon: FileSearch,
+    def: "One recorded model response with its evidence class and eligibility.",
+  },
+  rollup: {
+    word: "Rollup",
+    icon: Layers,
+    def: "A pinned list of exact configurations shown side by side, never pooled.",
   },
 } as const;
 

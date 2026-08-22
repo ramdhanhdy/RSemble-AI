@@ -1,0 +1,369 @@
+{
+  "gate": "qa-canonical-tasks --browser",
+  "generatedAt": "2026-08-14T18:13:52.159Z",
+  "baseUrl": "http://127.0.0.1:5183/",
+  "probes": [
+    {
+      "name": "catalog-1440",
+      "overflowX": false,
+      "rowCount": 4,
+      "hasLegacy": true,
+      "hasAuthored": true,
+      "hasArchived": true,
+      "hasFamily": true,
+      "hasFacet": true,
+      "hasRefs": true,
+      "longOverflow": false,
+      "longTruncates": true,
+      "smallTargets": [],
+      "innerWidth": 1440,
+      "pass": true,
+      "reason": "1440px: legacy+authored+archived+long rows render with family/facet/ref chips, long title truncates without overflow, all targets ≥44px, no horizontal overflow"
+    },
+    {
+      "name": "catalog-1024",
+      "overflowX": false,
+      "rowCount": 4,
+      "hasLegacy": true,
+      "hasAuthored": true,
+      "hasArchived": true,
+      "hasFamily": true,
+      "hasFacet": true,
+      "hasRefs": true,
+      "longOverflow": false,
+      "longTruncates": true,
+      "smallTargets": [],
+      "innerWidth": 1024,
+      "pass": true,
+      "reason": "1024px: catalog holds without overflow, long title truncates, targets ≥44px"
+    },
+    {
+      "name": "catalog-768",
+      "overflowX": false,
+      "rowCount": 4,
+      "hasLegacy": true,
+      "hasAuthored": true,
+      "hasArchived": true,
+      "hasFamily": true,
+      "hasFacet": true,
+      "hasRefs": true,
+      "longOverflow": false,
+      "longTruncates": true,
+      "smallTargets": [],
+      "innerWidth": 768,
+      "pass": true,
+      "reason": "768px: catalog holds without overflow, long title truncates, targets ≥44px"
+    },
+    {
+      "name": "catalog-390",
+      "overflowX": false,
+      "rowCount": 4,
+      "hasLegacy": true,
+      "hasAuthored": true,
+      "hasArchived": true,
+      "hasFamily": true,
+      "hasFacet": true,
+      "hasRefs": true,
+      "longOverflow": false,
+      "longTruncates": true,
+      "smallTargets": [],
+      "innerWidth": 390,
+      "pass": true,
+      "reason": "390px mobile/touch: catalog holds without overflow, long title truncates, all touch targets ≥44px"
+    },
+    {
+      "name": "catalog-zoom-200",
+      "overflowX": false,
+      "rowCount": 4,
+      "hasLegacy": true,
+      "hasAuthored": true,
+      "hasArchived": true,
+      "hasFamily": true,
+      "hasFacet": true,
+      "hasRefs": true,
+      "longOverflow": false,
+      "longTruncates": true,
+      "smallTargets": [],
+      "innerWidth": 720,
+      "pass": true,
+      "reason": "200% effective CSS viewport (720px): catalog legible without overflow, targets ≥44px"
+    },
+    {
+      "name": "catalog-reduced-motion",
+      "spinnerAnimation": "none",
+      "overflowX": false,
+      "rowCount": 4,
+      "pass": true,
+      "reason": "reduced motion removes spinner rotation, catalog renders without overflow"
+    },
+    {
+      "name": "create-task",
+      "href": "#/tasks/0df06133-ae9e-4200-b3f4-ad6bcfa5850e",
+      "pass": true,
+      "reason": "create commits Task+v1 atomically and offers an Open link to the new identity"
+    },
+    {
+      "name": "create-task-detail",
+      "title": true,
+      "v1": true,
+      "authored": true,
+      "pass": true,
+      "reason": "newly created task detail shows title, v1, authored origin"
+    },
+    {
+      "name": "version-append",
+      "v2": true,
+      "selectValue": "2",
+      "pass": true,
+      "reason": "dirty draft → explicit Create version 2 confirmation → header and selector reflect v2"
+    },
+    {
+      "name": "version-direct-load",
+      "readOnly": true,
+      "titleV2": true,
+      "titleDisabled": true,
+      "noCreate": true,
+      "pass": true,
+      "reason": "/tasks/:id/versions/2 direct-loads the immutable read-only version (disabled fields, no create action)"
+    },
+    {
+      "name": "version-direct-load-v1",
+      "readOnly": true,
+      "title": true,
+      "pass": true,
+      "reason": "/tasks/:id/versions/1 direct-loads the immutable v1 read-only view"
+    },
+    {
+      "name": "duplicate-task",
+      "dupId": "fffe54ff-b31f-4d73-bdf2-148033d60a70",
+      "pass": true,
+      "reason": "duplicate creates a new authored identity at v1 with copied content — never an implied version"
+    },
+    {
+      "name": "archive-task",
+      "archived": true,
+      "restore": true,
+      "noArchiveBtn": true,
+      "pass": true,
+      "reason": "archive confirmation → archived badge + restore action, edit surface hidden"
+    },
+    {
+      "name": "restore-task",
+      "active": true,
+      "archive": true,
+      "noRestore": true,
+      "pass": true,
+      "reason": "restore returns the task to active editing with archive action available again"
+    },
+    {
+      "name": "family-create",
+      "pass": true,
+      "reason": "new family form saves and the family row appears in the registry"
+    },
+    {
+      "name": "relation-create",
+      "pass": true,
+      "reason": "typed cross-family relation saves and renders a relation row"
+    },
+    {
+      "name": "family-dialog-focus-trap",
+      "dialogOpen": true,
+      "insideDialog": true,
+      "outsideAriaHidden": true,
+      "activeTag": "BUTTON",
+      "pass": true,
+      "reason": "family lifecycle dialog moves focus into the popup and marks the background aria-hidden (inert from AT); Tab cycling stays trapped (separate probe)"
+    },
+    {
+      "name": "family-dialog-tab-cycle",
+      "pass": true,
+      "reason": "Tab from a dialog control keeps focus inside the dialog (focus cycle)"
+    },
+    {
+      "name": "family-dialog-close-restore",
+      "open": false,
+      "triggerRestored": true,
+      "activeTag": "BUTTON",
+      "activeAction": "archive-family",
+      "triggerExists": true,
+      "triggerIsSame": true,
+      "pass": true,
+      "reason": "cancel closes the dialog and restores focus to the lifecycle trigger"
+    },
+    {
+      "name": "facet-add-provenance",
+      "taskFormValue": true,
+      "source": true,
+      "author": true,
+      "taxonomy": true,
+      "domainValue": true,
+      "domainProvenance": true,
+      "pass": true,
+      "reason": "add-facet commits a task-form annotation with source/author/taxonomy provenance chips; existing domain facet keeps its provenance"
+    },
+    {
+      "name": "migration-origin-references",
+      "legacyId": "legacy-task-0e38e5ae943abce2e54af54",
+      "origin": true,
+      "refsSection": true,
+      "instancesSection": true,
+      "refsText": "References2 references · origin legacy-task-setLegacy origin is namespaced to one suite task identity and does not imply identity across suites.Current suitesQA Legacy Suite v1 · exact v1Historical experimentsexp-qa · suite suite-qa v1 · exact v1Task instancesNo stored instances.",
+      "pass": true,
+      "reason": "startup-migrated legacy task shows origin legacy-task-set, a references section, and the task instances list"
+    },
+    {
+      "name": "migration-version-direct-load",
+      "pass": true,
+      "reason": "migrated task's version route direct-loads the immutable read-only view"
+    },
+    {
+      "name": "route-unknown-task",
+      "notFound": true,
+      "text": true,
+      "pass": true,
+      "reason": "unknown task ID renders the explicit not-found state, no silent redirect"
+    },
+    {
+      "name": "route-unknown-version",
+      "notFound": true,
+      "pass": true,
+      "reason": "unknown version number renders the explicit not-found state"
+    },
+    {
+      "name": "route-invalid-version",
+      "invalid": true,
+      "pass": true,
+      "reason": "malformed (non-integer) version param renders the explicit invalid-version state, no redirect"
+    },
+    {
+      "name": "keyboard-filter-operation",
+      "isSearch": true,
+      "hasRing": true,
+      "changed": true,
+      "value": "authored",
+      "rowCount": 5,
+      "allAuthored": true,
+      "anyLegacy": false,
+      "pass": true,
+      "reason": "keyboard-only: search input is focusable with a visible focus ring; ArrowDown on the origin select changes the filter to authored and the catalog re-queries to authored-origin rows only"
+    },
+    {
+      "name": "archive-export-v2",
+      "status": "Exported complete v2 archive — 23 entities.",
+      "capturedCount": 1,
+      "hasArchive": true,
+      "pass": true,
+      "reason": "v2 export completes and reports the exported entity total; the archive blob is captured for downstream probes"
+    },
+    {
+      "name": "archive-export-cancel",
+      "cancelVisible": true,
+      "cancelGuidance": true,
+      "statuses": "Exported complete v2 archive — 23 entities.",
+      "pass": true,
+      "reason": "cancel-export aborts the in-flight v2 export and surfaces cancellation guidance"
+    },
+    {
+      "name": "archive-import-preview",
+      "hasPreview": true,
+      "formatV2": true,
+      "totalMentioned": true,
+      "hasConfirm": true,
+      "hasCancel": true,
+      "pass": true,
+      "reason": "import previews the validated archive (format v2, record count) with explicit confirm/cancel controls — nothing written yet"
+    },
+    {
+      "name": "archive-import-cancel",
+      "previewGone": true,
+      "focusRestored": true,
+      "noResult": true,
+      "pass": true,
+      "reason": "cancel-import closes the preview without writes and restores focus to the Import trigger; no result is reported"
+    },
+    {
+      "name": "archive-import-collision",
+      "hasPreview": true,
+      "hasCollision": true,
+      "pass": true,
+      "reason": "non-identical ID collision (mutated content, valid digest) is reported in the preview before any write — never overwrites"
+    },
+    {
+      "name": "archive-import-success",
+      "status": "Imported 0 records — 23 reused (\"success-v2.json\") | Exported complete v2 archive — 23 entities.",
+      "imported": true,
+      "pass": true,
+      "reason": "confirming the identical-reuse preview commits atomically and reports 'Imported N records — M reused' (idempotent reuse, no writes)"
+    },
+    {
+      "name": "archive-secret-no-echo",
+      "hasError": true,
+      "leaked": false,
+      "noPreview": true,
+      "alerts": "The archive is invalid — nothing was imported. payload: prohibited credential/transport key in tasks",
+      "pass": true,
+      "reason": "archive carrying a prohibited credential key is rejected with a classified error that never echoes the secret-shaped value; no preview is offered"
+    },
+    {
+      "name": "catalog-empty-state",
+      "emptyState": true,
+      "rowCount": 0,
+      "noTasksText": true,
+      "hasNewAction": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "fresh empty workbench renders the explicit empty-catalog state ('No tasks yet.') with a New task action and no horizontal overflow"
+    },
+    {
+      "name": "catalog-migration-error-state",
+      "errorState": true,
+      "alertRole": true,
+      "hasRetry": true,
+      "unavailableOrFailed": true,
+      "rowCount": 0,
+      "leaked": false,
+      "reason": "deterministic migration-error surfaces the classified load/error state (alert role, Retry action, unavailable text) and never echoes secret-shaped content"
+    },
+    {
+      "name": "catalog-migration-error-state-verdict",
+      "pass": true,
+      "reason": "classified migration-error state renders with alert role + Retry + unavailable/failed text, no secret echo"
+    },
+    {
+      "name": "console-errors",
+      "count": 0,
+      "errors": [],
+      "pass": true,
+      "reason": "no console.error calls during the full matrix"
+    },
+    {
+      "name": "page-errors",
+      "count": 0,
+      "errors": [],
+      "pass": true,
+      "reason": "no uncaught page exceptions during the full matrix"
+    },
+    {
+      "name": "no-provider-calls",
+      "providerCalls": [],
+      "externalRequestCount": 0,
+      "pass": true,
+      "reason": "no product provider endpoint was contacted during the Task/archive matrix"
+    }
+  ],
+  "screenshots": [
+    "qa-catalog-1440.png",
+    "qa-catalog-1024.png",
+    "qa-catalog-768.png",
+    "qa-catalog-390.png",
+    "qa-catalog-zoom-200.png",
+    "qa-catalog-reduced-motion.png",
+    "qa-keyboard-catalog.png",
+    "qa-catalog-empty.png",
+    "qa-catalog-error-state.png"
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "networkRequests": [],
+  "providerCalls": []
+}

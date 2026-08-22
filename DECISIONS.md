@@ -6,7 +6,112 @@ This document records architectural decisions made for RSemble AI.
 > `TODOS.md` referenced inside historical decisions are no longer shipped in
 > this repository. Those references are preserved for provenance; the current
 > product/UI authority is `PRODUCT.md` plus this file.
+>
+> **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
+> "Profiles" or "evaluation profiles" are now "Rubrics" in all user-facing
+> surfaces, domain code, and routes (spec: `docs/specs/archive/
+> 01-rubric-terminology/`). Historical decisions
+> below preserve the original "Profile" terminology for provenance; the
+> scoring contracts they define (versioning, immutability, criteria validation,
+> `Q − λ(1−C)` ranking) are unchanged. Legacy IndexedDB stores and frozen
+> serialized field names (`evaluationProfileId`, `evaluationProfileVersion`)
+> remain physical implementation details behind canonical Rubric adapters.
+> The word "profile" is reserved for the future model evidence profile.
+>
+> **Reconciliation note (Child 02, 2026-08-14):** Canonical Tasks, immutable
+> Task Versions, concrete Task Instances, Task Families, versioned Facet
+> annotations, conservative legacy-suite migration, and the extensible archive v2
+> envelope are shipped (spec: `docs/specs/archive/02-canonical-tasks/`). Tasks are
+> a secondary `/tasks` catalog, not a fourth primary workspace. Historical
+> decisions below remain authoritative; nothing in this child rewrites Run,
+> Experiment, or Fusion Study evidence. Task Set editor migration, comparison
+> task promotion, observations, and model evidence profiles remain future
+> children. See Decision #13 for the load-bearing contract.
+>
+> **Reconciliation note (Child 03, 2026-08-16):** Canonical Task Sets are
+> shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 03-task-sets-and-evaluations/task-sets-and-evaluations-spec.md`). A Task Set
+> owns versioned task membership: `TaskSetRecord` (mutable administrative state
+> via compare-and-swap), immutable `TaskSetVersion` / WorkloadManifest (members
+> pin exact canonical Task Versions), immutable `TaskSetMaterializationRecord`
+> execution snapshots, and the `taskSetOwnershipCrosswalk` store resolving
+> legacy owner coordinates (suite-manifest, experiment-owner, fusion-owner) to
+> exact Task Set Versions. The archive v2 envelope gains an optional `taskSets`
+> payload (records/versions/materializations/ownership crosswalks) with exact
+> counts, deterministic ordering, reference-graph validation, prohibited-content
+> scanning, and collision-abort-before-write import; earlier-v2 envelopes
+> without the key remain readable and the seven Fusion collections stay
+> separately typed and unconverted (format version stays 2).
+> Historical decisions below use "suite" language to describe the pre-Task-Set
+> evaluation model. The reconciliation for the flagged sentences is:
+> - **Decision #7** ("Local Suites", "versioned local suites", "suites pin to
+>   profile versions", "multi-task suites"): the versioned membership and
+>   rubric pinning those sentences describe are now owned by Task Sets; the
+>   legacy Evaluation Suite remains the physical compatibility row migrated
+>   conservatively into `legacy-suite` Task Sets.
+> - **Decision #9** ("Policy Discovery on Suites", "suite versions", "versioned
+>   suites"): Fusion Study remains a Task-Set-owned experimental record; the
+>   "suite version" a study attaches to is a Task Set Version today. The
+>   exploration/confirmation and blocked-comparison contracts are unchanged.
+> - **Decision #10** item 6 ("persisted on suites/snapshots", "strict suite
+>   parity"): reasoning-effort provenance and the protocol-fingerprint parity
+>   contract are now carried by Task Set Versions/materializations; the parity
+>   contract itself is unchanged.
+> - **Decision #13** context ("Evaluation Suite tasks had stable IDs only
+>   inside an embedded suite document") and item (d) (conservative migration):
+>   those sentences describe the Child 02 canonical Task migration, which is
+>   unchanged; Child 03 adds the Task Set layer above it.
 
+> **Reconciliation note (Child 04, 2026-08-17):** Canonical Task Observations,
+> immutable Eligibility Decisions, exact Model Configuration snapshots,
+> evidence rule/version metadata, and the archive v2 optional `evidence` payload
+> extension are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 04-observations-and-evidence/observations-and-evidence-spec.md`). Observations
+> are immutable references/indexes over exact evidence without duplicating
+> candidate output or full rationale. Operational retries and reused outputs
+> never inflate sample counts. Decision revisions append deterministically.
+> The archive v2 envelope gains an optional `evidence` payload
+> (modelConfigurations, observations, evidenceDecisions, evidenceIndexJobs,
+> verifierOutcomes) with exact counts, deterministic ordering, reference-graph
+> validation, prohibited-content scanning, and collision-abort-before-write
+> import; earlier-v2 envelopes without the key remain readable, and Fusion Study
+> observations stay strictly isolated without conversion or ID collision.
+> See Decision #14 for the load-bearing contract.
+
+> **Reconciliation note (Child 05, 2026-08-18):** Contextual Compare Results
+> and task promotion are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> 05-contextual-compare-results/contextual-compare-results-spec.md`). Compare
+> owns a `ComparisonResultIndex` (`id == runId`) with task binding, lineage,
+> and evidence receipt revision. Canonical routes `/compare` and
+> `/compare/results/:comparisonId` reconstruct results from persisted state.
+> Pre-call persistence creates the index and input snapshot before any provider
+> call. Promotion/linking uses exact-match validation and CAS binding updates.
+> Legacy migration creates idempotent indexes for existing full Compare records.
+> The archive v2 envelope gains Comparison Result indexes, lineages, bindings,
+> and input-snapshot metadata. See Decision #15 for the load-bearing contract.
+>
+> **Reconciliation note (Child 06 T12, 2026-08-19):** The executable Fusion
+> Study seams are retired (REV-5/REV-6, spec:
+> `docs/specs/pending/task-first-evidence-workbench/
+> 06-research-lab-policy-studies/`). The live
+> `/evaluations/sets/:taskSetId/fusion/:studyId` route, `FusionStudyView` /
+> `FusionStudyPanel`, and the Dexie-backed Fusion Study repository phenotype
+> are removed; the Research Lab (`/lab`) owns policy study authority and the
+> allowlisted in-memory methodology substrate (`InMemoryFusionStudyRepository`)
+> stays behind the Policy Study adapter. The retired
+> `/evaluations/:suiteId/fusion/:studyId` static notice stays as a semantic
+> receipt. Compare pipeline shortcuts (⌘Enter, ⌘/, ⌘1–9, ⌘F, ⌘C) now fire
+> only on routes that own live Compare execution (`/compare`, `/`) via an
+> explicit `deriveWorkspace` ownership rule; `/lab`, `/tasks`,
+> `/compare/results/*`, and unknown routes inherit no Compare shortcuts.
+> Historical decisions below (notably #9, #13, #14) preserve the original
+> "Fusion Study" / "suite" terminology for provenance; the methodology
+> contracts (recipe family, stage A/B/C, MPID, holdout, anti-circularity,
+> playbook) are unchanged and now run behind canonical Lab authority. The
+> word "fusion" remains a method term (Fusion Recipe, Fuse mode, Fusion
+> Result); "Fusion Study" as a live product authority is gone.
+> **Reconciliation note (Child 07, 2026-08-21):** **Implemented — pending independent closure review.** Models is a direct-route current candidate, not a primary-navigation claim. Evidence respondents remain exact model configurations with explicit identity/version uncertainty, cohort separation, stratified-only metrics, uncertainty receipts, and drilldown to source Observations. Versioned Model Rollups persist exact pinned members and heterogeneity; they never imply a pooled respondent, universal score, rank, best model, or causal claim. The closure evidence and corpus manifest are recorded in `docs/qa/model-evidence-profiles/results.json`; pending status remains until an independent closure review.
+>
 ---
 
 ## Decision #1: Focused Direction (Split Workspace / Variation B)
@@ -155,3 +260,51 @@ This document records architectural decisions made for RSemble AI.
   - **Compliance-only exception (spec §16.3):** a profile with **no graded criteria** has no `Q` and therefore derives **no `rankValue`/`rankScore`**; it ranks on the weighted compliance share `C` in the 0–1 / 0–100% compliance domain. Display and export render such values as C-labeled percentages — never as a floored `1.0*` rank score with a `/5` suffix. Historical records remain authoritative snapshots and are never re-scored or retyped.
 - **Deferred (not shipped v1):** binary 1/5 pseudo-scoring, `W_bin` as author control, MEAN groups, member weights, Hard Gates / gate eligibility / consensus gate judging, `δ=0.10` closeness band, min-cost "binary-decided" heuristic, "Compliance changed the winner" badge, duplication lint, automatic historical binary detection, and historical re-scoring. `kind:"gate"` is rejected by validation with an actionable message.
 - **Rationale:** rankValue is the single authoritative ranking quantity derived from a validated criterion vector (`Q − λ(1−C)`); rankScore prevents the display floor from causing false ties (a floored 0.8 must outrank a floored 0.4). Requirement Groups pin a requirement's influence to its group weight, so decomposition (1 check vs 5 subchecks) does not inflate influence, and λ bounds total binary influence.
+
+---
+
+## Decision #13: Canonical Tasks, Immutable Versions, and Archive v2 Base
+- **Date:** 2026-08-14
+- **Context:** Evaluation Suite tasks had stable IDs only inside an embedded suite document. Experiment snapshots preserved task definitions and run records preserved exact messages, but there was no global Task identity, immutable Task Version repository, concrete Task Instance repository, family registry, or versioned facet annotation. Repeated attempts and near-duplicate prompts could masquerade as broad task coverage, and the archive format had no envelope for canonical Task/Rubric entities. Spec: `docs/specs/archive/02-canonical-tasks/canonical-tasks-spec.md`; plan: `docs/specs/archive/02-canonical-tasks/implementation-plan.md`.
+- **Decision:** Ship canonical Tasks as a secondary surface with the following load-bearing choices:
+  - **(a) Opaque identity, immutable versions.** A Task has opaque identity; digests do not define semantic identity. Versions are positive, contiguous, and append-only. A change to candidate-visible instruction, task-defining context, expected response contract, or correctness contract creates the next version; metadata, family, and facet edits never mutate a version. A referenced version cannot be deleted.
+  - **(b) Concrete instances with digest-gated reuse.** A Task Instance captures concrete normalized input and is reused only under the same Task Version and exact complete input/context/artifact digest, with byte-equality verification. Metadata-only historical attachments are never upgraded to complete without real bytes; migration never fabricates an artifact.
+  - **(c) Explicit families and facets, no inference.** A Task has at most one primary family at a time through a versioned assignment; typed cross-family relations may express overlap without a universal tree. Facets are orthogonal authored dimensions; suggestions never become accepted annotations without explicit user confirmation. No automatic semantic deduplication or taxonomy inference.
+  - **(d) Conservative legacy migration.** Migration inspects latest embedded suite tasks and immutable historical ExperimentRecord snapshots, creates one canonical Task per deterministic `(legacySuiteId, legacyTaskId)` scope with origin `legacy-task-set`, appends a version only when the executable-definition digest changes, and writes a crosswalk. It is deterministic and idempotent across repeated startup, never merges across suite scopes, and never modifies RunRecordV2, ExperimentRecord snapshots, selected attempt IDs, protocol fingerprints, costs, judge evidence, or failures.
+  - **(e) Secondary surface, not primary nav.** Tasks live on `/tasks`, `/tasks/new`, `/tasks/:taskId`, and `/tasks/:taskId/versions/:version`, reachable through the command palette and contextual links. Tasks are not a primary workspace; primary navigation remains Compare · Runs · Evaluations.
+  - **(f) Archive v2 base.** The extensible v2 envelope round-trips exact current Run and Experiment evidence, all seven Fusion Study stores, and canonical Rubrics, Tasks, Task Versions, Task Artifacts, Task Instances, families/facets, annotations, and migration crosswalks; disposable indexes are omitted. Archive v1 remains importable. V2 import validates the complete payload and referenced artifacts before writes; until a later child adds full collision remapping, a non-identical ID collision is reported in preview and aborts without mutation — it never overwrites or partially imports. Artifact bytes are scanned for prohibited credential/auth content before export; an unsafe export is blocked without echoing the value.
+- **Authority changes:** `PRODUCT.md` and this file amended to describe canonical Tasks, immutable versions, instances, families/facets, conservative migration, and archive v2 as shipped. Existing Run/Experiment/Fusion evidence and the fanout → Judge → Rank/Fuse spine are unchanged.
+- **Rationale:** Global, immutable task identity is the prerequisite for Task Set ownership (next child), observations, contextual Compare results, and model evidence profiles. Pinning opaque identity, digest-gated instance reuse, conservative no-rewrite migration, and a collision-aborting v2 envelope now prevents later children from accidentally merging across scopes, inflating coverage with near-duplicates, or overwriting evidence on import.
+
+---
+
+## Decision #14: Observations, Eligibility Decisions, Model Configuration Snapshots, and Archive v2 Evidence Extension
+- **Date:** 2026-08-17
+- **Context:** Evaluation runs produced exact candidate and judge/verifier evidence, but there was no immutable Task Observation index, canonical model configuration identity, automatic evidence eligibility classification, comparability cohort fingerprinting, or evidence receipt disclosure. Repeated attempts, operational retries, and roster extensions risked inflating sample counts or masking execution variability. Spec: `docs/specs/pending/task-first-evidence-workbench/04-observations-and-evidence/observations-and-evidence-spec.md`; plan: `docs/specs/pending/task-first-evidence-workbench/04-observations-and-evidence/implementation-plan.md`.
+- **Decision:** Ship canonical Task Observations and evidence provenance with the following load-bearing choices:
+  - **(a) Reference-only indexing, no raw content duplication.** An Observation is an immutable reference/index over exact RunRecordV2 / ExperimentRecord evidence. It never embeds candidate messages, candidate output text, full judge rationale, or streaming buffers. Prohibited field paths are rejected by runtime guards.
+  - **(b) Canonical Model Configuration identity.** Snapshots resolve only stored facts (providerId, requestedModel, resolvedModel, resolvedVersion, reasoning settings, tool scaffolds, sanitized runtime settings). Unknown resolved versions remain unknown; no speculative version rollup. Content collisions on duplicate IDs abort with corruption errors.
+  - **(c) Invariant counting and active selection.** Operational retries, repeated judging, missing-cell repair, and roster extension reuse never inflate sample counts: one active observation per execution lineage/task/model cell. Unique Task coverage counts Task identity once regardless of versions, instances, or attempts. Reused outputs retain original candidateAttemptId.
+  - **(d) Pure eligibility classification and explanation.** Evidence classes (`exploratory`, `comparable`, `verified`, `benchmark_anchor`) and allowed uses (`task_descriptive`, `within_model_profile`, `paired_model_comparison`, `task_set_standing`, `benchmark_anchor_analysis`) are purely derived from stored facts. Explanations compile from constant dictionaries without embedding raw source text. Decisions are keyed by `[observationId + ruleVersion]` allowing deterministic append-only re-evaluation.
+  - **(e) Post-commit derivation and isolated reindex.** Derivation runs after source transaction commit; derivation failures create recoverable indexing markers without mutating or corrupting exact source records. Reindex is resumable, deterministic, and isolated from paid execution.
+  - **(f) Fusion isolation.** Fusion Study `fusionObservations` remain distinct study-owned entities with disjoint ID namespaces (`obs:<hash>` vs `obs-N`). They are neither converted nor counted as canonical Task Observations.
+  - **(g) Archive v2 evidence payload extension.** The archive v2 envelope gains an optional `evidence` payload (`modelConfigurations`, `observations`, `evidenceDecisions`, `evidenceIndexJobs`, `verifierOutcomes`) with deterministic ordering, exact counts, reference-graph validation, prohibited-content scanning, and collision-abort-before-write import. Format version stays 2; earlier-v2 envelopes without evidence validate and import as no-ops; v1 imports write zero evidence rows.
+- **Authority changes:** `PRODUCT.md` and this file amended to describe canonical Task Observations, Eligibility Decisions, Model Configurations, and archive v2 evidence extension as shipped.
+- **Rationale:** Separating immutable evidence records from derived observations prevents raw text bloat, guarantees deterministic re-evaluation without provider calls, enforces statistical honesty (no retry/reuse sample inflation), and allows safe local export/import without credential leakage.
+
+---
+
+## Decision #15: Contextual Compare Results, Task Promotion, and Archive v2 Comparison Extension
+- **Date:** 2026-08-18
+- **Context:** Compare runs produced exact RunRecordV2 evidence but had no semantic result identity, no result route, no task binding, no promotion workflow, no evidence receipt, and no recovery lineage. Users had to visit the raw run ledger to revisit a comparison. Spec: `docs/specs/pending/task-first-evidence-workbench/05-contextual-compare-results/contextual-compare-results-spec.md`; plan: `docs/specs/pending/task-first-evidence-workbench/05-contextual-compare-results/implementation-plan.md`.
+- **Decision:** Ship contextual Compare Results with the following load-bearing choices:
+  - **(a) Comparison Result identity.** A lightweight `ComparisonResultIndex` (`id == runId`) carries status, mode, title, task binding (`ad_hoc` with input-snapshot ref or `canonical` with taskId/version), active observation IDs, evidence receipt revision, and lineage. The index never copies candidate outputs or judge rationale; RunRecordV2 remains exact result authority.
+  - **(b) Canonical routes and reload.** `/compare` and `/compare/results/:comparisonId` reconstruct Rank/Fuse output from exact persisted state on reload without in-memory reducer state. `/runs/:runId` remains an exact-record route and links back to the Compare result when source is Compare.
+  - **(c) Pre-call persistence.** Before any provider call: validate roster/judge/context/mode, create RunRecordV2 through the existing atomic recorder, create or update the Comparison Result index with immutable input-snapshot reference, resolve Task Version and Instance if canonically bound, and persist linkage atomically or abort before paid execution.
+  - **(d) Task binding and promotion.** Task binding control supports search/select canonical Task and version, latest by default with visible pin, clear binding, and editing a bound Task requires creating a new Task version or running as ad hoc. Promotion dialog supports Save-as-Task (create new or link to existing) with exact-match validation and CAS binding update; semantic similarity never creates identity.
+  - **(e) Evidence receipt integration.** Each result shows evidence class, allowed uses, roster coverage, Rubric/protocol/evaluator/verifier status, retries/reused evidence/unknown versions/failures, and reasoned eligibility explanation via Child 04 `EvidenceReceipt`. Ad hoc results state plainly that they are exploratory until saved or linked.
+  - **(f) Recovery and lineage.** Existing retry/re-judge/re-fuse semantics remain inside Compare. Recovery appends attempts and updates the same Comparison Result lineage. "Run again as new comparison" creates a new Result linked as `repeatedFrom` but not declared an independent replicate. "Open in Compare" restores configuration only and never injects historical outputs.
+  - **(g) Legacy migration.** For every existing full Compare RunRecordV2: create an idempotent Comparison Result index with `id == runId`, derive title/status/mode/time from existing summary, set Task binding to `ad_hoc`, and retain exploratory evidence limitation. Repeated migration startup produces no duplicate indexes.
+  - **(h) Archive v2 comparison extension.** The archive v2 envelope gains Comparison Result indexes, lineages, canonical/ad-hoc Task bindings, immutable input-snapshot metadata/artifact references, and migration limitations with collision-abort-before-write import. Format version stays 2; earlier-v2 and v1 imports remain readable.
+- **Authority changes:** `PRODUCT.md` and this file amended to describe contextual Compare Results, task promotion, evidence receipt integration, recovery lineage, legacy migration, and archive v2 comparison extension as shipped.
+- **Rationale:** Semantic result ownership, routes, task linkage, and evidence receipts make Compare history meaningful result history rather than requiring a trip to a raw run ledger. Pre-call persistence guarantees no paid execution without durable source/index/task linkage. Exact-match promotion prevents semantic deduplication from creating false identity.

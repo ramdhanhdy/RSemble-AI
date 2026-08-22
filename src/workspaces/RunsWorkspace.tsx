@@ -17,6 +17,7 @@ import { RunDetail } from "./runs/RunDetail";
 import { LegacyRunDetail } from "./runs/LegacyRunDetail";
 import { DataArchiveActions } from "../ui/DataArchiveActions";
 import type { RunConfigPreload } from "../lib/runs/run-config-preload";
+import { RecordNotFound } from "./records/RecordNotFound";
 
 /** Inline media query — matches the pattern in rsemble.tsx. */
 function useMediaQuery(query: string): boolean {
@@ -61,6 +62,14 @@ export function RunsWorkspace({
   const { summaries } = useRunList(repo, { limit: 500 });
   const selectedSummary = runId ? summaries.find((s) => s.id === runId) : null;
   const isLegacy = selectedSummary?.kind === "legacy";
+  // Route-focus contract (Child 08 spec §P): the legacy /runs/:runId route
+  // moves focus to the exact detail heading after load. Candidate/attempt
+  // deep links own the focus instead (RunDetail focuses the linked row).
+  const deepLinkFocus = focusCandidateId != null || focusJudgeAttemptId != null;
+  useEffect(() => {
+    if (!runId || loading || !record || deepLinkFocus) return;
+    document.querySelector<HTMLElement>("[data-run-detail] [data-detail-heading]")?.focus();
+  }, [runId, loading, record, deepLinkFocus]);
 
   // --- Mobile/tablet: route-based detail ---
   if (!isDesktop && runId) {
@@ -77,17 +86,23 @@ export function RunsWorkspace({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isLegacy && selectedSummary?.kind === "legacy" ? (
-            <LegacyRunDetail summary={selectedSummary} />
+            <LegacyRunDetail
+              summary={selectedSummary}
+              copyHref={`/records/legacy/${encodeURIComponent(selectedSummary.id)}`}
+            />
           ) : loading ? (
             <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">
               Loading…
             </div>
+          ) : !record ? (
+            <RecordNotFound recordType="task-execution" id={runId} />
           ) : (
             <RunDetail
               record={record}
               focusCandidateId={focusCandidateId}
               focusJudgeAttemptId={focusJudgeAttemptId}
               onOpenInCompare={onOpenInCompare}
+              copyHref={runId ? `/records/task-execution/${encodeURIComponent(runId)}` : undefined}
             />
           )}
         </div>
@@ -130,17 +145,23 @@ export function RunsWorkspace({
       <div className="min-h-0 min-w-[600px] flex-1 overflow-y-auto">
         {runId ? (
           isLegacy && selectedSummary?.kind === "legacy" ? (
-            <LegacyRunDetail summary={selectedSummary} />
+            <LegacyRunDetail
+              summary={selectedSummary}
+              copyHref={`/records/legacy/${encodeURIComponent(selectedSummary.id)}`}
+            />
           ) : loading ? (
             <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">
               Loading…
             </div>
+          ) : !record ? (
+            <RecordNotFound recordType="task-execution" id={runId} />
           ) : (
             <RunDetail
               record={record}
               focusCandidateId={focusCandidateId}
               focusJudgeAttemptId={focusJudgeAttemptId}
               onOpenInCompare={onOpenInCompare}
+              copyHref={runId ? `/records/task-execution/${encodeURIComponent(runId)}` : undefined}
             />
           )
         ) : (

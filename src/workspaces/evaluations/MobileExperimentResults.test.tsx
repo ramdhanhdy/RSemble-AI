@@ -326,8 +326,12 @@ describe("MobileExperimentResults — recovery actions (spec §11.1)", () => {
     const h = renderWithRecovery();
     switchModel(h, KEY_C);
     const rows = h.$$("li");
-    expect(rows[1].querySelector("button")?.textContent).toContain("Complete missing result");
-    expect(rows[2].querySelector("button")?.textContent).toContain("Retry incomplete task");
+    expect(rows[1].querySelector("button[data-recovery-action]")?.textContent).toContain(
+      "Complete missing result",
+    );
+    expect(rows[2].querySelector("button[data-recovery-action]")?.textContent).toContain(
+      "Retry incomplete task",
+    );
     cleanup(h);
   });
 
@@ -336,9 +340,9 @@ describe("MobileExperimentResults — recovery actions (spec §11.1)", () => {
     const h = renderWithRecovery(onRepairRequest);
     switchModel(h, KEY_C);
     const rows = h.$$("li");
-    act(() => (rows[1].querySelector("button") as HTMLButtonElement).click());
+    act(() => (rows[1].querySelector("button[data-recovery-action]") as HTMLButtonElement).click());
     expect(onRepairRequest).toHaveBeenCalledWith("t2", KEY_C);
-    act(() => (rows[2].querySelector("button") as HTMLButtonElement).click());
+    act(() => (rows[2].querySelector("button[data-recovery-action]") as HTMLButtonElement).click());
     expect(onRepairRequest).toHaveBeenCalledWith("t3", KEY_C);
     cleanup(h);
   });
@@ -347,7 +351,7 @@ describe("MobileExperimentResults — recovery actions (spec §11.1)", () => {
     const h = renderWithRecovery();
     switchModel(h, KEY_C);
     const rows = h.$$("li");
-    const action = rows[1].querySelector("button") as HTMLButtonElement;
+    const action = rows[1].querySelector("button[data-recovery-action]") as HTMLButtonElement;
     expect(action.className).toContain("min-h-[44px]");
     expect(action.className).toContain("focus-visible:ring-2");
     expect(action.className).toContain("focus-visible:ring-accent");
@@ -359,7 +363,7 @@ describe("MobileExperimentResults — recovery actions (spec §11.1)", () => {
   it("renders no action buttons when no recovery handler is wired", () => {
     const h = renderMobile();
     switchModel(h, KEY_C);
-    expect(h.$$("button")).toHaveLength(0);
+    expect(h.$$("button[data-recovery-action]")).toHaveLength(0);
     cleanup(h);
   });
 });
