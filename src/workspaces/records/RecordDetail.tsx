@@ -9,6 +9,7 @@ import {
   Link as LinkIcon,
   Route,
   TestTubes,
+  XCircle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { EligibilityDecision, Observation } from "../../lib/evidence/evidence-types";
@@ -253,6 +254,22 @@ function ObservationDetail({
   const policyStudyId =
     reference.recordType === "observation" ? (reference.policyStudyId ?? null) : null;
   const explanation = decision ? explainDecision(decision) : null;
+  const limitationCodes = new Set(explanation?.limitationLines.map((l) => l.code));
+  const passedLines = explanation?.reasonLines.filter((l) => !limitationCodes.has(l.code)) ?? [];
+  const limitationLines = explanation?.limitationLines ?? [];
+  const StatusIcon =
+    decision?.status === "eligible"
+      ? CheckCircle2
+      : decision?.status === "provisional"
+        ? AlertTriangle
+        : XCircle;
+  const statusTone =
+    decision?.status === "eligible"
+      ? "text-success"
+      : decision?.status === "provisional"
+        ? "text-warning"
+        : "text-error";
+
   return (
     <div data-record-detail="observation" className="flex flex-col p-4 text-sm">
       <ReferenceHeader reference={reference} />
@@ -279,31 +296,73 @@ function ObservationDetail({
             </span>
             <span>·</span>
             <span className="flex items-center gap-1.5">
-              {decision!.status === "eligible" ? (
-                <CheckCircle2 size={14} className="text-success" aria-hidden="true" />
-              ) : (
-                <AlertTriangle size={14} className="text-warning" aria-hidden="true" />
-              )}
+              <StatusIcon size={14} className={statusTone} aria-hidden="true" />
               {explanation.statusLabel}
             </span>
           </p>
           <p className="text-xs text-text-muted">{explanation.statusDescription}</p>
-          <ul className="flex flex-col gap-1" role="list" aria-label="Rules passed">
-            {explanation.reasonLines.map((line) => (
-              <li
-                key={line.code}
-                data-eligibility-rule=""
-                className="flex items-start gap-1.5 text-xs text-text-secondary"
+          {passedLines.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <h3 className="font-mono text-[11px] uppercase tracking-wider text-text-muted">
+                Rules passed
+              </h3>
+              <ul className="flex flex-col gap-1" role="list" aria-label="Rules passed">
+                {passedLines.map((line) => (
+                  <li
+                    key={line.code}
+                    data-eligibility-rule=""
+                    className="flex items-start gap-1.5 text-xs text-text-secondary"
+                  >
+                    <CheckCircle2
+                      size={13}
+                      className="mt-0.5 shrink-0 text-success"
+                      aria-hidden="true"
+                    />
+                    <span>{line.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {limitationLines.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <h3
+                className={`font-mono text-[11px] uppercase tracking-wider ${
+                  decision?.status === "excluded" ? "text-error" : "text-warning"
+                }`}
               >
-                <CheckCircle2
-                  size={13}
-                  className="mt-0.5 shrink-0 text-success"
-                  aria-hidden="true"
-                />
-                <span>{line.text}</span>
-              </li>
-            ))}
-          </ul>
+                Limitations and disclosures
+              </h3>
+              <ul
+                className="flex flex-col gap-1"
+                role="list"
+                aria-label="Limitations and disclosures"
+              >
+                {limitationLines.map((line) => (
+                  <li
+                    key={line.code}
+                    data-eligibility-limitation=""
+                    className="flex items-start gap-1.5 text-xs text-text-secondary"
+                  >
+                    {decision?.status === "excluded" ? (
+                      <XCircle
+                        size={13}
+                        className="mt-0.5 shrink-0 text-error"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <AlertTriangle
+                        size={13}
+                        className="mt-0.5 shrink-0 text-warning"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span>{line.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
       <section className="flex flex-col gap-2 py-4">
@@ -597,7 +656,7 @@ function LegacyDetail({
         copyHref={recordDetailHref(reference)}
         backHref="/records"
         backLabel="Back to Records"
-        preservedPayload={summary}
+        preservedPayload={summary.rawPayload ?? summary}
       />
     </div>
   ) : (

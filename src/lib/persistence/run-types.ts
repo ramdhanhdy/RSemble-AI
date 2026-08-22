@@ -162,6 +162,13 @@ export interface FullRunSummaryV2 {
   searchText: string;
 }
 
+export interface LegacyImportMetadata {
+  importedAt?: number;
+  format?: string;
+  importer?: string;
+  source?: string;
+}
+
 export interface LegacyRunSummary {
   kind: "legacy";
   schemaVersion: "1-import";
@@ -173,6 +180,8 @@ export interface LegacyRunSummary {
   scoresByModelKey: Record<string, number>;
   detailAvailable: false;
   searchText: string;
+  rawPayload?: Record<string, unknown>;
+  importMetadata?: LegacyImportMetadata;
 }
 
 export type RunSummary = FullRunSummaryV2 | LegacyRunSummary;
@@ -727,6 +736,16 @@ export function isFullRunSummaryV2(v: unknown): v is FullRunSummaryV2 {
   return true;
 }
 
+export function isLegacyImportMetadata(v: unknown): v is LegacyImportMetadata {
+  if (!isRecord(v)) return false;
+  if (v.importedAt !== undefined && !isNumber(v.importedAt)) return false;
+  if (v.format !== undefined && !isString(v.format)) return false;
+  if (v.importer !== undefined && !isString(v.importer)) return false;
+  if (v.source !== undefined && !isString(v.source)) return false;
+  if (hasProhibitedKeys(v)) return false;
+  return true;
+}
+
 export function isLegacyRunSummary(v: unknown): v is LegacyRunSummary {
   if (!isRecord(v)) return false;
   if (v.kind !== "legacy") return false;
@@ -739,6 +758,8 @@ export function isLegacyRunSummary(v: unknown): v is LegacyRunSummary {
   if (!isNumberRecord(v.scoresByModelKey)) return false;
   if (v.detailAvailable !== false) return false;
   if (!isString(v.searchText)) return false;
+  if (v.rawPayload !== undefined && !isRecord(v.rawPayload)) return false;
+  if (v.importMetadata !== undefined && !isLegacyImportMetadata(v.importMetadata)) return false;
   // Legacy summaries cannot carry fabricated status/mode/Judge/source/evaluation.
   for (const key of Object.keys(v)) {
     if (LEGACY_FORBIDDEN_KEYS.has(key)) return false;
