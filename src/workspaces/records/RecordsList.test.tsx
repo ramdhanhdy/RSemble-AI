@@ -201,4 +201,28 @@ describe("RecordsList characterization (ported from RunList, §I.2/I.3)", () => 
     expect(h.container.querySelector("button[data-action='load-more']")).toBeTruthy();
     act(() => h.root.unmount());
   });
+
+  it("hides stale Load more pagination button when a blocking index error occurs", async () => {
+    const repo = pagedRepository(120);
+    const h = await renderList(repo);
+    expect(h.container.querySelector("button[data-action='load-more']")).not.toBeNull();
+    repo.list = vi.fn().mockRejectedValue(
+      new RecordsIndexBuildError([
+        { entityType: "runs", id: "runs", reason: "Disk full" },
+      ]),
+    );
+    const typeSelect = h.container.querySelector<HTMLSelectElement>(
+      "select[data-filter='type']",
+    )!;
+    act(() => {
+      typeSelect.value = "comparison";
+      typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.container.querySelector("[data-index-error-panel]")).not.toBeNull();
+    expect(h.container.querySelector("button[data-action='load-more']")).toBeNull();
+    act(() => h.root.unmount());
+  });
 });

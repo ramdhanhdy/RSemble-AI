@@ -46,9 +46,15 @@ async function renderList(repo: RecordsRepository) {
   return { container, root };
 }
 
+const originalClipboard = navigator.clipboard;
 afterEach(() => {
   vi.useRealTimers();
   document.body.innerHTML = "";
+  Object.defineProperty(navigator, "clipboard", {
+    value: originalClipboard,
+    configurable: true,
+    writable: true,
+  });
 });
 
 // §K.5 — the list pane renders a blocking, rebuildable diagnostics panel when
@@ -84,6 +90,85 @@ describe("RecordsIndexErrorPanel (§K.5)", () => {
       await Promise.resolve();
     });
     expect(h.container.querySelector("[data-index-error-panel]")).toBeNull();
+    act(() => h.root.unmount());
+  });
+
+  it("renders the exact diagnostic count (§K.5, F9)", async () => {
+    const repo = repository();
+    const failure = new RecordsIndexBuildError([
+      { entityType: "observations", id: "observations", reason: "Database closed" },
+      { entityType: "policy-study-trials", id: "study-1", reason: "Disk read error" },
+      { entityType: "policy-study-observations", id: "study-2", reason: "Network timeout" },
+    ]);
+    (repo.list as ReturnType<typeof vi.fn>).mockRejectedValue(failure);
+    const h = await renderList(repo);
+    expect(h.container.textContent).toContain("3 diagnostics");
+    act(() => h.root.unmount());
+  });
+
+  it("renders singular diagnostic count for a single failure (§K.5, F9)", async () => {
+    const repo = repository();
+    const failure = new RecordsIndexBuildError([
+      { entityType: "runs", id: "runs", reason: "Disk error" },
+    ]);
+    (repo.list as ReturnType<typeof vi.fn>).mockRejectedValue(failure);
+    const h = await renderList(repo);
+    expect(h.container.textContent).toContain("1 diagnostic");
+    act(() => h.root.unmount());
+  });
+
+  it("provides visible and accessible feedback when copy diagnostics fails (§K.5, F10)", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    });
+    const repo = repository();
+    const failure = new RecordsIndexBuildError([
+      { entityType: "observations", id: "observations", reason: "Database closed" },
+    ]);
+    (repo.list as ReturnType<typeof vi.fn>).mockRejectedValue(failure);
+    const h = await renderList(repo);
+    const copyBtn = h.container.querySelector<HTMLButtonElement>(
+      "button[data-action='copy-diagnostics']",
+    )!;
+    await act(async () => {
+      copyBtn.click();
+      await Promise.resolve();
+    });
+    expect(copyBtn.textContent).toContain("Failed to copy");
+    expect(copyBtn.getAttribute("aria-label")).toBe("Failed to copy diagnostics");
+    const liveRegion = h.container.querySelector("[role='status'][aria-live='polite']");
+    expect(liveRegion).not.toBeNull();
+    expect(liveRegion?.textContent).toContain("Failed to copy diagnostics to clipboard.");
+    act(() => h.root.unmount());
+  });
+
+  it("provides accessible announcement when copy diagnostics succeeds (§K.5, F10)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    });
+    const repo = repository();
+    const failure = new RecordsIndexBuildError([
+      { entityType: "observations", id: "observations", reason: "Database closed" },
+    ]);
+    (repo.list as ReturnType<typeof vi.fn>).mockRejectedValue(failure);
+    const h = await renderList(repo);
+    const copyBtn = h.container.querySelector<HTMLButtonElement>(
+      "button[data-action='copy-diagnostics']",
+    )!;
+    await act(async () => {
+      copyBtn.click();
+      await Promise.resolve();
+    });
+    expect(copyBtn.textContent).toContain("Copied!");
+    expect(copyBtn.getAttribute("aria-label")).toBe("Diagnostics copied");
+    const liveRegion = h.container.querySelector("[role='status'][aria-live='polite']");
+    expect(liveRegion?.textContent).toContain("Diagnostics copied to clipboard.");
     act(() => h.root.unmount());
   });
 });

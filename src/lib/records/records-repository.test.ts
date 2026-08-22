@@ -146,6 +146,69 @@ describe("RecordsRepository", () => {
     expect(indexError.message).toContain("records index could not be built");
   });
 
+  it("aggregates Policy Study listTrials rejections into RecordsIndexBuildError diagnostics", async () => {
+    const deps = dependencies();
+    deps.studyRepo.listStudies.mockResolvedValue([{ id: "study-1" }] as never);
+    deps.studyRepo.listTrials.mockRejectedValue(new Error("Trials storage failure") as never);
+    const repository = createRecordsRepository(deps as never);
+    const failure = await repository.list({}).catch((reason: unknown) => reason);
+    expect(failure).toBeInstanceOf(RecordsIndexBuildError);
+    const indexError = failure as RecordsIndexBuildError;
+    expect(indexError.diagnostics).toContainEqual({
+      entityType: "policy-study-trials",
+      id: "study-1",
+      reason: "Trials storage failure",
+    });
+  });
+
+  it("aggregates Policy Study listObservations rejections into RecordsIndexBuildError diagnostics", async () => {
+    const deps = dependencies();
+    deps.studyRepo.listStudies.mockResolvedValue([{ id: "study-1" }] as never);
+    deps.studyRepo.listObservations.mockRejectedValue(new Error("Observations read failure") as never);
+    const repository = createRecordsRepository(deps as never);
+    const failure = await repository.list({}).catch((reason: unknown) => reason);
+    expect(failure).toBeInstanceOf(RecordsIndexBuildError);
+    const indexError = failure as RecordsIndexBuildError;
+    expect(indexError.diagnostics).toContainEqual({
+      entityType: "policy-study-observations",
+      id: "study-1",
+      reason: "Observations read failure",
+    });
+  });
+
+  it("aggregates multiple failures across top-level stores and policy study children", async () => {
+    const deps = dependencies();
+    (deps.runRepo.list as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("Run storage offline"));
+    (deps.comparisonRepo.listComparisonResults as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Comparisons index broken"),
+    );
+    deps.studyRepo.listStudies.mockResolvedValue([{ id: "study-1" }, { id: "study-2" }] as never);
+    deps.studyRepo.listTrials.mockImplementation(async (id?: string) => {
+      if (id === "study-1") throw new Error("Trial lock error");
+      return [] as never;
+    });
+    deps.studyRepo.listObservations.mockImplementation(async (id?: string) => {
+      if (id === "study-2") throw new Error("Observation sync error");
+      return [] as never;
+    });
+    (deps.evidenceRepo.listObservations as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Evidence disconnected"),
+    );
+    const repository = createRecordsRepository(deps as never);
+    const failure = await repository.list({}).catch((reason: unknown) => reason);
+    expect(failure).toBeInstanceOf(RecordsIndexBuildError);
+    const indexError = failure as RecordsIndexBuildError;
+    expect(indexError.diagnostics).toEqual(
+      expect.arrayContaining([
+        { entityType: "runs", id: "runs", reason: "Run storage offline" },
+        { entityType: "comparisons", id: "comparisons", reason: "Comparisons index broken" },
+        { entityType: "observations", id: "observations", reason: "Evidence disconnected" },
+        { entityType: "policy-study-trials", id: "study-1", reason: "Trial lock error" },
+        { entityType: "policy-study-observations", id: "study-2", reason: "Observation sync error" },
+      ]),
+    );
+  });
+
   it("caps Policy Study detail at 20 newest exact children while preserving aggregate counts", async () => {
     const deps = dependencies();
     const summaries = Array.from({ length: 25 }, (_, index) => ({
