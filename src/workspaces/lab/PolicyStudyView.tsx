@@ -223,6 +223,10 @@ export function PolicyStudyView({
   const [configLabels, setConfigLabels] = useState<Map<string, string>>(new Map());
   const [qualifiedCount, setQualifiedCount] = useState<number | null>(null);
 
+  useEffect(() => {
+    document.querySelector<HTMLElement>("h1")?.focus();
+  }, [study.id]);
+
   // Load study graph and metadata
   useEffect(() => {
     if (!studyRepo) return;
@@ -419,7 +423,7 @@ export function PolicyStudyView({
           )}
         </div>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-xl font-bold text-text">{study.title}</h1>
+          <h1 tabIndex={-1} className="text-xl font-bold text-text focus:outline-none">{study.title}</h1>
           <Link
             to={`/evaluations/sets/${study.definition.workload.taskSetId}`}
             className="inline-flex min-h-[44px] items-center text-xs font-medium text-text-secondary hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"

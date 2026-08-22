@@ -44,7 +44,7 @@ export interface PolicyStudyChildren {
 }
 
 export interface RecordsRepository {
-  list(query: RecordsQuery): Promise<RecordsPage>;
+  list(query?: RecordsQuery): Promise<RecordsPage>;
   getReference(recordType: RecordType, id: string): Promise<RecordReference | null>;
   getTaskExecution(id: string): Promise<RunRecordV2 | null>;
   getLegacySummary(id: string): Promise<LegacyRunSummary | null>;

@@ -271,15 +271,15 @@ export function composeRecordReferences(input: RecordsCompositionInput): RecordR
 
 export function queryRecords(
   records: readonly RecordReference[],
-  query: RecordsQuery,
+  query?: RecordsQuery,
 ): RecordsPage {
-  const text = query.text?.trim().toLowerCase() ?? "";
+  const text = query?.text?.trim().toLowerCase() ?? "";
   const filtered = records.filter((record) => {
-    if (query.type && record.recordType !== query.type) return false;
-    if (query.modelKey && !record.modelKeys.includes(query.modelKey)) return false;
-    if (query.status && record.status !== query.status) return false;
-    if (query.mode && record.mode !== query.mode) return false;
-    if (query.source && record.source !== query.source) return false;
+    if (query?.type && record.recordType !== query.type) return false;
+    if (query?.modelKey && !record.modelKeys.includes(query.modelKey)) return false;
+    if (query?.status && record.status !== query.status) return false;
+    if (query?.mode && record.mode !== query.mode) return false;
+    if (query?.source && record.source !== query.source) return false;
     return (
       text.length === 0 || record.id.toLowerCase() === text || record.searchText.includes(text)
     );
@@ -294,8 +294,11 @@ export function queryRecords(
     return compareRecords(a, b);
   });
 
-  const offset = Math.max(0, query.offset ?? 0);
-  const limit = Math.max(1, query.limit ?? 50);
+  const offset = Math.max(0, query?.offset ?? 0);
+  const limit =
+    query?.limit === null || query?.limit === undefined || query?.limit === Infinity
+      ? filtered.length
+      : Math.max(1, query.limit);
   return {
     items: filtered.slice(offset, offset + limit),
     total: filtered.length,

@@ -447,6 +447,7 @@ export function ComparisonResultRoute({
     void loadData();
   }, [loadData]);
 
+
   const handleRepair = useCallback(async () => {
     if (!comparisonRepo || !comparisonId) return;
     setRepairing(true);
@@ -471,6 +472,12 @@ export function ComparisonResultRoute({
   }, [envelope?.record, onOpenInCompare, navigate]);
 
   const { index, record, warning } = envelope ?? {};
+
+  useEffect(() => {
+    if (!loading && (record || index)) {
+      document.querySelector<HTMLElement>("[data-comparison-result-route] h1")?.focus();
+    }
+  }, [loading, record, index, comparisonId]);
 
   const candidateReceipts = useMemo(() => {
     if (!record || !index) return [];
@@ -755,7 +762,10 @@ export function ComparisonResultRoute({
           Task Title & Prompt Bar
           --------------------------------------------------------------------- */}
       <div className="flex flex-col gap-2 border-b border-edge bg-panel/50 px-4 py-3">
-        <h1 className="font-sans text-base font-semibold leading-snug text-text">
+        <h1
+          tabIndex={-1}
+          className="font-sans text-base font-semibold leading-snug text-text focus:outline-none"
+        >
           {index.title || record.task.title || "Untitled Comparison"}
         </h1>
         <p className="line-clamp-3 text-sm leading-relaxed text-text-secondary">

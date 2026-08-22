@@ -120,6 +120,12 @@ export function ExperimentResults({
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (runRecords) {
+      document.querySelector<HTMLElement>("h1")?.focus();
+    }
+  }, [runRecords, experiment.id]);
+
   // --- Roster extension (plan Workstream F) ---------------------------------
   const [addModelOpen, setAddModelOpen] = useState(false);
   const [addModelSlot, setAddModelSlot] = useState<ModelSlot | null>(null);
@@ -571,7 +577,7 @@ export function ExperimentResults({
     <div className="flex min-w-0 flex-1 flex-col gap-4 p-4">
       <header className="flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <h1 className="truncate text-lg font-semibold text-text">
+          <h1 tabIndex={-1} className="truncate text-lg font-semibold text-text focus:outline-none">
             {taskSetNameProp ?? suiteName ?? experiment.suiteId}
           </h1>
           <StatusMark status={experiment.status} />

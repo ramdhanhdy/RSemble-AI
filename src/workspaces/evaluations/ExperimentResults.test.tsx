@@ -1984,21 +1984,15 @@ describe("ExperimentResults — route heading focus contract (§P)", () => {
     const exp: ExperimentRecord = {
       id: "exp-focus-1",
       suiteId: "suite-focus-1",
+      suiteVersion: 1,
+      protocolFingerprint: "sha256:abc",
+      execution: null,
+      snapshot: makeSnapshot(["task-1"]),
+      tasks: [makeTaskState("task-1", "run-1")],
       status: "completed",
+      revision: 1,
       createdAt: 1000,
       updatedAt: 2000,
-      tasks: [],
-      snapshot: {
-        suiteId: "suite-focus-1",
-        suiteVersion: 1,
-        name: "Focus Suite",
-        description: "",
-        tasks: [],
-        rubrics: [],
-        modelSlots: [],
-        profiles: [],
-        defaultJudge: { providerId: "openrouter", model: "anthropic/claude-3.5-sonnet" },
-      },
     };
     const h = renderWithRouter(
       <ExperimentResults

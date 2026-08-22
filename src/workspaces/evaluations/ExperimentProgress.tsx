@@ -50,6 +50,10 @@ export function ExperimentProgress({
     });
   }, [controller]);
 
+  useEffect(() => {
+    document.querySelector<HTMLElement>("h1")?.focus();
+  }, [experiment.id]);
+
   const hasRunningAttempt = experiment.tasks.some((t) =>
     t.attempts.some((a) => a.status === "running"),
   );
@@ -85,7 +89,7 @@ export function ExperimentProgress({
     <div className="flex flex-1 flex-col gap-4 p-4">
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="max-w-[18rem] truncate font-mono text-sm text-text">{experiment.id}</h1>
+          <h1 tabIndex={-1} className="max-w-[18rem] truncate font-mono text-sm text-text focus:outline-none">{experiment.id}</h1>
           <span className="text-xs text-text-muted">
             Task Set v{experiment.snapshot.suiteVersion}
           </span>

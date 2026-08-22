@@ -111,7 +111,7 @@ export function resolveRecordOwner(reference: RecordReference): OwningContextRes
 /** §L.1 action vocabulary: the owner opener uses context-specific wording
  *  resolved from the owning kind, never a generic "Open owning context". */
 const OWNER_ACTION_LABELS: Record<OwningContextResolution["ownerKind"], string> = {
-  compare: "Open in Compare",
+  compare: "Open comparison result",
   evaluation: "Open evaluation",
   task: "Open Task Set",
   model: "Open model configuration",

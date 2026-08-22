@@ -14,7 +14,7 @@
 // beyond one role="status" result count while searching (§H.5).
 // =============================================================================
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AlertCircle, History, Search, X } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useRecordsRepository, useStorageRetry } from "../lib/persistence/repository-context";
@@ -27,10 +27,8 @@ import { DrawerSurface } from "./DialogSurface";
 
 const DEBOUNCE_MS = 200;
 const GROUP_CAP = 5;
-/** One bounded read of the full deterministic stream; grouping/caps happen
- *  below. The repository composes sources per call — this stays a single
- *  typed read, not a second index. */
-const FULL_STREAM_LIMIT = 1_000_000;
+const WINDOW_SIZE = 30;
+const ROW_HEIGHT = 68;
 
 type DrawerGroupKey = "compare" | "evaluations" | "lab" | "observations" | "legacy";
 
@@ -42,6 +40,18 @@ const DRAWER_GROUPS: readonly { key: DrawerGroupKey; heading: string }[] = [
   { key: "legacy", heading: "Legacy & Imported" },
 ];
 
+interface DrawerSection {
+  key: string;
+  heading: string;
+  items: RecordReference[];
+}
+
+interface LogicalStop {
+  stopIndex: number;
+  itemIndex: number;
+  kind: "main" | "exact";
+  reference: RecordReference;
+}
 /** Workspace groups, not type groups (§H.2): rows inside one group may carry
  *  different type eyebrows; the eyebrow carries type identity. */
 function groupOf(reference: RecordReference): DrawerGroupKey {
@@ -159,7 +169,7 @@ export function RecordsDrawer({
       return;
     }
     repo
-      .list({ limit: FULL_STREAM_LIMIT })
+      .list()
       .then((page) => {
         if (requestId.current === id) setReferences(page.items);
       })
@@ -169,7 +179,6 @@ export function RecordsDrawer({
         }
       });
   }, [open, repo, reloadToken]);
-
   // 200ms debounce, matching the full utility's search (§H.2).
   useEffect(() => {
     if (!open) return;
@@ -187,64 +196,189 @@ export function RecordsDrawer({
   const searching = debouncedText.length > 0;
   const page: RecordsPage | null = useMemo(() => {
     if (references === null) return null;
-    // Evaluate the complete already-loaded bounded stream: pre-search
-    // grouping needs every record to find the newest five per workspace
-    // group, and search promises all matches (the queryRecords default is
-    // 50).
     return queryRecords(references, {
       text: searching ? debouncedText : undefined,
-      limit: FULL_STREAM_LIMIT,
     });
   }, [references, searching, debouncedText]);
 
-  const exactHits =
-    page !== null && searching
+  const sections = useMemo<DrawerSection[]>(() => {
+    if (page === null) return [];
+    const exactHits = searching
       ? page.items.filter((reference) => reference.id.toLowerCase() === debouncedText)
       : [];
-  // An exact hit promoted into EXACT MATCH must not render a second time
-  // inside its workspace group below.
-  const grouped =
-    page === null
-      ? []
-      : groupReferences(
-          page.items.filter((reference) => !exactHits.includes(reference)),
-          searching ? null : GROUP_CAP,
-        );
-  // §H.4 keyboard contract: ↓/↑ move between record actions (each row's
-  // main anchor is one stop, a trailing Exact sibling link the next); ↑
-  // from the first stop returns to search; Enter activates (native anchor
-  // behavior, made deterministic). Escape stays owned by the Base UI
-  // dialog; Tab order and focus trapping are untouched. The handler rides
-  // the stops themselves — Base UI's focus manager stops keydown
-  // propagation above the popup, so document-level delegation never fires.
+    const grouped = groupReferences(
+      page.items.filter((reference) => !exactHits.includes(reference)),
+      searching ? null : GROUP_CAP,
+    );
+    const list: DrawerSection[] = [];
+    if (exactHits.length > 0) {
+      list.push({ key: "exact", heading: "Exact Match", items: exactHits });
+    }
+    for (const group of grouped) {
+      list.push({ key: group.key, heading: group.heading, items: group.items });
+    }
+    return list;
+  }, [page, searching, debouncedText]);
+
+  const flatItems = useMemo<
+    Array<{ reference: RecordReference; sectionKey: string; sectionHeading: string }>
+  >(() => {
+    const result: Array<{
+      reference: RecordReference;
+      sectionKey: string;
+      sectionHeading: string;
+    }> = [];
+    for (const section of sections) {
+      for (const item of section.items) {
+        result.push({
+          reference: item,
+          sectionKey: section.key,
+          sectionHeading: section.heading,
+        });
+      }
+    }
+    return result;
+  }, [sections]);
+
+  const logicalStops = useMemo<LogicalStop[]>(() => {
+    const stops: LogicalStop[] = [];
+    for (let i = 0; i < flatItems.length; i++) {
+      const item = flatItems[i]!;
+      stops.push({
+        stopIndex: stops.length,
+        itemIndex: i,
+        kind: "main",
+        reference: item.reference,
+      });
+      const semantic =
+        item.reference.recordType === "comparison" ||
+        item.reference.recordType === "evaluation" ||
+        item.reference.recordType === "policy-study";
+      if (semantic) {
+        stops.push({
+          stopIndex: stops.length,
+          itemIndex: i,
+          kind: "exact",
+          reference: item.reference,
+        });
+      }
+    }
+    return stops;
+  }, [flatItems]);
+
+  const [scrollTop, setScrollTop] = useState(0);
+  const [targetStop, setTargetStop] = useState<number | null>(null);
+
+  const onBodyScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(event.currentTarget.scrollTop);
+  }, []);
+
+  const totalItemsCount = flatItems.length;
+  const startIndex = searching
+    ? Math.max(
+        0,
+        Math.min(
+          Math.floor(scrollTop / ROW_HEIGHT) - 5,
+          Math.max(0, totalItemsCount - WINDOW_SIZE),
+        ),
+      )
+    : 0;
+  const endIndex = searching
+    ? Math.min(totalItemsCount, startIndex + WINDOW_SIZE)
+    : totalItemsCount;
+
+  const topSpacerHeight = searching ? startIndex * ROW_HEIGHT : 0;
+  const bottomSpacerHeight = searching ? (totalItemsCount - endIndex) * ROW_HEIGHT : 0;
+
+  const windowedSections = useMemo<DrawerSection[]>(() => {
+    if (!searching) return sections;
+    if (flatItems.length === 0) return [];
+    const slice = flatItems.slice(startIndex, endIndex);
+    const bySection = new Map<string, DrawerSection>();
+    for (const entry of slice) {
+      let s = bySection.get(entry.sectionKey);
+      if (!s) {
+        s = { key: entry.sectionKey, heading: entry.sectionHeading, items: [] };
+        bySection.set(entry.sectionKey, s);
+      }
+      s.items.push(entry.reference);
+    }
+    return [...bySection.values()];
+  }, [searching, sections, flatItems, startIndex, endIndex]);
+
   const searchRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  function drawerNavStops(): HTMLElement[] {
-    return [
-      ...(bodyRef.current?.querySelectorAll<HTMLElement>(
-        "a[data-record-row-link], a[data-exact-link]",
-      ) ?? []),
-    ];
+
+  useEffect(() => {
+    if (targetStop === null) return;
+    const stop = logicalStops[targetStop];
+    if (!stop) return;
+    const selector =
+      stop.kind === "exact"
+        ? `[data-record-type="${stop.reference.recordType}"][data-record-id="${stop.reference.id}"] a[data-exact-link]`
+        : `[data-record-type="${stop.reference.recordType}"][data-record-id="${stop.reference.id}"] a[data-record-row-link]`;
+    const el = bodyRef.current?.querySelector<HTMLElement>(selector);
+    if (el) {
+      el.focus();
+    }
+  }, [targetStop, logicalStops, windowedSections]);
+
+  function navigateToStop(index: number) {
+    if (index < 0) {
+      setTargetStop(null);
+      searchRef.current?.focus();
+      return;
+    }
+    if (index >= logicalStops.length) return;
+    setTargetStop(index);
+    const stop = logicalStops[index];
+    if (stop) {
+      const itemIndex = stop.itemIndex;
+      if (searching && (itemIndex < startIndex || itemIndex >= endIndex)) {
+        if (bodyRef.current) {
+          bodyRef.current.scrollTop = itemIndex * ROW_HEIGHT;
+        }
+      }
+      const selector =
+        stop.kind === "exact"
+          ? `[data-record-type="${stop.reference.recordType}"][data-record-id="${stop.reference.id}"] a[data-exact-link]`
+          : `[data-record-type="${stop.reference.recordType}"][data-record-id="${stop.reference.id}"] a[data-record-row-link]`;
+      const el = bodyRef.current?.querySelector<HTMLElement>(selector);
+      if (el) {
+        el.focus();
+      }
+    }
   }
+
   function onSearchKeyDown(event: React.KeyboardEvent) {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    event.preventDefault();
-    const stops = drawerNavStops();
-    if (stops.length === 0) return;
-    (event.key === "ArrowDown" ? stops[0] : stops[stops.length - 1]).focus();
-  }
-  function onStopKeyDown(event: React.KeyboardEvent<HTMLElement>) {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    const stops = drawerNavStops();
-    const index = stops.indexOf(event.currentTarget);
-    if (index === -1) return;
+    if (logicalStops.length === 0) return;
     event.preventDefault();
     if (event.key === "ArrowDown") {
-      stops[index + 1]?.focus();
+      navigateToStop(0);
     } else {
-      const previous = stops[index - 1];
-      if (previous) previous.focus();
-      else searchRef.current?.focus();
+      navigateToStop(logicalStops.length - 1);
+    }
+  }
+
+  function onStopKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const isExact = event.currentTarget.hasAttribute("data-exact-link");
+    const row = event.currentTarget.closest<HTMLElement>("[data-record-row]");
+    const recordId = row?.getAttribute("data-record-id");
+    const recordType = row?.getAttribute("data-record-type");
+    const currentStopIndex = logicalStops.findIndex(
+      (s) =>
+        s.reference.id === recordId &&
+        s.reference.recordType === recordType &&
+        (isExact ? s.kind === "exact" : s.kind === "main"),
+    );
+    if (currentStopIndex === -1) return;
+    if (event.key === "ArrowDown") {
+      navigateToStop(currentStopIndex + 1);
+    } else {
+      navigateToStop(currentStopIndex - 1);
     }
   }
   return (
@@ -297,6 +431,7 @@ export function RecordsDrawer({
         role="region"
         aria-label="Recent records"
         ref={bodyRef}
+        onScroll={searching ? onBodyScroll : undefined}
         onClickCapture={onDrawerLinkClickCapture}
         className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 scroll-thin"
       >
@@ -367,28 +502,10 @@ export function RecordsDrawer({
                 {page.total} matching {page.total === 1 ? "record" : "records"}
               </p>
             )}
-            {exactHits.length > 0 && (
-              <section data-drawer-group="">
-                <h3
-                  data-drawer-group-head=""
-                  className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
-                >
-                  Exact Match
-                </h3>
-                <ul className="flex flex-col gap-1.5" role="list">
-                  {exactHits.map((reference) => (
-                    <li key={`${reference.recordType}:${reference.id}`}>
-                      <RecordTypeRow
-                        reference={reference}
-                        compact
-                        onRecordKeyDown={onStopKeyDown}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </section>
+            {topSpacerHeight > 0 && (
+              <div style={{ height: topSpacerHeight }} aria-hidden="true" />
             )}
-            {grouped.map((group) => (
+            {windowedSections.map((group) => (
               <section key={group.key} data-drawer-group="">
                 <h3
                   data-drawer-group-head=""
@@ -409,6 +526,9 @@ export function RecordsDrawer({
                 </ul>
               </section>
             ))}
+            {bottomSpacerHeight > 0 && (
+              <div style={{ height: bottomSpacerHeight }} aria-hidden="true" />
+            )}
           </>
         )}
       </div>

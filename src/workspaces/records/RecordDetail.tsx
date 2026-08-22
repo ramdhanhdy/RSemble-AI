@@ -34,7 +34,7 @@ import { StatusMark } from "../../ui/StatusMark";
 import { CopyLinkButton } from "../runs/CopyLinkButton";
 import { LegacyRunDetail } from "../runs/LegacyRunDetail";
 import { RunDetail } from "../runs/RunDetail";
-import type { RunConfigPreload } from "../../lib/runs/run-config-preload";
+import { runConfigFromRecord, type RunConfigPreload } from "../../lib/runs/run-config-preload";
 import { RecordNotFound } from "./RecordNotFound";
 
 interface DetailState {
@@ -43,6 +43,7 @@ interface DetailState {
   decision: EligibilityDecision | null;
   policyChildren: PolicyStudyChildren | null;
   childRecords: RecordReference[];
+  comparisonRunRecord: RunRecordV2 | null;
   loading: boolean;
   error: string | null;
 }
@@ -53,6 +54,7 @@ const INITIAL_STATE: DetailState = {
   decision: null,
   policyChildren: null,
   childRecords: [],
+  comparisonRunRecord: null,
   loading: true,
   error: null,
 };
@@ -221,6 +223,8 @@ function SemanticReferenceDetail({
   reference,
   childRecords,
   policyChildren,
+  onOpenInCompare,
+  comparisonRunRecord,
 }: {
   reference:
     | EvaluationExecutionReference
@@ -228,6 +232,8 @@ function SemanticReferenceDetail({
     | Extract<RecordReference, { recordType: "comparison" }>;
   childRecords: RecordReference[];
   policyChildren: PolicyStudyChildren | null;
+  onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+  comparisonRunRecord?: RunRecordV2 | null;
 }) {
   return (
     <div data-record-detail={reference.recordType} className="flex flex-col p-4 text-sm">
@@ -235,7 +241,30 @@ function SemanticReferenceDetail({
       <OwnerCard reference={reference} />
       <ReferenceSummary reference={reference} />
       <BeneathList reference={reference} records={childRecords} policyChildren={policyChildren} />
-      <div className="flex flex-wrap gap-2 border-t border-edge py-4">
+      <div className="flex flex-wrap items-center gap-2 border-t border-edge py-4">
+        {reference.recordType === "comparison" &&
+          onOpenInCompare &&
+          comparisonRunRecord && (
+            <span className="inline-flex flex-col items-start gap-1">
+              <button
+                type="button"
+                data-action="open-in-compare"
+                onClick={() =>
+                  onOpenInCompare(
+                    reference.runId,
+                    runConfigFromRecord(comparisonRunRecord),
+                  )
+                }
+                className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+              >
+                <ExternalLink size={14} aria-hidden="true" />
+                Open in Compare
+              </button>
+              <span className="honesty-note text-[11px] text-text-secondary">
+                {HONESTY_COPY.configurationOnly}
+              </span>
+            </span>
+          )}
         <CopyLinkButton href={recordDetailHref(reference)} subject="record" />
       </div>
     </div>
@@ -460,16 +489,21 @@ export function RecordDetail({
       let observationDecision: EligibilityDecision | null = null;
       let policyChildren: PolicyStudyChildren | null = null;
       let childRecords: RecordReference[] = [];
+      let comparisonRunRecord: RunRecordV2 | null = null;
       if (reference.recordType === "observation") {
         observation = await repository.getObservation(reference.id);
         observationDecision = await repository.getObservationDecision(reference.id);
       } else if (reference.recordType === "comparison") {
-        const page = await repository.list({
-          type: "task-execution",
-          text: reference.runId,
-          limit: 50,
-        });
+        const [page, compRun] = await Promise.all([
+          repository.list({
+            type: "task-execution",
+            text: reference.runId,
+            limit: 50,
+          }),
+          repository.getTaskExecution(reference.runId),
+        ]);
         childRecords = page.items.filter((item) => item.id === reference.runId);
+        comparisonRunRecord = compRun;
       } else if (reference.recordType === "evaluation") {
         const page = await repository.list({ type: "task-execution", limit: 500 });
         const ids = new Set(reference.childRunIds);
@@ -484,6 +518,7 @@ export function RecordDetail({
         decision: observationDecision,
         policyChildren,
         childRecords,
+        comparisonRunRecord,
         loading: false,
         error: null,
       };
@@ -565,6 +600,8 @@ export function RecordDetail({
       reference={state.reference}
       childRecords={state.childRecords}
       policyChildren={state.policyChildren}
+      onOpenInCompare={onOpenInCompare}
+      comparisonRunRecord={state.comparisonRunRecord}
     />
   );
 }
@@ -608,14 +645,8 @@ function TaskExecutionDetail({
     return <div className="animate-pulse-ease m-4 h-28 rounded-md bg-raised opacity-60" />;
   }
   if (!record) return <RecordNotFound recordType="task-execution" id={reference.id} />;
-  // §L.1 owner opener: exact runs owned by an Evaluation or Policy Study get
-  // a context-labeled owner action. Ad-hoc runs owned by Compare are covered
-  // by the configuration-only "Open in Compare" handoff below, so no second
-  // owner button is rendered for them.
-  const owner =
-    reference.runSource.kind === "experiment" || reference.runSource.kind === "policy-study"
-      ? resolveRecordOwner(reference)
-      : null;
+  // §L.1 owner opener: context-labeled owner action (e.g. "Open comparison result" / "Open evaluation" / "Open study").
+  const owner = resolveRecordOwner(reference);
   return (
     <RunDetail
       record={record}
@@ -624,7 +655,7 @@ function TaskExecutionDetail({
       onOpenInCompare={onOpenInCompare}
       copyHref={recordDetailHref(reference)}
       ownerHref={owner?.ownerHref ?? null}
-      ownerActionLabel={owner ? ownerActionLabel(owner) : undefined}
+      ownerActionLabel={owner?.ownerHref ? ownerActionLabel(owner) : undefined}
     />
   );
 }
