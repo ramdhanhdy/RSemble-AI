@@ -214,7 +214,7 @@ strip; semantic-vs-exact distinguishability check (spec §R.13); mobile utility;
 200% zoom (effective-width ladder, no zoom-specific behavior); keyboard-only flows; reduced
 motion; long records/IDs; per-element overflow; secrets probe.
 
-**Status:** Completed (2026-08-23). `npm run qa:records` committed with 44/44 probes passed and all 14 matrix cells true. Authority reconciled.
+Update authority docs/source comments only after green.
 
 **STOP:** lost exact detail/filter behavior; Runs still primary; any inert primary destination;
 Records executes or offers forbidden verbs; route 404; evaluation coerced into RunRecord; local
