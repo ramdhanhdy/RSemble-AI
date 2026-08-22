@@ -502,9 +502,7 @@ export function RecordsDrawer({
                 {page.total} matching {page.total === 1 ? "record" : "records"}
               </p>
             )}
-            {topSpacerHeight > 0 && (
-              <div style={{ height: topSpacerHeight }} aria-hidden="true" />
-            )}
+            {topSpacerHeight > 0 && <div style={{ height: topSpacerHeight }} aria-hidden="true" />}
             {windowedSections.map((group) => (
               <section key={group.key} data-drawer-group="">
                 <h3

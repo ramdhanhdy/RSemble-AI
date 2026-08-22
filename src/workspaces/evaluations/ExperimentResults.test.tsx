@@ -1995,10 +1995,7 @@ describe("ExperimentResults — route heading focus contract (§P)", () => {
       updatedAt: 2000,
     };
     const h = renderWithRouter(
-      <ExperimentResults
-        experiment={exp}
-        resolveRunRecord={async () => null}
-      />,
+      <ExperimentResults experiment={exp} resolveRunRecord={async () => null} />,
     );
     await settle();
 

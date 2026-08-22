@@ -470,7 +470,9 @@ describe("Typed details — Task 8 canonical completion", () => {
     expect(ownerLink?.getAttribute("href")).toBe("/compare/results/cmp-1");
 
     // Action 2: Configuration-only preload ("Open in Compare") with honesty token
-    const compareBtn = container.querySelector<HTMLButtonElement>("button[data-action='open-in-compare']");
+    const compareBtn = container.querySelector<HTMLButtonElement>(
+      "button[data-action='open-in-compare']",
+    );
     expect(compareBtn).not.toBeNull();
     expect(compareBtn?.textContent).toContain("Open in Compare");
     expect(container.textContent).toContain(
@@ -525,7 +527,9 @@ describe("Typed details — Task 8 canonical completion", () => {
     expect(ownerLink?.getAttribute("href")).toBe("/compare/results/cmp-1");
 
     // Action 2: Configuration-only preload ("Open in Compare") with honesty token
-    const compareBtn = container.querySelector<HTMLButtonElement>("button[data-action='open-in-compare']");
+    const compareBtn = container.querySelector<HTMLButtonElement>(
+      "button[data-action='open-in-compare']",
+    );
     expect(compareBtn).not.toBeNull();
     expect(compareBtn?.textContent).toContain("Open in Compare");
     expect(container.textContent).toContain(
@@ -656,7 +660,11 @@ describe("Typed details — Task 8 canonical completion", () => {
       getObservation: vi.fn(async () => observation),
       getObservationDecision: vi.fn(async () => decision),
     });
-    const harness = await renderDetail(repo as RecordsRepository, "observation", "observation-prov");
+    const harness = await renderDetail(
+      repo as RecordsRepository,
+      "observation",
+      "observation-prov",
+    );
     const panel = harness.container.querySelector("[data-observation-eligibility]");
     expect(panel).not.toBeNull();
     expect(panel?.textContent).toContain("Provisional");
@@ -670,12 +678,16 @@ describe("Typed details — Task 8 canonical completion", () => {
     // Limitations render under a separate limitations list with data-eligibility-limitation and warning treatment.
     const limitations = panel!.querySelectorAll("[data-eligibility-limitation]");
     expect(limitations.length).toBe(1);
-    expect(limitations[0]!.textContent).toContain("Some declared roster cells are missing evidence.");
+    expect(limitations[0]!.textContent).toContain(
+      "Some declared roster cells are missing evidence.",
+    );
     expect(limitations[0]!.querySelector("svg.text-warning")).not.toBeNull();
 
     // Limitations must NEVER appear inside the Rules passed list or carry text-success.
     const passedList = panel!.querySelector("ul[aria-label='Rules passed']");
-    expect(passedList?.textContent).not.toContain("Some declared roster cells are missing evidence.");
+    expect(passedList?.textContent).not.toContain(
+      "Some declared roster cells are missing evidence.",
+    );
     act(() => harness.root.unmount());
   });
 
@@ -725,7 +737,11 @@ describe("Typed details — Task 8 canonical completion", () => {
       getObservation: vi.fn(async () => observation),
       getObservationDecision: vi.fn(async () => decision),
     });
-    const harness = await renderDetail(repo as RecordsRepository, "observation", "observation-excl");
+    const harness = await renderDetail(
+      repo as RecordsRepository,
+      "observation",
+      "observation-excl",
+    );
     const panel = harness.container.querySelector("[data-observation-eligibility]");
     expect(panel).not.toBeNull();
     expect(panel?.textContent).toContain("Excluded");
@@ -811,8 +827,8 @@ describe("Typed details — Task 8 canonical completion", () => {
     expect(provenance?.textContent).toContain("Source event");
     expect(provenance?.textContent).toContain(new Date(1_700_000_000_000).toLocaleString());
     // Must NOT label createdAt as Imported or fabricate an Imported line.
-    const dtElements = Array.from(provenance?.querySelectorAll("dt") ?? []).map(
-      (el) => el.textContent?.trim(),
+    const dtElements = Array.from(provenance?.querySelectorAll("dt") ?? []).map((el) =>
+      el.textContent?.trim(),
     );
     expect(dtElements).not.toContain("Imported");
     act(() => harness.root.unmount());

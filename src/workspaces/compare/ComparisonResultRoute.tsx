@@ -447,7 +447,6 @@ export function ComparisonResultRoute({
     void loadData();
   }, [loadData]);
 
-
   const handleRepair = useCallback(async () => {
     if (!comparisonRepo || !comparisonId) return;
     setRepairing(true);

@@ -154,28 +154,24 @@ describe("RecordsList characterization (ported from RunList, §I.2/I.3)", () => 
     };
   }
 
-  it(
-    "Load more fetches beyond 200 records — query window grows with visible rows",
-    async () => {
-      const repo = pagedRepository(250);
-      const h = await renderList(repo);
-      // Initial page is 50 rows.
-      expect(h.container.querySelectorAll("a[data-record-row-link]")).toHaveLength(50);
-      // Load More four times: 50 → 100 → 150 → 200 → 250.
-      for (let click = 0; click < 4; click++) {
-        const btn = h.container.querySelector<HTMLButtonElement>("button[data-action='load-more']")!;
-        act(() => btn.click());
-        await act(async () => {
-          await Promise.resolve();
-        });
-      }
-      expect(h.container.querySelectorAll("a[data-record-row-link]")).toHaveLength(250);
-      // All records shown — no more Load More.
-      expect(h.container.querySelector("button[data-action='load-more']")).toBeNull();
-      act(() => h.root.unmount());
-    },
-    15_000,
-  );
+  it("Load more fetches beyond 200 records — query window grows with visible rows", async () => {
+    const repo = pagedRepository(250);
+    const h = await renderList(repo);
+    // Initial page is 50 rows.
+    expect(h.container.querySelectorAll("a[data-record-row-link]")).toHaveLength(50);
+    // Load More four times: 50 → 100 → 150 → 200 → 250.
+    for (let click = 0; click < 4; click++) {
+      const btn = h.container.querySelector<HTMLButtonElement>("button[data-action='load-more']")!;
+      act(() => btn.click());
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(h.container.querySelectorAll("a[data-record-row-link]")).toHaveLength(250);
+    // All records shown — no more Load More.
+    expect(h.container.querySelector("button[data-action='load-more']")).toBeNull();
+    act(() => h.root.unmount());
+  }, 15_000);
 
   it("changing a non-text filter resets visible pagination to the first page", async () => {
     const repo = pagedRepository(120);
@@ -210,14 +206,12 @@ describe("RecordsList characterization (ported from RunList, §I.2/I.3)", () => 
     const repo = pagedRepository(120);
     const h = await renderList(repo);
     expect(h.container.querySelector("button[data-action='load-more']")).not.toBeNull();
-    repo.list = vi.fn().mockRejectedValue(
-      new RecordsIndexBuildError([
-        { entityType: "runs", id: "runs", reason: "Disk full" },
-      ]),
-    );
-    const typeSelect = h.container.querySelector<HTMLSelectElement>(
-      "select[data-filter='type']",
-    )!;
+    repo.list = vi
+      .fn()
+      .mockRejectedValue(
+        new RecordsIndexBuildError([{ entityType: "runs", id: "runs", reason: "Disk full" }]),
+      );
+    const typeSelect = h.container.querySelector<HTMLSelectElement>("select[data-filter='type']")!;
     act(() => {
       typeSelect.value = "comparison";
       typeSelect.dispatchEvent(new Event("change", { bubbles: true }));

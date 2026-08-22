@@ -962,7 +962,9 @@ describe("RecordsDrawer reviewer repairs", () => {
       searchInput.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
       await Promise.resolve();
     });
-    const firstMain = document.body.querySelector<HTMLAnchorElement>('a[data-record-row-link][href="/compare/results/cmp-nav-0"]');
+    const firstMain = document.body.querySelector<HTMLAnchorElement>(
+      'a[data-record-row-link][href="/compare/results/cmp-nav-0"]',
+    );
     expect(document.activeElement).toBe(firstMain);
 
     // ArrowDown from first main -> second stop (exact link of first comparison)
@@ -970,7 +972,9 @@ describe("RecordsDrawer reviewer repairs", () => {
       firstMain?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
       await Promise.resolve();
     });
-    const firstExact = document.body.querySelector<HTMLAnchorElement>('a[data-exact-link][href="/records/comparison/cmp-nav-0"]');
+    const firstExact = document.body.querySelector<HTMLAnchorElement>(
+      'a[data-exact-link][href="/records/comparison/cmp-nav-0"]',
+    );
     expect(document.activeElement).toBe(firstExact);
 
     // ArrowDown from first exact -> third stop (main link of second comparison)
@@ -978,7 +982,9 @@ describe("RecordsDrawer reviewer repairs", () => {
       firstExact?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
       await Promise.resolve();
     });
-    const secondMain = document.body.querySelector<HTMLAnchorElement>('a[data-record-row-link][href="/compare/results/cmp-nav-1"]');
+    const secondMain = document.body.querySelector<HTMLAnchorElement>(
+      'a[data-record-row-link][href="/compare/results/cmp-nav-1"]',
+    );
     expect(document.activeElement).toBe(secondMain);
 
     // ArrowUp back to first exact

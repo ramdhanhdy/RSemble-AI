@@ -40,7 +40,6 @@ function sanitizeRawPayload(entry: Record<string, unknown>): Record<string, unkn
   return result;
 }
 
-
 interface LegacyRunHistoryEntry {
   taskExcerpt: string;
   models: string[];

@@ -242,29 +242,24 @@ function SemanticReferenceDetail({
       <ReferenceSummary reference={reference} />
       <BeneathList reference={reference} records={childRecords} policyChildren={policyChildren} />
       <div className="flex flex-wrap items-center gap-2 border-t border-edge py-4">
-        {reference.recordType === "comparison" &&
-          onOpenInCompare &&
-          comparisonRunRecord && (
-            <span className="inline-flex flex-col items-start gap-1">
-              <button
-                type="button"
-                data-action="open-in-compare"
-                onClick={() =>
-                  onOpenInCompare(
-                    reference.runId,
-                    runConfigFromRecord(comparisonRunRecord),
-                  )
-                }
-                className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
-              >
-                <ExternalLink size={14} aria-hidden="true" />
-                Open in Compare
-              </button>
-              <span className="honesty-note text-[11px] text-text-secondary">
-                {HONESTY_COPY.configurationOnly}
-              </span>
+        {reference.recordType === "comparison" && onOpenInCompare && comparisonRunRecord && (
+          <span className="inline-flex flex-col items-start gap-1">
+            <button
+              type="button"
+              data-action="open-in-compare"
+              onClick={() =>
+                onOpenInCompare(reference.runId, runConfigFromRecord(comparisonRunRecord))
+              }
+              className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+            >
+              <ExternalLink size={14} aria-hidden="true" />
+              Open in Compare
+            </button>
+            <span className="honesty-note text-[11px] text-text-secondary">
+              {HONESTY_COPY.configurationOnly}
             </span>
-          )}
+          </span>
+        )}
         <CopyLinkButton href={recordDetailHref(reference)} subject="record" />
       </div>
     </div>
