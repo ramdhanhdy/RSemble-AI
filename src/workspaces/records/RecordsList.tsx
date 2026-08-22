@@ -99,6 +99,7 @@ export function RecordsList({
       })
       .catch((reason: unknown) => {
         if (requestId.current !== currentRequest) return;
+        setPage(EMPTY_PAGE);
         setError(
           reason instanceof RecordsIndexBuildError
             ? reason
@@ -241,7 +242,7 @@ export function RecordsList({
         </ul>
       )}
 
-      {page.total > visibleCount && (
+      {!error && page.total > visibleCount && (
         <button
           type="button"
           data-action="load-more"

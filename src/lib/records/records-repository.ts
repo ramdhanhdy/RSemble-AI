@@ -105,40 +105,6 @@ async function loadAllObservations(repo: RecordsRepositoryDependencies["evidence
   }
 }
 
-async function policyStudyRunMap(
-  repo: RecordsRepositoryDependencies["studyRepo"],
-  studies: PolicyStudyRecord[],
-): Promise<Record<string, string>> {
-  if (!repo || studies.length === 0) return {};
-  const links = new Map<string, Set<string>>();
-  const children = await Promise.all(
-    studies.map(async (study) => ({
-      studyId: study.id,
-      trials: await repo.listTrials(study.id),
-      observations: await repo.listObservations(study.id),
-    })),
-  );
-  for (const child of children) {
-    for (const trial of child.trials) {
-      for (const artifact of trial.artifactRefs) {
-        const studyIds = links.get(artifact.runId) ?? new Set<string>();
-        studyIds.add(child.studyId);
-        links.set(artifact.runId, studyIds);
-      }
-    }
-    for (const observation of child.observations) {
-      if (!observation.sourceRunId) continue;
-      const studyIds = links.get(observation.sourceRunId) ?? new Set<string>();
-      studyIds.add(child.studyId);
-      links.set(observation.sourceRunId, studyIds);
-    }
-  }
-  const exact: Record<string, string> = {};
-  for (const [runId, studyIds] of links) {
-    if (studyIds.size === 1) exact[runId] = [...studyIds][0]!;
-  }
-  return exact;
-}
 export function createRecordsRepository(
   dependencies: RecordsRepositoryDependencies,
 ): RecordsRepository {
@@ -148,13 +114,17 @@ export function createRecordsRepository(
    *  source data itself is never mutated. */
   async function loadReferences(): Promise<RecordReference[]> {
     const failures: RecordsIndexDiagnostic[] = [];
-    async function segment<T>(entityType: string, load: () => Promise<T[]>): Promise<T[]> {
+    async function segment<T>(
+      entityType: string,
+      id: string,
+      load: () => Promise<T[]>,
+    ): Promise<T[]> {
       try {
         return await load();
       } catch (reason: unknown) {
         failures.push({
           entityType,
-          id: entityType,
+          id,
           reason: reason instanceof Error ? reason.message : "Unknown storage error",
         });
         return [];
@@ -169,27 +139,73 @@ export function createRecordsRepository(
       configurations,
       suites,
     ] = await Promise.all([
-      segment("runs", () => loadAllRuns(dependencies.runRepo)),
-      segment("comparisons", () => loadAllComparisons(dependencies.comparisonRepo)),
+      segment("runs", "runs", () => loadAllRuns(dependencies.runRepo)),
+      segment("comparisons", "comparisons", () => loadAllComparisons(dependencies.comparisonRepo)),
       segment(
+        "evaluations",
         "evaluations",
         () => dependencies.evaluationRepo?.listExperiments() ?? Promise.resolve([]),
       ),
-      segment("policy-studies", () => dependencies.studyRepo?.listStudies() ?? Promise.resolve([])),
-      segment("observations", () => loadAllObservations(dependencies.evidenceRepo)),
       segment(
+        "policy-studies",
+        "policy-studies",
+        () => dependencies.studyRepo?.listStudies() ?? Promise.resolve([]),
+      ),
+      segment("observations", "observations", () => loadAllObservations(dependencies.evidenceRepo)),
+      segment(
+        "model-configurations",
         "model-configurations",
         () => dependencies.evidenceRepo?.listModelConfigurations() ?? Promise.resolve([]),
       ),
       segment(
         "task-sets",
+        "task-sets",
         () => dependencies.evaluationRepo?.listSuites(true) ?? Promise.resolve([]),
       ),
     ]);
+
+    const studyIdByRunId: Record<string, string> = {};
+    if (dependencies.studyRepo && policyStudies.length > 0) {
+      const studyChildren = await Promise.all(
+        policyStudies.map(async (study) => {
+          const [trials, studyObservations] = await Promise.all([
+            segment("policy-study-trials", study.id, () =>
+              dependencies.studyRepo!.listTrials(study.id),
+            ),
+            segment("policy-study-observations", study.id, () =>
+              dependencies.studyRepo!.listObservations(study.id),
+            ),
+          ]);
+          return {
+            studyId: study.id,
+            trials,
+            observations: studyObservations,
+          };
+        }),
+      );
+      const links = new Map<string, Set<string>>();
+      for (const child of studyChildren) {
+        for (const trial of child.trials) {
+          for (const artifact of trial.artifactRefs) {
+            const studyIds = links.get(artifact.runId) ?? new Set<string>();
+            studyIds.add(child.studyId);
+            links.set(artifact.runId, studyIds);
+          }
+        }
+        for (const observation of child.observations) {
+          if (!observation.sourceRunId) continue;
+          const studyIds = links.get(observation.sourceRunId) ?? new Set<string>();
+          studyIds.add(child.studyId);
+          links.set(observation.sourceRunId, studyIds);
+        }
+      }
+      for (const [runId, studyIds] of links) {
+        if (studyIds.size === 1) studyIdByRunId[runId] = [...studyIds][0]!;
+      }
+    }
+
     if (failures.length > 0) throw new RecordsIndexBuildError(failures);
-    const [studyIdByRunId] = await Promise.all([
-      policyStudyRunMap(dependencies.studyRepo, policyStudies),
-    ]);
+
     const taskSetLabelById: Record<string, string> = {};
     for (const suite of suites) taskSetLabelById[suite.id] = suite.name;
     return composeRecordReferences({
