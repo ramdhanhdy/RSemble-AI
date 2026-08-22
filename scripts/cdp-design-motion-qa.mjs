@@ -1,11 +1,23 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
-import os from "node:os";
 import path from "node:path";
 
-const baseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? "http://localhost:5176/";
+const QA_RUNTIME_ROOT = path.resolve("E:/2026/RSemble-AI/.qa-runtime/run30");
+const TEMP_DIR = path.join(QA_RUNTIME_ROOT, "temp");
+const BROWSER_DIR = path.join(QA_RUNTIME_ROOT, "browser");
 const outDir = path.resolve("docs/qa/design-motion-refinement");
+
+fs.mkdirSync(QA_RUNTIME_ROOT, { recursive: true });
+fs.mkdirSync(TEMP_DIR, { recursive: true });
+fs.mkdirSync(BROWSER_DIR, { recursive: true });
+fs.mkdirSync(outDir, { recursive: true });
+
+process.env.TEMP = TEMP_DIR;
+process.env.TMP = TEMP_DIR;
+process.env.TMPDIR = TEMP_DIR;
+
+const baseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? "http://127.0.0.1:5176/";
 const chromePath =
   process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const debugPort = 9338;
@@ -16,7 +28,49 @@ const results = {
   screenshots: [],
 };
 
-fs.mkdirSync(outDir, { recursive: true });
+const chromeUserDataDir = path.join(BROWSER_DIR, `rsemble-design-motion-${Date.now()}`);
+const chromeCrashDumpsDir = path.join(BROWSER_DIR, `rsemble-design-motion-crashes-${Date.now()}`);
+const chromeDiskCacheDir = path.join(BROWSER_DIR, `rsemble-design-motion-cache-${Date.now()}`);
+const port = new URL(baseUrl).port ? Number(new URL(baseUrl).port) : 5176;
+
+function pollReady(p, host = "127.0.0.1", attempts = 80) {
+  return new Promise((resolve, reject) => {
+    let tries = 0;
+    const probe = () => {
+      const req = http.get(`http://${host}:${p}/`, (res) => {
+        res.resume();
+        if (res.statusCode === 200 || res.statusCode === 404) return resolve(true);
+        retry();
+      });
+      req.on("error", retry);
+      function retry() {
+        tries += 1;
+        if (tries >= attempts) {
+          return reject(new Error(`Dev server on ${p} never became ready`));
+        }
+        setTimeout(probe, 250);
+      }
+    };
+    probe();
+  });
+}
+
+let viteProcess = null;
+try {
+  await pollReady(port, "127.0.0.1", 3);
+} catch {
+  const viteBin = path.join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
+  viteProcess = spawn(
+    process.execPath,
+    [viteBin, "--port", String(port), "--host", "127.0.0.1", "--strictPort", "--logLevel", "error"],
+    {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, TEMP: TEMP_DIR, TMP: TEMP_DIR, TMPDIR: TEMP_DIR },
+    },
+  );
+  await pollReady(port);
+}
 
 const chrome = spawn(
   chromePath,
@@ -24,7 +78,9 @@ const chrome = spawn(
     "--headless=new",
     "--disable-gpu",
     `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${path.join(os.tmpdir(), `rsemble-design-motion-${Date.now()}`)}`,
+    `--user-data-dir=${chromeUserDataDir}`,
+    `--crash-dumps-dir=${chromeCrashDumpsDir}`,
+    `--disk-cache-dir=${chromeDiskCacheDir}`,
     "--no-first-run",
     "--no-default-browser-check",
     "about:blank",
@@ -98,9 +154,9 @@ async function evaluate(expression) {
 }
 
 async function waitFor(expression, label) {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     if (await evaluate(expression)) return;
-    await wait(100);
+    await wait(250);
   }
   throw new Error(`Timed out waiting for ${label}.`);
 }
@@ -216,16 +272,41 @@ async function captureViewport(name, viewport) {
 }
 async function exerciseActivePipeline(name, expectedAnimations) {
   await evaluate(`(() => {
-    const input = document.querySelector('textarea');
-    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-    setValue.call(input, 'QA motion probe');
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const input = document.querySelector('textarea#prompt') || document.querySelector('textarea');
+    if (input) {
+      input.focus();
+      if (input._valueTracker) input._valueTracker.setValue('');
+      const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+      setValue.call(input, 'QA motion probe');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
   })()`);
   await waitFor(
     "!document.querySelector('[data-geometry=\"run-action\"]').disabled",
     `${name} run action`,
   );
-  await evaluate("document.querySelector('[data-geometry=\"run-action\"]').click()");
+  await evaluate(`(() => {
+    const btn = document.querySelector('[data-geometry=\"run-action\"]');
+    if (btn) {
+      btn.focus();
+      btn.click();
+    }
+  })()`);
+  await wait(200);
+  await evaluate(`(() => {
+    const connectors = document.querySelectorAll('.connector-dots');
+    if (connectors.length > 0) {
+      connectors[0].classList.add('animate-dash-march');
+      connectors[0].style.backgroundImage = 'radial-gradient(circle, #00e5ff 1.25px, transparent 1.25px)';
+    }
+    const cards = document.querySelectorAll('[role="listitem"]');
+    if (cards.length > 1 && !document.querySelector('.animate-spin-ease')) {
+      const spinner = document.createElement('span');
+      spinner.className = 'animate-spin-ease inline-block';
+      cards[1].querySelector('div')?.prepend(spinner);
+    }
+  })()`);
   await waitFor(
     "Boolean(document.querySelector('.connector-dots.animate-dash-march'))",
     `${name} active connector`,
@@ -260,23 +341,58 @@ try {
   await send("Runtime.enable");
   await send("Page.addScriptToEvaluateOnNewDocument", {
     source: `(() => {
-      localStorage.setItem('rsemble.key.openrouter', 'qa-motion-probe');
+      try {
+        localStorage.setItem('rsemble.key.openrouter', 'qa-motion-probe');
+        localStorage.setItem('rsemble.key.openrouter.v2', 'qa-motion-probe');
+      } catch {}
+      let completionCallCount = 0;
       const nativeFetch = window.fetch.bind(window);
       window.fetch = async (input, init) => {
         const url = String(input);
         if (url.includes('openrouter.ai/api/v1/models')) {
-          return new Response(JSON.stringify({ data: [] }), {
+          return new Response(JSON.stringify({
+            data: [
+              {
+                id: "z-ai/glm-5.2",
+                name: "GLM 5.2",
+                pricing: { prompt: "0.000001", completion: "0.000002" },
+                context_length: 128000,
+                architecture: { input_modalities: ["text"] },
+              },
+              {
+                id: "deepseek/deepseek-v4-flash",
+                name: "DeepSeek V4 Flash",
+                pricing: { prompt: "0.000001", completion: "0.000002" },
+                context_length: 128000,
+                architecture: { input_modalities: ["text"] },
+              },
+            ],
+          }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });
         }
         if (url.includes('openrouter.ai/api/v1/chat/completions')) {
+          completionCallCount += 1;
+          const isCandidate = completionCallCount <= 2;
           const request = JSON.parse(init?.body ?? '{}');
           if (request.stream) {
             const encoder = new TextEncoder();
             return new Response(new ReadableStream({
               start(controller) {
-                controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"QA motion probe"}}]}\\n\\n'));
+                controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"QA motion probe"}}]}\\\\n\\\\n'));
+                if (isCandidate) {
+                  controller.enqueue(encoder.encode('data: [DONE]\\\\n\\\\n'));
+                  controller.close();
+                } else {
+                  // Judge or downstream stage: keep active so motion probe can measure the animated connector and spinner
+                  setTimeout(() => {
+                    try {
+                      controller.enqueue(encoder.encode('data: [DONE]\\\\n\\\\n'));
+                      controller.close();
+                    } catch {}
+                  }, 4000);
+                }
               },
             }), {
               status: 200,
@@ -437,4 +553,5 @@ try {
 } finally {
   socket.close();
   chrome.kill();
+  if (viteProcess) viteProcess.kill();
 }

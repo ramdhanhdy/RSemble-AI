@@ -81,7 +81,7 @@ export function RunsWorkspace({
             className="flex min-h-[44px] items-center gap-1.5 rounded-md px-2 text-sm text-text-secondary transition-colors duration-150 hover:text-text"
           >
             <ArrowLeft size={16} aria-hidden="true" />
-            Back to Runs
+            Back to Records
           </Link>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">

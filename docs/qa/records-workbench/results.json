@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-22T19:25:02.131Z",
+  "generatedAt": "2026-08-22T20:39:44.138Z",
   "command": "npm run qa:records",
   "baseUrl": "http://127.0.0.1:5198/",
   "runtimeContainment": {
     "root": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30",
-    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787426702130",
-    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787426702130",
-    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787426702130",
+    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787431184137",
+    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787431184137",
+    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787431184137",
     "tempDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\temp",
     "retainedEvidenceDir": "E:\\2026\\RSemble-AI\\docs\\qa\\records-workbench",
     "verifiedDrive": "E:"
@@ -16,8 +16,8 @@
       "name": "seed-indexeddb-corpus",
       "pass": true,
       "receipt": {
-        "runSummaries": 58,
-        "runDetails": 57,
+        "runSummaries": 83,
+        "runDetails": 82,
         "comparisonResults": 2
       }
     },
@@ -75,7 +75,7 @@
     {
       "name": "connections-pill-accessible-name",
       "pass": true,
-      "accessibleName": "Connection status: Live. Manage connections."
+      "accessibleName": "Connection status: Checking. Manage connections."
     },
     {
       "name": "no-runs-in-shell-compare",
@@ -100,6 +100,15 @@
       "pass": true,
       "runsInNav": false,
       "hasContent": true
+    },
+    {
+      "name": "ordinary-history-mobile-runs-detail-copy",
+      "pass": true,
+      "mobileRunsCopy": {
+        "backText": "Back to Records",
+        "hasBackToRecords": true,
+        "visibleRuns": false
+      }
     },
     {
       "name": "records-drawer-open-and-bounds",
@@ -131,8 +140,8 @@
       "pass": true,
       "drawerClosed": {
         "drawerClosed": true,
-        "focusRestoredToTrigger": false,
-        "activeTag": "BODY"
+        "focusRestoredToTrigger": true,
+        "activeTag": "BUTTON"
       }
     },
     {
@@ -220,7 +229,7 @@
       "studyDetail": {
         "ownerLabel": "Open study",
         "ownerHref": "#/lab/studies/study-latency-policy",
-        "beneathRowsCount": 50,
+        "beneathRowsCount": 0,
         "hasBeneathList": true
       }
     },
@@ -326,11 +335,47 @@
       }
     },
     {
-      "name": "viewport-overflow-zoom-200-scale2",
+      "name": "viewport-overflow-zoom-200-effective-720",
       "pass": true,
       "overflow": {
-        "scrollWidth": 1440,
-        "clientWidth": 1440,
+        "scrollWidth": 720,
+        "clientWidth": 720,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-effective-720-substitution",
+      "pass": true,
+      "sub": {
+        "isLink": true,
+        "isButton": false,
+        "drawerUnmounted": true
+      }
+    },
+    {
+      "name": "viewport-overflow-zoom-200-effective-512",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 512,
+        "clientWidth": 512,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-overflow-zoom-200-effective-384",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 384,
+        "clientWidth": 384,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-overflow-zoom-200-effective-195",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 195,
+        "clientWidth": 195,
         "hasHorizontalOverflow": false
       }
     },
@@ -386,8 +431,8 @@
         },
         {
           "tag": "BUTTON",
-          "ariaLabel": "Connection status: Live. Manage connections.",
-          "text": "Live",
+          "ariaLabel": "Connection status: Checking. Manage connections.",
+          "text": "Checking",
           "href": ""
         },
         {
@@ -424,7 +469,8 @@
     },
     {
       "name": "reduced-motion-drawer-render",
-      "pass": true
+      "pass": true,
+      "duration": "0s"
     },
     {
       "name": "secret-token-not-in-dom",
@@ -480,8 +526,8 @@
     "secretAndEgressInvariants": true
   },
   "summary": {
-    "totalProbes": 44,
-    "passedProbes": 44,
+    "totalProbes": 49,
+    "passedProbes": 49,
     "failedProbes": 0,
     "matrixCellsDeclared": 14,
     "matrixCellsPassed": 14,

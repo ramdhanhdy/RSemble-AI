@@ -199,13 +199,13 @@ const MOCK_PROVIDER_INTERCEPTOR = `(() => {
   const originalFetch = window.fetch;
   window.fetch = async function(input, init) {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input && input.url) || '';
-    if (url.includes('/models')) {
-      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
     const isPaid = /openrouter\\.ai|api\\.openai\\.com|anthropic\\.com|generativelanguage\\.googleapis\\.com|api\\.deepseek\\.com|umans\\.ai/i.test(url);
     if (isPaid) {
       window.__qaPaidProviderCalls.push({ url, method: (init && init.method) || 'GET', timestamp: Date.now() });
       return new Response(JSON.stringify({ error: 'Blocked by Records QA egress gate' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.includes('/models')) {
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return originalFetch.apply(this, arguments);
   };
@@ -258,7 +258,7 @@ function buildFixtureCorpus() {
           output: isCompleted ? output : null,
           tokensIn: 45,
           tokensOut: 110,
-          error: isFailed ? { message: "Rate limit exceeded" } : null,
+          error: isFailed ? { message: `401 unauthorized: Bearer ${SECRET_TOKEN_TEST}` } : null,
         },
       ],
     };
@@ -711,38 +711,50 @@ function buildFixtureCorpus() {
   };
   const trialPayloadFingerprint = sha256Hex(trialPayload);
 
-  const studyTrialRecord = {
-    id: "trial-latency-1",
-    studyId: "study-latency-policy",
-    payloadKind: "policy",
-    payloadSchemaVersion: 1,
-    payloadFingerprint: trialPayloadFingerprint,
-    payload: trialPayload,
-    status: "sealed",
-    sampleIndex: 0,
-    artifactRefs: [{ runId: "run-study-task-1", kind: "run" }],
-    observationIds: ["obs-1"],
-    policyCost: { tokensIn: 100, tokensOut: 50 },
-    experimentalCost: { tokensIn: 100, tokensOut: 50 },
-    createdAt: NOW - 400000,
-    sealedAt: NOW - 395000,
-    trial: {
-      id: "trial-latency-1",
+  const studyRuns = Array.from({ length: 25 }, (_, i) => {
+    const id = `run-study-task-${i + 1}`;
+    return makeRunRecord(id, `Study Task #${i + 1}`, {
+      status: "completed",
+      source: { kind: "policy-study", studyId: "study-latency-policy" },
+      createdAt: NOW - 400000 + i * 1000,
+    });
+  });
+  const studySummaries = studyRuns.map(makeRunSummary);
+
+  const studyTrialRecords = Array.from({ length: 25 }, (_, i) => {
+    const id = `trial-latency-${i + 1}`;
+    const runId = `run-study-task-${i + 1}`;
+    const trialObj = {
+      id,
       studyId: "study-latency-policy",
       payloadKind: "policy",
       payloadSchemaVersion: 1,
       payloadFingerprint: trialPayloadFingerprint,
       payload: trialPayload,
       status: "sealed",
-      sampleIndex: 0,
-      artifactRefs: [{ runId: "run-study-task-1", kind: "run" }],
+      sampleIndex: i,
+      artifactRefs: [
+        {
+          runId,
+          attemptId: `att-${runId}`,
+          contentHash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        },
+      ],
       observationIds: ["obs-1"],
       policyCost: { tokensIn: 100, tokensOut: 50 },
       experimentalCost: { tokensIn: 100, tokensOut: 50 },
-      createdAt: NOW - 400000,
-      sealedAt: NOW - 395000,
-    },
-  };
+      createdAt: NOW - 400000 + i * 1000,
+      sealedAt: NOW - 395000 + i * 1000,
+    };
+    return {
+      id,
+      studyId: "study-latency-policy",
+      status: "sealed",
+      sampleIndex: i,
+      createdAt: NOW - 400000 + i * 1000,
+      trial: trialObj,
+    };
+  });
 
   const studyObservationRecord = {
     id: "study-obs-latency-1",
@@ -760,10 +772,15 @@ function buildFixtureCorpus() {
       payloadSchemaVersion: 1,
       sourceRunId: "run-study-task-1",
       observedAt: NOW - 400000,
+      payload: {
+        judge: { id: "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+        overallScore: 4.8,
+        tokensIn: 50,
+        tokensOut: 25,
+        error: null,
+      },
     },
   };
-
-  // 5. Standalone Task Execution
   const exactTaskRun = makeRunRecord("run-exact-task-1", "Implement Fibonacci in Rust", {
     createdAt: NOW - 50000,
     prompt: "Write an efficient fibonacci generator.",
@@ -948,6 +965,7 @@ function buildFixtureCorpus() {
     cmp2Record,
     evalChildRun,
     studyChildRun,
+    ...studyRuns,
     exactTaskRun,
     longFieldsRun,
     ...paginationRecords,
@@ -958,6 +976,7 @@ function buildFixtureCorpus() {
     cmp2Summary,
     evalChildSummary,
     studyChildSummary,
+    ...studySummaries,
     exactTaskSummary,
     longFieldsSummary,
     legacySummary,
@@ -977,7 +996,7 @@ function buildFixtureCorpus() {
     experiments: [experimentRecord],
     suites: [suiteRecord],
     studies: [policyStudyRecord],
-    studyTrials: [studyTrialRecord],
+    studyTrials: studyTrialRecords,
     studyObservations: [studyObservationRecord],
     modelConfigurations: [modelConfig],
     observations: [observationRecord],
@@ -1094,7 +1113,18 @@ async function run() {
           "--logLevel",
           "error",
         ],
-        { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } },
+        {
+          cwd: process.cwd(),
+          stdio: ["ignore", "pipe", "pipe"],
+          env: {
+            ...process.env,
+            VITE_OPENROUTER_KEY: "",
+            VITE_UMANS_KEY: "",
+            TEMP: TEMP_DIR,
+            TMP: TEMP_DIR,
+            TMPDIR: TEMP_DIR,
+          },
+        },
       );
       await pollReady(BROWSER_PORT);
     }
@@ -1436,6 +1466,25 @@ async function run() {
       });
     }
 
+    // Ordinary-history visible copy check on /runs/:id below 1024 (spec §O.2)
+    await setViewport({ width: 390, height: 844, mobile: true });
+    await navigateTo("#/runs/run-exact-task-1");
+    await wait(300);
+    const mobileRunsCopy = await evaluate(`(() => {
+      const backLink = document.querySelector('a[href="#/runs"], a[href="/runs"]');
+      const backText = backLink ? backLink.innerText.trim() : '';
+      const visibleRuns = /\\bRuns\\b/.test(backText);
+      return {
+        backText,
+        hasBackToRecords: backText.includes('Back to Records'),
+        visibleRuns,
+      };
+    })()`);
+    record("ordinary-history-mobile-runs-detail-copy", {
+      pass: mobileRunsCopy.hasBackToRecords && !mobileRunsCopy.visibleRuns,
+      mobileRunsCopy,
+    });
+
     results.matrix.primaryNavigation = navOrderPass;
 
     // =========================================================================
@@ -1449,7 +1498,10 @@ async function run() {
     );
 
     // Open drawer via button click
-    await evaluate(`document.querySelector('header button[aria-label="Records"]').click()`);
+    await evaluate(`(() => {
+      const btn = document.querySelector('header button[aria-label="Records"]');
+      if (btn) { btn.focus(); btn.click(); }
+    })()`);
     await waitFor(
       "Boolean(document.querySelector('[role=\"dialog\"], .drawer-panel'))",
       "Records Drawer",
@@ -1482,16 +1534,18 @@ async function run() {
     await screenshot("qa-desktop-1440-drawer-open");
 
     // Search for exact ID in drawer
-    // Search for exact ID in drawer using native setter
     await evaluate(`(() => {
       const input = document.querySelector('#records-drawer-search');
       if (input) {
+        input.focus();
+        if (input._valueTracker) input._valueTracker.setValue('');
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
         setter.call(input, 'cmp-rank-adhoc-1');
         input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
       }
     })()`);
-    await wait(350);
+    await wait(400);
 
     const drawerSearch = await evaluate(`(() => {
       const drawer = document.querySelector('[role="dialog"], .drawer-panel');
@@ -1525,7 +1579,7 @@ async function run() {
     })()`);
 
     record("records-drawer-escape-and-focus-restore", {
-      pass: drawerClosed.drawerClosed,
+      pass: drawerClosed.drawerClosed && drawerClosed.focusRestoredToTrigger,
       drawerClosed,
     });
 
@@ -1752,7 +1806,7 @@ async function run() {
       pass:
         evalDetail.ownerLabel.includes("Open evaluation") &&
         evalDetail.ownerHref.includes("/evaluations/results/exp-eval-set-1") &&
-        evalDetail.childLinksCount >= 1,
+        evalDetail.childLinksCount >= 10,
       evalDetail,
     });
     await screenshot("qa-desktop-1440-evaluation-detail");
@@ -1760,11 +1814,13 @@ async function run() {
     // 3. Policy Study Detail
     await navigateTo("#/records/policy-study/study-latency-policy");
     await waitFor("Boolean(document.querySelector('[data-owner-action]'))", "Policy Study Detail");
+    await wait(500);
 
     const studyDetail = await evaluate(`(() => {
-      const ownerAction = document.querySelector('[data-owner-action]');
-      const beneathRows = Array.from(document.querySelectorAll('[data-record-row]'));
-      const text = document.body ? document.body.innerText : '';
+      const detail = document.querySelector('[data-record-detail="policy-study"]');
+      const ownerAction = detail ? detail.querySelector('[data-owner-action]') : null;
+      const beneathRows = detail ? Array.from(detail.querySelectorAll('[data-record-row]')) : [];
+      const text = detail ? detail.innerText : '';
       return {
         ownerLabel: ownerAction?.innerText ?? '',
         ownerHref: ownerAction?.getAttribute('href') ?? '',
@@ -1777,11 +1833,11 @@ async function run() {
       pass:
         studyDetail.ownerLabel.includes("Open study") &&
         studyDetail.ownerHref.includes("/lab/studies/study-latency-policy") &&
-        studyDetail.hasBeneathList,
+        studyDetail.hasBeneathList &&
+        studyDetail.beneathRowsCount <= 20,
       studyDetail,
     });
     await screenshot("qa-desktop-1440-policy-study-detail");
-
     // 4. Task Execution Detail
     await navigateTo("#/records/task-execution/run-exact-task-1");
     await waitFor("Boolean(document.querySelector('[data-run-detail]'))", "Task Execution Detail");
@@ -1964,7 +2020,10 @@ async function run() {
       { name: "boundary-1024", width: 1024, height: 768, scale: 1, mobile: false },
       { name: "tablet-768", width: 768, height: 1024, scale: 1, mobile: false },
       { name: "mobile-390", width: 390, height: 844, scale: 1, mobile: true },
-      { name: "zoom-200-scale2", width: 1440, height: 900, scale: 2, mobile: false },
+      { name: "zoom-200-effective-720", width: 720, height: 900, scale: 1, mobile: false },
+      { name: "zoom-200-effective-512", width: 512, height: 768, scale: 1, mobile: false },
+      { name: "zoom-200-effective-384", width: 384, height: 844, scale: 1, mobile: true },
+      { name: "zoom-200-effective-195", width: 195, height: 600, scale: 1, mobile: true },
     ];
 
     let allViewportsContained = true;
@@ -2002,7 +2061,19 @@ async function run() {
       if (vp.name === "boundary-1024") await screenshot("qa-tablet-1024-boundary");
       if (vp.name === "tablet-768") await screenshot("qa-tablet-768-records-list");
       if (vp.name === "mobile-390") await screenshot("qa-mobile-390-records-list");
-      if (vp.name === "zoom-200-scale2") await screenshot("qa-zoom-200-effective-width");
+      if (vp.name === "zoom-200-effective-720") {
+        const sub = await evaluate(`(() => {
+          const isLink = Boolean(document.querySelector('header a[aria-label="Records"]'));
+          const isButton = Boolean(document.querySelector('header button[aria-label="Records"]'));
+          const drawer = document.querySelector('[role="dialog"], .drawer-panel');
+          return { isLink, isButton, drawerUnmounted: !drawer };
+        })()`);
+        record("viewport-effective-720-substitution", {
+          pass: sub.isLink && !sub.isButton && sub.drawerUnmounted,
+          sub,
+        });
+        await screenshot("qa-zoom-200-effective-width");
+      }
     }
 
     // Long ID card containment check
@@ -2140,9 +2211,23 @@ async function run() {
       "Drawer in Reduced Motion",
     );
 
+    const reducedMotionCheck = await evaluate(`(() => {
+      const panel = document.querySelector('[role="dialog"], .drawer-panel');
+      if (!panel) return { pass: false, duration: null, reason: "drawer panel missing" };
+      const duration = window.getComputedStyle(panel).transitionDuration;
+      const allZero = duration.split(',').every(d => parseFloat(d) === 0);
+      return {
+        pass: allZero,
+        duration,
+      };
+    })()`);
+
     await screenshot("qa-reduced-motion");
-    record("reduced-motion-drawer-render", { pass: true });
-    results.matrix.reducedMotion = true;
+    record("reduced-motion-drawer-render", {
+      pass: reducedMotionCheck.pass,
+      duration: reducedMotionCheck.duration,
+    });
+    results.matrix.reducedMotion = reducedMotionCheck.pass;
 
     // Reset media emulation
     await send("Emulation.setEmulatedMedia", { media: "screen", features: [] });
@@ -2150,6 +2235,8 @@ async function run() {
     // =========================================================================
     // Scenario 13: Secret Probe and Egress Invariant (§R.22)
     // =========================================================================
+    await navigateTo("#/records/task-execution/run-exact-task-1");
+    await wait(300);
     const secretCheck = await evaluate(`(() => {
       const text = document.body ? document.body.innerText : '';
       const token = ${JSON.stringify(SECRET_TOKEN_TEST)};
@@ -2158,6 +2245,7 @@ async function run() {
       return {
         leaked,
         paidCallsCount: paidCalls.length,
+        paidCalls,
       };
     })()`);
 
