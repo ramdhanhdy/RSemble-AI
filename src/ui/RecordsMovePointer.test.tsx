@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { MemoryRouter, useNavigate, type NavigateFunction } from "react-router-dom";
 import { RecordsMovePointer, DISMISSED_STORAGE_KEY } from "./RecordsMovePointer";
 import { InMemoryRunRepository } from "../lib/persistence/run-repository";
@@ -36,6 +37,10 @@ function cleanup(h: Harness) {
   h.container.remove();
 }
 
+function flush(ms = 0): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 afterEach(() => {
   window.localStorage.clear();
   document.body.innerHTML = "";
@@ -69,14 +74,29 @@ function makeRunRecord(id: string): { record: RunRecordV2; summary: FullRunSumma
     schemaVersion: 2,
     id,
     revision: 1,
+    execution: { ownerId: "test", leaseId: "test", fence: 1 },
     createdAt: now,
+    updatedAt: now,
     completedAt: now + 500,
     status: "completed",
     mode: "rank",
     source: { kind: "adhoc" },
-    task: { title: `Task ${id}`, rawPrompt: "Test prompt" },
+    task: { title: `Task ${id}`, prompt: "Test prompt", systemPrompt: "", temperature: 0.7 },
+    evaluation: { profile: null, candidateMessages: [] },
     candidates: [],
-    judge: { attempts: [] },
+    judge: {
+      status: "done",
+      acceptedAttemptId: null,
+      report: null,
+      consensus: null,
+      attempts: [],
+    },
+    fusion: {
+      status: "done",
+      acceptedAttemptId: null,
+      attempts: [],
+    },
+    winnerKeys: [],
   };
   return { record, summary };
 }
@@ -107,9 +127,7 @@ describe("RecordsMovePointer (spec §O.1)", () => {
     );
     // Flush any async repository checks
     await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 10);
-      await promise;
+      await flush(10);
     });
 
     expect(h.$("[role='status']")).toBeNull();
@@ -137,9 +155,7 @@ describe("RecordsMovePointer (spec §O.1)", () => {
       </MemoryRouter>,
     );
     await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 10);
-      await promise;
+      await flush(10);
     });
     expect(h.$("[role='status']")).toBeNull();
     expect(h.container.textContent).not.toContain("Runs moved.");
@@ -171,9 +187,7 @@ describe("RecordsMovePointer (spec §O.1)", () => {
     );
 
     await act(async () => {
-      const { promise, resolve } = Promise.withResolvers<void>();
-      setTimeout(resolve, 10);
-      await promise;
+      await flush(10);
     });
     expect(h.container.textContent).toContain("Runs moved.");
     expect(h.container.textContent).toContain(
@@ -245,7 +259,7 @@ describe("RecordsMovePointer (spec §O.1)", () => {
   it("navigating to another route dismisses the pointer and sets localStorage", async () => {
     let navigateFn: NavigateFunction | null = null;
     function NavTest() {
-      const nav = useNavigate();
+      navigateFn = useNavigate();
       return <RecordsMovePointer hasExistingRuns={true} />;
     }
 
@@ -259,7 +273,7 @@ describe("RecordsMovePointer (spec §O.1)", () => {
 
     // Trigger navigation
     act(() => {
-      navigateFn?.("/evaluations");
+      void navigateFn?.("/evaluations");
     });
 
     expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBe("true");

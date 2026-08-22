@@ -23,6 +23,7 @@ import { Command, HelpCircle, History, Menu } from "lucide-react";
 import { HexCubeLogo } from "./brand-icons";
 import { useMediaQuery } from "./useMediaQuery";
 import { WorkspaceNav } from "./WorkspaceNav";
+import { RecordsMovePointer } from "./RecordsMovePointer";
 
 export type ConnectionState = "ready" | "running" | "degraded" | "offline" | "checking";
 
@@ -86,6 +87,7 @@ export function Header({
   recordsOpen = false,
   onOpenRecords,
   recordsTriggerRef,
+  hasExistingRuns,
 }: {
   running: boolean;
   onOpenCommand?: () => void;
@@ -104,6 +106,8 @@ export function Header({
   /** Ref attached to the >=1024 drawer trigger so the Base UI primitive can
    *  hand focus back to it on close (spec §P focus management). */
   recordsTriggerRef?: Ref<HTMLButtonElement>;
+  /** Explicit override for migration pointer existing-runs check */
+  hasExistingRuns?: boolean;
 }) {
   const pill = livePill(running, connectionState);
   const elapsed = useRunElapsed(running);
@@ -133,9 +137,8 @@ export function Header({
         <WorkspaceNav />
       </div>
 
-      <div className="flex min-w-0 items-center justify-self-end gap-2">
+      <div className="relative flex min-w-0 items-center justify-self-end gap-2">
         <button
-          type="button"
           aria-disabled={onOpenPalette ? undefined : true}
           onClick={onOpenPalette}
           aria-label="Command palette"
@@ -191,6 +194,7 @@ export function Header({
             <span className="hidden lg:inline">Records</span>
           </Link>
         )}
+        <RecordsMovePointer recordsOpen={recordsOpen} hasExistingRuns={hasExistingRuns} />
         {onOpenConnections && (
           <DetachedDialogTrigger handle={connectionsDialogHandle}>
             <button

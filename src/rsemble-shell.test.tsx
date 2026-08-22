@@ -50,9 +50,7 @@ function cleanup(h: Harness) {
 /** Flush so lazily-imported route chunks resolve and render inside act(). */
 async function settleLazy(): Promise<void> {
   await act(async () => {
-    const { promise, resolve } = Promise.withResolvers<void>();
-    setTimeout(resolve, 0);
-    await promise;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -96,6 +94,8 @@ async function renderAtRoute(initialEntries: string[]): Promise<Harness> {
 }
 
 afterEach(() => {
+  window.localStorage.clear();
+  document.body.innerHTML = "";
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -427,19 +427,56 @@ describe("Records migration pointer (spec §O.1)", () => {
         schemaVersion: 2,
         id,
         revision: 1,
+        execution: { ownerId: "test", leaseId: "test", fence: 1 },
         createdAt: now,
+        updatedAt: now,
         completedAt: now + 500,
         status: "completed",
         mode: "rank",
         source: { kind: "adhoc" },
-        task: { title: `Task ${id}`, rawPrompt: "Test prompt" },
+        task: { title: `Task ${id}`, prompt: "Test prompt", systemPrompt: "", temperature: 0.7 },
+        evaluation: { profile: null, candidateMessages: [] },
         candidates: [],
-        judge: { attempts: [] },
+        judge: {
+          status: "done",
+          acceptedAttemptId: null,
+          report: null,
+          consensus: null,
+          attempts: [],
+        },
+        fusion: {
+          status: "done",
+          acceptedAttemptId: null,
+          attempts: [],
+        },
+        winnerKeys: [],
       },
     };
   }
-
   it("renders one-time pointer in shell when run records exist and not dismissed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
     const runRepo = new InMemoryRunRepository();
     const { record, summary } = seedRunRecord("run-1");
     await runRepo.create(record, summary);
@@ -466,7 +503,9 @@ describe("Records migration pointer (spec §O.1)", () => {
       </MemoryRouter>,
     );
     await settleLazy();
-
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
     const pointer = h.$("[role='status']");
     expect(pointer).not.toBeNull();
     expect(pointer?.textContent).toContain("Runs moved.");
@@ -486,6 +525,29 @@ describe("Records migration pointer (spec §O.1)", () => {
   });
 
   it("does not render pointer when database has 0 run records", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
     const runRepo = new InMemoryRunRepository();
     const h = render(
       <MemoryRouter initialEntries={["/compare"]}>
@@ -509,7 +571,208 @@ describe("Records migration pointer (spec §O.1)", () => {
       </MemoryRouter>,
     );
     await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
 
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("does not render pointer when already dismissed in localStorage even with run records", async () => {
+    window.localStorage.setItem(DISMISSED_STORAGE_KEY, "true");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
+    const runRepo = new InMemoryRunRepository();
+    const { record, summary } = seedRunRecord("run-1");
+    await runRepo.create(record, summary);
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("opening records drawer in shell dismisses the pointer forever", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    // >=1024px to enable drawer trigger
+    vi.stubGlobal("matchMedia", (q: string) => ({
+      matches: q.includes("1024"),
+      media: q,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+
+    const runRepo = new InMemoryRunRepository();
+    const { record, summary } = seedRunRecord("run-1");
+    await runRepo.create(record, summary);
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(h.$("[role='status']")).not.toBeNull();
+
+    // Click Records button to open drawer
+    const recordsBtn = h.$('button[aria-label="Records"]');
+    expect(recordsBtn).not.toBeNull();
+    act(() => {
+      recordsBtn?.click();
+    });
+    await settleLazy();
+
+    expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBe("true");
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("navigating to another route in shell dismisses the pointer forever", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
+    const runRepo = new InMemoryRunRepository();
+    const { record, summary } = seedRunRecord("run-1");
+    await runRepo.create(record, summary);
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(h.$("[role='status']")).not.toBeNull();
+
+    // Click desktop nav link to /evaluations
+    const evalsLink = [...h.container.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (a) => a.getAttribute("href") === "/evaluations",
+    );
+    expect(evalsLink).toBeTruthy();
+    act(() => {
+      evalsLink?.click();
+    });
+    await settleLazy();
+
+    expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBe("true");
     expect(h.$("[role='status']")).toBeNull();
     cleanup(h);
   });
