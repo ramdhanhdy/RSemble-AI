@@ -31,11 +31,6 @@ const GROUP_CAP = 5;
  *  below. The repository composes sources per call — this stays a single
  *  typed read, not a second index. */
 const FULL_STREAM_LIMIT = 1_000_000;
-/** Rendering bound for an active search: the complete stream is searched
- *  and the match count stays truthful, but each group renders at most this
- *  many rows with a "+N more — open full Records" escape hatch (§M.11 — the
- *  full page is the depth surface; the drawer must never freeze). */
-const SEARCH_GROUP_RENDER_CAP = 50;
 
 type DrawerGroupKey = "compare" | "evaluations" | "lab" | "observations" | "legacy";
 
@@ -393,45 +388,27 @@ export function RecordsDrawer({
                 </ul>
               </section>
             )}
-            {grouped.map((group) => {
-              // Search renders a bounded slice per group; the count stays
-              // truthful and the overflow escapes to the full utility.
-              const visible =
-                searching && group.items.length > SEARCH_GROUP_RENDER_CAP
-                  ? group.items.slice(0, SEARCH_GROUP_RENDER_CAP)
-                  : group.items;
-              const hidden = group.items.length - visible.length;
-              return (
-                <section key={group.key} data-drawer-group="">
-                  <h3
-                    data-drawer-group-head=""
-                    className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
-                  >
-                    {group.heading}
-                  </h3>
-                  <ul className="flex flex-col gap-1.5" role="list">
-                    {visible.map((reference) => (
-                      <li key={`${reference.recordType}:${reference.id}`}>
-                        <RecordTypeRow
-                          reference={reference}
-                          compact
-                          onRecordKeyDown={onStopKeyDown}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                  {hidden > 0 && (
-                    <Link
-                      to={`/records?text=${encodeURIComponent(debouncedText)}`}
-                      data-drawer-more=""
-                      className="motion-state mt-1.5 flex min-h-[44px] items-center rounded-md px-1 font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      +{hidden} more — open full Records
-                    </Link>
-                  )}
-                </section>
-              );
-            })}
+            {grouped.map((group) => (
+              <section key={group.key} data-drawer-group="">
+                <h3
+                  data-drawer-group-head=""
+                  className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted"
+                >
+                  {group.heading}
+                </h3>
+                <ul className="flex flex-col gap-1.5" role="list">
+                  {group.items.map((reference) => (
+                    <li key={`${reference.recordType}:${reference.id}`}>
+                      <RecordTypeRow
+                        reference={reference}
+                        compact
+                        onRecordKeyDown={onStopKeyDown}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
           </>
         )}
       </div>

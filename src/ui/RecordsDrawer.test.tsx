@@ -131,6 +131,7 @@ function repository(items: RecordReference[]): RecordsRepository {
     getLegacySummary: vi.fn(async () => null),
     getPolicyStudyRecord: vi.fn(async () => null),
     getObservation: vi.fn(async () => null),
+    getObservationDecision: vi.fn(async () => null),
     getPolicyStudyChildren: vi.fn(async () => ({
       trialCount: 0,
       observationCount: 0,
@@ -524,7 +525,7 @@ describe("RecordsDrawer search", () => {
     cleanup(h);
   });
 
-  it("search evaluates matches beyond the global top 50", async () => {
+  it("renders every search match while preserving grouping", async () => {
     const now = Date.now();
     const matches = Array.from({ length: 60 }, (_, i) => comparison(`cmp-flood-${i}`)).map(
       (reference, index) => ({ ...reference, createdAt: now - index * 1_000 }),
@@ -535,18 +536,16 @@ describe("RecordsDrawer search", () => {
     };
     const h = await renderDrawer(repository([...matches, target]));
     await type(h, "cmp-flood");
-    // The complete stream is searched: the truthful count covers the oldest
-    // match too, and the bounded group renders its escape hatch to it.
+    // §H.2: while search is active, grouping is preserved and ALL matching
+    // rows render — the drawer never truncates or paginates matches.
     const status = document.body.querySelector('[role="status"]');
     expect(status?.textContent).toContain("61");
     expect(groupHeadings()).toEqual(["From Compare"]);
     const compareGroup = [...document.body.querySelectorAll("[data-drawer-group]")].find(
       (el) => el.querySelector("[data-drawer-group-head]")?.textContent === "From Compare",
     )!;
-    expect(compareGroup.querySelectorAll("[data-record-row]").length).toBe(50);
-    const more = compareGroup.querySelector<HTMLAnchorElement>("a[data-drawer-more]")!;
-    expect(more.getAttribute("href")).toBe("/records?text=cmp-flood");
-    expect(more.textContent).toContain("11 more");
+    expect(compareGroup.querySelectorAll("[data-record-row]").length).toBe(61);
+    expect(compareGroup.querySelector("a[data-drawer-more]")).toBeNull();
     cleanup(h);
   });
 
@@ -927,7 +926,7 @@ describe("RecordsDrawer reviewer repairs", () => {
     cleanup(h);
   });
 
-  it("bounds rendered search matches while keeping the truthful count", async () => {
+  it("renders all 120 flood matches without an escape hatch", async () => {
     const now = Date.now();
     const flood = Array.from({ length: 120 }, (_, i) => comparison(`cmp-flood-${i}`)).map(
       (reference, index) => ({ ...reference, createdAt: now - index * 1_000 }),
@@ -936,15 +935,11 @@ describe("RecordsDrawer reviewer repairs", () => {
     await type(h, "cmp-flood");
     const status = document.body.querySelector('[role="status"]');
     expect(status?.textContent).toContain("120");
-    const rows = document.body.querySelectorAll("[data-drawer-group] [data-record-row]");
-    expect(rows.length).toBeLessThanOrEqual(150);
     const compareGroup = [...document.body.querySelectorAll("[data-drawer-group]")].find(
       (el) => el.querySelector("[data-drawer-group-head]")?.textContent === "From Compare",
     )!;
-    expect(compareGroup.querySelectorAll("[data-record-row]").length).toBe(50);
-    const more = compareGroup.querySelector<HTMLAnchorElement>("a[data-drawer-more]");
-    expect(more?.getAttribute("href")).toBe("/records?text=cmp-flood");
-    expect(more?.textContent).toContain("70 more");
+    expect(compareGroup.querySelectorAll("[data-record-row]").length).toBe(120);
+    expect(document.body.querySelector("a[data-drawer-more]")).toBeNull();
     cleanup(h);
   });
 
