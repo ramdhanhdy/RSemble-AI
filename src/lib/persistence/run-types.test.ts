@@ -598,6 +598,47 @@ describe("isLegacyRunSummary fabrication rejection", () => {
     (s as unknown as { schemaVersion: string }).schemaVersion = "2-import";
     expect(isLegacyRunSummary(s)).toBe(false);
   });
+  it("accepts valid rawPayload and importMetadata", () => {
+    const s = validLegacySummary();
+    s.rawPayload = {
+      taskExcerpt: "raw",
+      models: ["gpt-4"],
+      stats: { "gpt-4": { score: 5, latencyMs: 100, costUsd: 0.001 } },
+      timestamp: 1700000000000,
+    };
+    s.importMetadata = {
+      importedAt: 1700001000000,
+      format: "1-import",
+      importer: "localStorage:rsemble.runHistory.v1",
+    };
+    expect(isLegacyRunSummary(s)).toBe(true);
+  });
+
+  it("rejects legacy summaries with prohibited keys in rawPayload or importMetadata", () => {
+    const s1 = validLegacySummary();
+    s1.rawPayload = { apiKey: "secret-key-123" };
+    expect(isLegacyRunSummary(s1)).toBe(false);
+
+    const s2 = validLegacySummary();
+    s2.importMetadata = {
+      importedAt: 1700001000000,
+      format: "1-import",
+      token: "secret-token",
+    } as unknown as { importedAt: number; format: string };
+    expect(isLegacyRunSummary(s2)).toBe(false);
+  });
+
+  it("rejects non-object rawPayload or invalid importMetadata", () => {
+    const s1 = validLegacySummary();
+    (s1 as unknown as { rawPayload: unknown }).rawPayload = "not-an-object";
+    expect(isLegacyRunSummary(s1)).toBe(false);
+
+    const s2 = validLegacySummary();
+    (s2 as unknown as { importMetadata: unknown }).importMetadata = {
+      importedAt: "not-a-number",
+    };
+    expect(isLegacyRunSummary(s2)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

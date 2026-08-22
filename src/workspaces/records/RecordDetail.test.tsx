@@ -500,17 +500,177 @@ describe("Typed details — Task 8 canonical completion", () => {
     expect(harness.container.querySelector("a[href='/models/model-config-1']")).not.toBeNull();
     act(() => harness.root.unmount());
   });
+  it("separates passed rules from limitations/failures with truthful icons and labels for provisional decisions", async () => {
+    const reference: ObservationRecordReference = {
+      recordType: "observation",
+      id: "observation-prov",
+      createdAt: 2_000,
+      updatedAt: 2_000,
+      title: "Provisional observation",
+      status: "completed",
+      mode: null,
+      source: "experiment",
+      modelKeys: ["openrouter:qwen3.8-max"],
+      searchText: "observation-prov task-1",
+      ownerHint: "from an Evaluation",
+      sourceKind: "evaluation",
+      sourceResultId: "evaluation-1",
+      runId: "run-1",
+      taskId: "task-1",
+      modelConfigurationId: "model-config-1",
+    };
+    const observation = {
+      id: "observation-prov",
+      sourceKind: "evaluation",
+      sourceResultId: "evaluation-1",
+      runId: "run-1",
+      taskId: "task-1",
+      taskVersion: 2,
+      modelConfigurationId: "model-config-1",
+      candidateAttemptId: "candidate-attempt-1",
+      assessmentRef: { judgeAttemptId: "judge-attempt-1" },
+      outcome: { judgeAccepted: true, verifierPassed: null },
+    } as Observation;
+    const decision: EligibilityDecision = {
+      observationId: "observation-prov",
+      ruleVersion: 3,
+      status: "provisional",
+      evidenceClass: "exploratory",
+      allowedUses: ["task_descriptive"],
+      reasonCodes: ["protocol_complete", "incomplete_task_set_coverage"],
+      comparabilityCohortId: "cohort-1",
+      decidedAt: 5_000,
+    };
+    const repo = repository({
+      getReference: vi.fn(async () => reference),
+      getObservation: vi.fn(async () => observation),
+      getObservationDecision: vi.fn(async () => decision),
+    });
+    const harness = await renderDetail(repo as RecordsRepository, "observation", "observation-prov");
+    const panel = harness.container.querySelector("[data-observation-eligibility]");
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain("Provisional");
 
-  it("keeps Legacy known-fields-only with provenance and the preserved payload", async () => {
+    // Genuine passed rules render under Rules passed with data-eligibility-rule.
+    const passedRules = panel!.querySelectorAll("[data-eligibility-rule]");
+    expect(passedRules.length).toBe(1);
+    expect(passedRules[0]!.textContent).toContain("The execution protocol is fully recorded.");
+    expect(passedRules[0]!.querySelector("svg.text-success")).not.toBeNull();
+
+    // Limitations render under a separate limitations list with data-eligibility-limitation and warning treatment.
+    const limitations = panel!.querySelectorAll("[data-eligibility-limitation]");
+    expect(limitations.length).toBe(1);
+    expect(limitations[0]!.textContent).toContain("Some declared roster cells are missing evidence.");
+    expect(limitations[0]!.querySelector("svg.text-warning")).not.toBeNull();
+
+    // Limitations must NEVER appear inside the Rules passed list or carry text-success.
+    const passedList = panel!.querySelector("ul[aria-label='Rules passed']");
+    expect(passedList?.textContent).not.toContain("Some declared roster cells are missing evidence.");
+    act(() => harness.root.unmount());
+  });
+
+  it("separates passed rules from limitations/failures with truthful icons and labels for excluded decisions", async () => {
+    const reference: ObservationRecordReference = {
+      recordType: "observation",
+      id: "observation-excl",
+      createdAt: 2_000,
+      updatedAt: 2_000,
+      title: "Excluded observation",
+      status: "completed",
+      mode: null,
+      source: "experiment",
+      modelKeys: ["openrouter:qwen3.8-max"],
+      searchText: "observation-excl task-1",
+      ownerHint: "from an Evaluation",
+      sourceKind: "evaluation",
+      sourceResultId: "evaluation-1",
+      runId: "run-1",
+      taskId: "task-1",
+      modelConfigurationId: "model-config-1",
+    };
+    const observation = {
+      id: "observation-excl",
+      sourceKind: "evaluation",
+      sourceResultId: "evaluation-1",
+      runId: "run-1",
+      taskId: "task-1",
+      taskVersion: 2,
+      modelConfigurationId: "model-config-1",
+      candidateAttemptId: "candidate-attempt-1",
+      assessmentRef: { judgeAttemptId: "judge-attempt-1" },
+      outcome: { judgeAccepted: false, verifierPassed: false },
+    } as Observation;
+    const decision: EligibilityDecision = {
+      observationId: "observation-excl",
+      ruleVersion: 3,
+      status: "excluded",
+      evidenceClass: "exploratory",
+      allowedUses: [],
+      reasonCodes: ["verifier_failed", "candidate_missing_or_failed"],
+      comparabilityCohortId: "cohort-1",
+      decidedAt: 5_000,
+    };
+    const repo = repository({
+      getReference: vi.fn(async () => reference),
+      getObservation: vi.fn(async () => observation),
+      getObservationDecision: vi.fn(async () => decision),
+    });
+    const harness = await renderDetail(repo as RecordsRepository, "observation", "observation-excl");
+    const panel = harness.container.querySelector("[data-observation-eligibility]");
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain("Excluded");
+
+    // Zero passed rules for an excluded decision with only limitations.
+    const passedRules = panel!.querySelectorAll("[data-eligibility-rule]");
+    expect(passedRules.length).toBe(0);
+
+    // Limitations / failures render with error/warning styling and data-eligibility-limitation.
+    const limitations = panel!.querySelectorAll("[data-eligibility-limitation]");
+    expect(limitations.length).toBe(2);
+    expect(limitations[0]!.querySelector("svg.text-error, svg.text-warning")).not.toBeNull();
+    expect(panel?.querySelector("ul[aria-label='Rules passed']")).toBeNull();
+    act(() => harness.root.unmount());
+  });
+
+  it("keeps Legacy known-fields-only with provenance, source event honesty, and preserved payload", async () => {
+    const richLegacySummary: LegacyRunSummary = {
+      ...legacySummary,
+      createdAt: 1_700_000_000_000,
+      rawPayload: {
+        taskExcerpt: "Imported comparison",
+        models: ["gpt-3.5"],
+        stats: { "gpt-3.5": { score: 4.5, latencyMs: 1200, costUsd: 0.005 } },
+        winner: "gpt-3.5",
+        timestamp: 1_700_000_000_000,
+        extraRawField: "raw-unnormalized-value",
+      },
+      importMetadata: {
+        importedAt: 1_700_050_000_000,
+        format: "1-import",
+        importer: "localStorage:rsemble.runHistory.v1",
+      },
+    };
     const repo = repository({
       getReference: vi.fn(async () => legacyReference),
-      getLegacySummary: vi.fn(async () => legacySummary),
+      getLegacySummary: vi.fn(async () => richLegacySummary),
     });
     const harness = await renderDetail(repo as RecordsRepository, "legacy", "legacy-1");
     expect(harness.container.textContent).toContain("Origin unresolved");
     expect(harness.container.textContent).toContain("This record's historical owner is unknown.");
-    // Import provenance from the summary's own fields — never fabricated.
-    expect(harness.container.textContent).toContain("1-import");
+
+    // Import provenance: Format, Importer, Source event (createdAt), and Imported (importedAt).
+    const provenance = harness.container.querySelector("[data-section='provenance']");
+    expect(provenance).not.toBeNull();
+    expect(provenance?.textContent).toContain("Format");
+    expect(provenance?.textContent).toContain("1-import");
+    expect(provenance?.textContent).toContain("Importer");
+    expect(provenance?.textContent).toContain("localStorage:rsemble.runHistory.v1");
+    expect(provenance?.textContent).toContain("Source event");
+    expect(provenance?.textContent).toContain(new Date(1_700_000_000_000).toLocaleString());
+    expect(provenance?.textContent).toContain("Imported");
+    expect(provenance?.textContent).toContain(new Date(1_700_050_000_000).toLocaleString());
+
+    // Disclosure panel reveals the validated raw payload (including unnormalized extra fields).
     const disclosure = harness.container.querySelector<HTMLButtonElement>(
       "button[data-payload-disclosure]",
     )!;
@@ -522,8 +682,29 @@ describe("Typed details — Task 8 canonical completion", () => {
     const panel = harness.container.querySelector("[data-payload-panel]");
     expect(panel).not.toBeNull();
     expect(panel?.className).toContain("max-h-96");
-    expect(panel?.textContent).toContain('"schemaVersion":"1-import"');
-    expect(panel?.textContent).toContain('"taskExcerpt":"Imported comparison"');
+    expect(panel?.textContent).toContain('"extraRawField":"raw-unnormalized-value"');
+    act(() => harness.root.unmount());
+  });
+
+  it("does not fabricate an Imported line when legacy summary has no importedAt metadata", async () => {
+    const unaugmentedLegacy: LegacyRunSummary = {
+      ...legacySummary,
+      createdAt: 1_700_000_000_000,
+    };
+    const repo = repository({
+      getReference: vi.fn(async () => legacyReference),
+      getLegacySummary: vi.fn(async () => unaugmentedLegacy),
+    });
+    const harness = await renderDetail(repo as RecordsRepository, "legacy", "legacy-1");
+    const provenance = harness.container.querySelector("[data-section='provenance']");
+    expect(provenance).not.toBeNull();
+    expect(provenance?.textContent).toContain("Source event");
+    expect(provenance?.textContent).toContain(new Date(1_700_000_000_000).toLocaleString());
+    // Must NOT label createdAt as Imported or fabricate an Imported line.
+    const dtElements = Array.from(provenance?.querySelectorAll("dt") ?? []).map(
+      (el) => el.textContent?.trim(),
+    );
+    expect(dtElements).not.toContain("Imported");
     act(() => harness.root.unmount());
   });
 });
