@@ -251,7 +251,9 @@ describe("Header Records utility (secondary chrome)", () => {
       expect(control?.querySelector("svg.lucide-history")).toBeTruthy();
       const label = control?.querySelector("span");
       expect(label?.className.includes("hidden lg:inline")).toBe(true);
+      // Icon-only form below lg must be a true 44x44 target, not only tall.
       expect(control?.className.includes("min-h-[44px]")).toBe(true);
+      expect(control?.className.includes("min-w-[44px]")).toBe(true);
       cleanup(h);
     }
   });

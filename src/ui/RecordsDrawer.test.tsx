@@ -10,7 +10,7 @@
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RecordsRepository } from "../lib/records/records-repository";
 import type { RecordReference } from "../lib/records/record-reference";
 import { RecordsDrawer } from "./RecordsDrawer";
@@ -158,7 +158,7 @@ async function flush() {
 }
 
 async function renderDrawer(
-  repo: RecordsRepository,
+  repo: RecordsRepository | null,
   props: { open?: boolean } = {},
 ): Promise<Harness> {
   const container = document.createElement("div");
@@ -390,6 +390,43 @@ describe("RecordsDrawer workspace groups", () => {
     expect(ids).not.toContain("run-cap-1");
     cleanup(h);
   });
+
+  it(">50 newer Compare records cannot hide an older Lab/Observation/Legacy group", async () => {
+    // 60 globally-newer ad-hoc executions must not starve the other
+    // workspace groups: pre-search grouping evaluates the complete loaded
+    // stream, not just the globally newest 50.
+    const now = Date.now();
+    const flood = Array.from({ length: 60 }, (_, i) => taskExecution(`flood-${i}`, "adhoc")).map(
+      (reference, index) => ({ ...reference, createdAt: now - index * 1_000 }),
+    );
+    const h = await renderDrawer(
+      repository([
+        ...flood,
+        { ...policyStudy("study-old"), createdAt: now - 500_000 },
+        { ...observation("obs-old"), createdAt: now - 600_000 },
+        { ...legacyRecord("leg-old"), createdAt: now - 700_000 },
+      ]),
+    );
+    expect(groupHeadings()).toEqual([
+      "From Compare",
+      "From the Lab",
+      "Observations",
+      "Legacy & Imported",
+    ]);
+    const ids = [...document.body.querySelectorAll("[data-record-row]")].map((r) =>
+      r.getAttribute("data-record-id"),
+    );
+    expect(ids).toContain("study-old");
+    expect(ids).toContain("obs-old");
+    expect(ids).toContain("leg-old");
+    cleanup(h);
+  });
+});
+
+// A failing test must never leak its drawer DOM into later whole-document
+// queries; wipe the body between tests (per-test cleanup still unmounts).
+afterEach(() => {
+  document.body.innerHTML = "";
 });
 
 describe("RecordsDrawer search", () => {
@@ -439,6 +476,32 @@ describe("RecordsDrawer search", () => {
     expect(heads[0]).toBe("Exact Match");
     const firstRow = document.body.querySelector("[data-drawer-group] [data-record-row]")!;
     expect(firstRow.getAttribute("data-record-id")).toBe("run-exact-9b41");
+    // The promoted exact record must not render a second time inside its
+    // workspace group below.
+    const occurrences = [...document.body.querySelectorAll("[data-record-row]")].filter(
+      (r) => r.getAttribute("data-record-id") === "run-exact-9b41",
+    );
+    expect(occurrences).toHaveLength(1);
+    cleanup(h);
+  });
+
+  it("search reaches a matching record beyond the global top 50", async () => {
+    // 61 comparisons all match the query; the target is the OLDEST match,
+    // so a default limit-50 evaluation would silently drop it.
+    const now = Date.now();
+    const matches = Array.from({ length: 60 }, (_, i) => comparison(`cmp-flood-${i}`)).map(
+      (reference, index) => ({ ...reference, createdAt: now - index * 1_000 }),
+    );
+    const target = {
+      ...comparison("cmp-flood-target"),
+      createdAt: now - 1_000_000,
+    };
+    const h = await renderDrawer(repository([...matches, target]));
+    await type(h, "cmp-flood");
+    const ids = [...document.body.querySelectorAll("[data-record-row]")].map((r) =>
+      r.getAttribute("data-record-id"),
+    );
+    expect(ids).toContain("cmp-flood-target");
     cleanup(h);
   });
 
@@ -473,6 +536,84 @@ describe("RecordsDrawer search", () => {
     expect((h.$("input[data-drawer-search]") as HTMLInputElement).value).toBe("");
     expect(groupHeadings()).toEqual(["From Compare"]);
     cleanup(h);
+  });
+
+  it("adds a data-exact-link marker to trailing Exact siblings only", async () => {
+    const h = await renderDrawer(
+      repository([comparison("cmp-marks"), taskExecution("run-marks", "adhoc")]),
+    );
+    // Semantic rows: main anchor + marked trailing sibling. Exact rows:
+    // main anchor only.
+    expect(document.body.querySelectorAll("a[data-exact-link]").length).toBe(1);
+    const exact = document.body.querySelector<HTMLAnchorElement>("a[data-exact-link]")!;
+    expect(exact.getAttribute("href")).toBe("/records/comparison/cmp-marks");
+    cleanup(h);
+  });
+
+  it("moves focus from search into rows with ArrowDown and back with ArrowUp", async () => {
+    const h = await renderDrawer(
+      repository([comparison("cmp-k1"), comparison("cmp-k2"), taskExecution("run-k3", "adhoc")]),
+    );
+    const search = h.$<HTMLInputElement>("input[data-drawer-search]")!;
+    act(() => {
+      search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.getAttribute("data-record-row-link")).toBe("");
+    // Newest record first: the drawer stream is newest-ordered.
+    expect(focused.getAttribute("href")).toBe("/records/task-execution/run-k3");
+
+    const stops = () => [
+      ...document.body.querySelectorAll<HTMLElement>("a[data-record-row-link], a[data-exact-link]"),
+    ];
+    // Forward traversal walks every stop, including the trailing Exact link.
+    let index = stops().indexOf(document.activeElement as HTMLElement);
+    while (index < stops().length - 1) {
+      act(() => {
+        document.activeElement!.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+        );
+      });
+      index += 1;
+      expect(document.activeElement).toBe(stops()[index]);
+    }
+    // The final stop is the trailing Exact sibling of cmp-k2.
+    expect((document.activeElement as HTMLElement).getAttribute("data-exact-link")).toBe("");
+
+    // Backward traversal returns through the same stops, then to search.
+    while (stops().indexOf(document.activeElement as HTMLElement) > 0) {
+      act(() => {
+        document.activeElement!.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }),
+        );
+      });
+    }
+    act(() => {
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }),
+      );
+    });
+    expect(document.activeElement).toBe(search);
+    cleanup(h);
+  });
+
+  it("activates the focused record action with Enter (drawer closes on navigation)", async () => {
+    const mounted = mountControlledDrawer(repository([comparison("cmp-enter")]), true, "/compare");
+    await flush();
+    const search = document.body.querySelector<HTMLInputElement>("input[data-drawer-search]")!;
+    act(() => {
+      search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    expect(document.activeElement?.getAttribute("href")).toBe("/compare/results/cmp-enter");
+    await act(async () => {
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+      await Promise.resolve();
+    });
+    await flush();
+    expect(mounted.latest.open).toBe(false);
+    cleanupRoot(mounted.container, mounted.root);
   });
 });
 
@@ -549,6 +690,16 @@ describe("RecordsDrawer states", () => {
       await Promise.resolve();
     });
     expect(calls).toBe(2);
+    cleanup(h);
+  });
+
+  it("renders the bounded error grammar when the repository is unavailable", async () => {
+    // A null repository must surface the existing "Records index
+    // unavailable." block, never an endless skeleton.
+    const h = await renderDrawer(null);
+    expect(document.body.textContent).toContain("Records index unavailable.");
+    expect(document.body.querySelector("[data-drawer-loading]")).toBeNull();
+    expect(document.body.querySelector('button[data-action="retry-records-index"]')).toBeTruthy();
     cleanup(h);
   });
 

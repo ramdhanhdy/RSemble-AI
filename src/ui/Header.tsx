@@ -175,7 +175,7 @@ export function Header({
             title="Records"
             aria-haspopup="dialog"
             aria-expanded={recordsOpen}
-            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <History size={15} aria-hidden="true" />
             <span className="hidden lg:inline">Records</span>
@@ -185,7 +185,7 @@ export function Header({
             to="/records"
             aria-label="Records"
             title="Records"
-            className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <History size={15} aria-hidden="true" />
             <span className="hidden lg:inline">Records</span>

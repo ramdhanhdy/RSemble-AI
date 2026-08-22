@@ -17,10 +17,14 @@ export function RecordTypeRow({
   reference,
   selected = false,
   compact = false,
+  onRecordKeyDown,
 }: {
   reference: RecordReference;
   selected?: boolean;
   compact?: boolean;
+  /** §H.4 roving keyboard handler, attached to both the row anchor and the
+   *  trailing Exact sibling (each is an independent focus stop). */
+  onRecordKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
 }) {
   const semantic =
     reference.recordType === "comparison" ||
@@ -45,6 +49,13 @@ export function RecordTypeRow({
         to={recordOpenHref(reference)}
         data-record-row-link=""
         aria-label={accessibleName}
+        onKeyDown={(event) => {
+          onRecordKeyDown?.(event);
+          if (event.key === "Enter" && !event.defaultPrevented) {
+            event.preventDefault();
+            event.currentTarget.click();
+          }
+        }}
         className="motion-state flex min-h-[44px] min-w-0 flex-1 flex-col gap-0.5 px-3 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -72,8 +83,16 @@ export function RecordTypeRow({
       {semantic && (
         <Link
           to={recordDetailHref(reference)}
+          data-exact-link=""
           aria-label={`Open exact ${recordTypeLabel(reference.recordType)} record`}
           title="Open exact record"
+          onKeyDown={(event) => {
+            onRecordKeyDown?.(event);
+            if (event.key === "Enter" && !event.defaultPrevented) {
+              event.preventDefault();
+              event.currentTarget.click();
+            }
+          }}
           className="motion-state flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center border-l border-edge text-text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <ExternalLink size={14} aria-hidden="true" />

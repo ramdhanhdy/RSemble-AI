@@ -124,8 +124,14 @@ export function RecordsDrawer({
     const id = ++requestId.current;
     setReferences(null);
     setError(null);
+    // A missing repository must surface the bounded error grammar, never an
+    // endless skeleton (repo?.list() would never settle).
+    if (!repo) {
+      setError("The records repository is unavailable.");
+      return;
+    }
     repo
-      ?.list({ limit: FULL_STREAM_LIMIT })
+      .list({ limit: FULL_STREAM_LIMIT })
       .then((page) => {
         if (requestId.current === id) setReferences(page.items);
       })
@@ -153,15 +159,66 @@ export function RecordsDrawer({
   const searching = debouncedText.length > 0;
   const page: RecordsPage | null = useMemo(() => {
     if (references === null) return null;
-    return queryRecords(references, { text: searching ? debouncedText : undefined });
+    // Evaluate the complete already-loaded bounded stream: pre-search
+    // grouping needs every record to find the newest five per workspace
+    // group, and search promises all matches (the queryRecords default is
+    // 50).
+    return queryRecords(references, {
+      text: searching ? debouncedText : undefined,
+      limit: FULL_STREAM_LIMIT,
+    });
   }, [references, searching, debouncedText]);
 
   const exactHits =
     page !== null && searching
       ? page.items.filter((reference) => reference.id.toLowerCase() === debouncedText)
       : [];
-  const grouped = page === null ? [] : groupReferences(page.items, searching ? null : GROUP_CAP);
-
+  // An exact hit promoted into EXACT MATCH must not render a second time
+  // inside its workspace group below.
+  const grouped =
+    page === null
+      ? []
+      : groupReferences(
+          page.items.filter((reference) => !exactHits.includes(reference)),
+          searching ? null : GROUP_CAP,
+        );
+  // §H.4 keyboard contract: ↓/↑ move between record actions (each row's
+  // main anchor is one stop, a trailing Exact sibling link the next); ↑
+  // from the first stop returns to search; Enter activates (native anchor
+  // behavior, made deterministic). Escape stays owned by the Base UI
+  // dialog; Tab order and focus trapping are untouched. The handler rides
+  // the stops themselves — Base UI's focus manager stops keydown
+  // propagation above the popup, so document-level delegation never fires.
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  function drawerNavStops(): HTMLElement[] {
+    return [
+      ...(bodyRef.current?.querySelectorAll<HTMLElement>(
+        "a[data-record-row-link], a[data-exact-link]",
+      ) ?? []),
+    ];
+  }
+  function onSearchKeyDown(event: React.KeyboardEvent) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const stops = drawerNavStops();
+    if (stops.length === 0) return;
+    (event.key === "ArrowDown" ? stops[0] : stops[stops.length - 1]).focus();
+  }
+  function onStopKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const stops = drawerNavStops();
+    const index = stops.indexOf(event.currentTarget);
+    if (index === -1) return;
+    event.preventDefault();
+    if (event.key === "ArrowDown") {
+      stops[index + 1]?.focus();
+    } else {
+      const previous = stops[index - 1];
+      if (previous) previous.focus();
+      else searchRef.current?.focus();
+    }
+  }
   return (
     <DrawerSurface open={open} onOpenChange={onOpenChange} title="Records" finalFocus={finalFocus}>
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-edge px-3">
@@ -191,9 +248,11 @@ export function RecordsDrawer({
             <input
               type="search"
               id="records-drawer-search"
+              ref={searchRef}
               data-drawer-search=""
               value={text}
               onChange={(event) => setText(event.target.value)}
+              onKeyDown={onSearchKeyDown}
               placeholder="Search exact ID or safe metadata…"
               className="min-h-[44px] w-full rounded-md border border-edge bg-canvas pl-9 pr-3 font-mono text-[13px] text-text placeholder:font-sans placeholder:text-text-muted focus:border-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
@@ -204,6 +263,7 @@ export function RecordsDrawer({
       <div
         role="region"
         aria-label="Recent records"
+        ref={bodyRef}
         className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 scroll-thin"
       >
         {references === null && error === null ? (
@@ -278,7 +338,11 @@ export function RecordsDrawer({
                 <ul className="flex flex-col gap-1.5" role="list">
                   {exactHits.map((reference) => (
                     <li key={`${reference.recordType}:${reference.id}`}>
-                      <RecordTypeRow reference={reference} compact />
+                      <RecordTypeRow
+                        reference={reference}
+                        compact
+                        onRecordKeyDown={onStopKeyDown}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -295,7 +359,11 @@ export function RecordsDrawer({
                 <ul className="flex flex-col gap-1.5" role="list">
                   {group.items.map((reference) => (
                     <li key={`${reference.recordType}:${reference.id}`}>
-                      <RecordTypeRow reference={reference} compact />
+                      <RecordTypeRow
+                        reference={reference}
+                        compact
+                        onRecordKeyDown={onStopKeyDown}
+                      />
                     </li>
                   ))}
                 </ul>
