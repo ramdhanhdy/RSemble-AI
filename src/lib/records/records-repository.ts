@@ -4,7 +4,7 @@ import type { EvidenceRepository } from "../persistence/evidence-repository";
 import type { RunRepository } from "../persistence/run-repository";
 import type { LegacyRunSummary, RunRecordV2, RunSummary } from "../persistence/run-types";
 import type { StudyRepository } from "../persistence/study-repository";
-import type { Observation } from "../evidence/evidence-types";
+import type { EligibilityDecision, Observation } from "../evidence/evidence-types";
 import type { PolicyStudyRecord } from "../studies/policy/policy-study-types";
 import type { RecordReference, RecordType, TaskExecutionRecordReference } from "./record-reference";
 import {
@@ -32,7 +32,7 @@ export interface RecordsRepositoryDependencies {
   > | null;
   evidenceRepo: Pick<
     EvidenceRepository,
-    "getObservation" | "listObservations" | "listModelConfigurations"
+    "getObservation" | "getActiveDecision" | "listObservations" | "listModelConfigurations"
   > | null;
 }
 
@@ -49,8 +49,31 @@ export interface RecordsRepository {
   getTaskExecution(id: string): Promise<RunRecordV2 | null>;
   getLegacySummary(id: string): Promise<LegacyRunSummary | null>;
   getObservation(id: string): Promise<Observation | null>;
+  getObservationDecision(id: string): Promise<EligibilityDecision | null>;
   getPolicyStudyRecord(id: string): Promise<PolicyStudyRecord | null>;
   getPolicyStudyChildren(id: string): Promise<PolicyStudyChildren>;
+}
+
+/** §K.5: when a source store cannot be read during index composition, the
+ *  failure surfaces as one rebuildable, diagnostic-carrying error instead of
+ *  an opaque rejection. Source data itself is untouched. */
+export interface RecordsIndexDiagnostic {
+  entityType: string;
+  id: string;
+  reason: string;
+}
+
+export class RecordsIndexBuildError extends Error {
+  readonly diagnostics: RecordsIndexDiagnostic[];
+  constructor(diagnostics: RecordsIndexDiagnostic[]) {
+    super(
+      `The records index could not be built (${diagnostics.length} source ${
+        diagnostics.length === 1 ? "store" : "stores"
+      } failed).`,
+    );
+    this.name = "RecordsIndexBuildError";
+    this.diagnostics = diagnostics;
+  }
 }
 
 async function loadAllRuns(repo: Pick<RunRepository, "list">): Promise<RunSummary[]> {
@@ -116,11 +139,27 @@ async function policyStudyRunMap(
   }
   return exact;
 }
-
 export function createRecordsRepository(
   dependencies: RecordsRepositoryDependencies,
 ): RecordsRepository {
+  /** §K.5: each source store is read inside a diagnostic segment. A failing
+   *  segment contributes one {entityType, id, reason} entry and the whole
+   *  composition rejects with a single rebuildable RecordsIndexBuildError —
+   *  source data itself is never mutated. */
   async function loadReferences(): Promise<RecordReference[]> {
+    const failures: RecordsIndexDiagnostic[] = [];
+    async function segment<T>(entityType: string, load: () => Promise<T[]>): Promise<T[]> {
+      try {
+        return await load();
+      } catch (reason: unknown) {
+        failures.push({
+          entityType,
+          id: entityType,
+          reason: reason instanceof Error ? reason.message : "Unknown storage error",
+        });
+        return [];
+      }
+    }
     const [
       runSummaries,
       comparisons,
@@ -130,14 +169,24 @@ export function createRecordsRepository(
       configurations,
       suites,
     ] = await Promise.all([
-      loadAllRuns(dependencies.runRepo),
-      loadAllComparisons(dependencies.comparisonRepo),
-      dependencies.evaluationRepo?.listExperiments() ?? Promise.resolve([]),
-      dependencies.studyRepo?.listStudies() ?? Promise.resolve([]),
-      loadAllObservations(dependencies.evidenceRepo),
-      dependencies.evidenceRepo?.listModelConfigurations() ?? Promise.resolve([]),
-      dependencies.evaluationRepo?.listSuites(true) ?? Promise.resolve([]),
+      segment("runs", () => loadAllRuns(dependencies.runRepo)),
+      segment("comparisons", () => loadAllComparisons(dependencies.comparisonRepo)),
+      segment(
+        "evaluations",
+        () => dependencies.evaluationRepo?.listExperiments() ?? Promise.resolve([]),
+      ),
+      segment("policy-studies", () => dependencies.studyRepo?.listStudies() ?? Promise.resolve([])),
+      segment("observations", () => loadAllObservations(dependencies.evidenceRepo)),
+      segment(
+        "model-configurations",
+        () => dependencies.evidenceRepo?.listModelConfigurations() ?? Promise.resolve([]),
+      ),
+      segment(
+        "task-sets",
+        () => dependencies.evaluationRepo?.listSuites(true) ?? Promise.resolve([]),
+      ),
     ]);
+    if (failures.length > 0) throw new RecordsIndexBuildError(failures);
     const [studyIdByRunId] = await Promise.all([
       policyStudyRunMap(dependencies.studyRepo, policyStudies),
     ]);
@@ -178,6 +227,9 @@ export function createRecordsRepository(
     },
     async getObservation(id) {
       return dependencies.evidenceRepo?.getObservation(id) ?? null;
+    },
+    async getObservationDecision(id) {
+      return dependencies.evidenceRepo?.getActiveDecision(id) ?? null;
     },
     async getPolicyStudyRecord(id) {
       return dependencies.studyRepo?.getStudy(id) ?? null;

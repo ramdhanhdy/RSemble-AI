@@ -92,6 +92,9 @@ export interface ObservationRecordReference extends RecordReferenceBase<"observa
   runId: string;
   taskId: string;
   modelConfigurationId: string;
+  /** Set when the observation's source run is linked to exactly one Policy
+   *  Study — drives the §K.3 policy-evidence marker on the detail. */
+  policyStudyId?: string | null;
 }
 
 export interface LegacyRecordReference extends RecordReferenceBase<"legacy"> {

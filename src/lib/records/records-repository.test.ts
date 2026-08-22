@@ -1,7 +1,7 @@
+import { RecordsIndexBuildError, createRecordsRepository } from "./records-repository";
 import { describe, expect, it, vi } from "vitest";
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { FullRunSummaryV2 } from "../persistence/run-types";
-import { createRecordsRepository } from "./records-repository";
 
 const runSummary: FullRunSummaryV2 = {
   kind: "full",
@@ -70,6 +70,7 @@ function dependencies() {
       listObservations: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 500 })),
       listModelConfigurations: vi.fn(async () => []),
       getObservation: vi.fn(async () => null),
+      getActiveDecision: vi.fn(async () => null),
     },
   };
 }
@@ -85,6 +86,7 @@ describe("RecordsRepository", () => {
     expect(Object.keys(repository).sort()).toEqual([
       "getLegacySummary",
       "getObservation",
+      "getObservationDecision",
       "getPolicyStudyChildren",
       "getPolicyStudyRecord",
       "getReference",
@@ -109,6 +111,39 @@ describe("RecordsRepository", () => {
   it("returns null for an unknown typed identity", async () => {
     const repository = createRecordsRepository(dependencies() as never);
     await expect(repository.getReference("observation", "missing")).resolves.toBeNull();
+  });
+
+  it("exposes the observation's active eligibility decision", async () => {
+    const deps = dependencies();
+    const decision = {
+      observationId: "observation-1",
+      ruleVersion: 3,
+      status: "eligible",
+      evidenceClass: "comparable",
+      allowedUses: ["task_descriptive"],
+      reasonCodes: ["verifier_passed"],
+      comparabilityCohortId: "cohort-1",
+      decidedAt: 5_000,
+    };
+    (deps.evidenceRepo.getActiveDecision as ReturnType<typeof vi.fn>).mockResolvedValue(decision);
+    const repository = createRecordsRepository(deps as never);
+    await expect(repository.getObservationDecision("observation-1")).resolves.toEqual(decision);
+    expect(deps.evidenceRepo.getActiveDecision).toHaveBeenCalledWith("observation-1");
+  });
+
+  it("aggregates source failures into a rebuildable index error with diagnostics", async () => {
+    const deps = dependencies();
+    (deps.evidenceRepo.listObservations as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Database closed"),
+    );
+    const repository = createRecordsRepository(deps as never);
+    const failure = await repository.list({}).catch((reason: unknown) => reason);
+    expect(failure).toBeInstanceOf(RecordsIndexBuildError);
+    const indexError = failure as RecordsIndexBuildError;
+    expect(indexError.diagnostics).toEqual([
+      { entityType: "observations", id: "observations", reason: "Database closed" },
+    ]);
+    expect(indexError.message).toContain("records index could not be built");
   });
 
   it("caps Policy Study detail at 20 newest exact children while preserving aggregate counts", async () => {

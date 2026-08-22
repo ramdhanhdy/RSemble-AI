@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, ExternalLink, Link as LinkIcon, Route } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Cpu,
+  ExternalLink,
+  FlaskConical,
+  GitCompare,
+  Link as LinkIcon,
+  Route,
+  TestTubes,
+} from "lucide-react";
 import { Link } from "react-router-dom";
-import type { Observation } from "../../lib/evidence/evidence-types";
+import type { EligibilityDecision, Observation } from "../../lib/evidence/evidence-types";
 import type { LegacyRunSummary, RunRecordV2 } from "../../lib/persistence/run-types";
 import type { PolicyStudyChildren, RecordsRepository } from "../../lib/records/records-repository";
 import type {
@@ -10,8 +20,13 @@ import type {
   RecordReference,
   RecordType,
 } from "../../lib/records/record-reference";
-import { recordDetailHref, resolveRecordOwner } from "../../lib/records/record-owner";
+import {
+  ownerActionLabel,
+  recordDetailHref,
+  resolveRecordOwner,
+} from "../../lib/records/record-owner";
 import { HONESTY_COPY } from "../../ui/honesty-copy";
+import { explainDecision, EVIDENCE_CLASS_LABELS } from "../../lib/evidence/evidence-explanation";
 import { RecordTypeEyebrow } from "../../ui/RecordTypeEyebrow";
 import { RecordTypeRow } from "../../ui/RecordTypeRow";
 import { StatusMark } from "../../ui/StatusMark";
@@ -24,6 +39,7 @@ import { RecordNotFound } from "./RecordNotFound";
 interface DetailState {
   reference: RecordReference | null;
   observation: Observation | null;
+  decision: EligibilityDecision | null;
   policyChildren: PolicyStudyChildren | null;
   childRecords: RecordReference[];
   loading: boolean;
@@ -33,6 +49,7 @@ interface DetailState {
 const INITIAL_STATE: DetailState = {
   reference: null,
   observation: null,
+  decision: null,
   policyChildren: null,
   childRecords: [],
   loading: true,
@@ -67,30 +84,51 @@ function ConfidenceChip({ reference }: { reference: RecordReference }) {
   );
 }
 
+const OWNER_ICONS: Record<ReturnType<typeof resolveRecordOwner>["ownerKind"], typeof GitCompare> = {
+  compare: GitCompare,
+  evaluation: FlaskConical,
+  task: Cpu,
+  model: Cpu,
+  lab: TestTubes,
+  legacy: AlertTriangle,
+};
+
 function OwnerCard({ reference }: { reference: RecordReference }) {
   const owner = resolveRecordOwner(reference);
+  const OwnerIcon = OWNER_ICONS[owner.ownerKind];
   return (
     <section className="flex flex-col gap-2 border-y border-edge py-4" aria-label="Owning context">
       <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
         This record&apos;s home
       </p>
-      <p className="text-sm font-medium text-text">{owner.ownerLabel}</p>
+      <p className="flex items-center gap-2 text-sm font-medium text-text">
+        <OwnerIcon size={15} aria-hidden="true" className="text-text-secondary" />
+        {owner.ownerLabel}
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         {owner.ownerHref && (
           <Link
             to={owner.ownerHref}
+            data-owner-action=""
             className="motion-state inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            Open owning context
+            {ownerActionLabel(owner)}
             <ExternalLink size={14} aria-hidden="true" />
           </Link>
         )}
         <ConfidenceChip reference={reference} />
       </div>
       {owner.confidence === "unresolved" && (
-        <p className="honesty-note text-[11px] text-text-secondary">
-          {HONESTY_COPY.unresolvedOwner}
-        </p>
+        <>
+          {owner.reason && (
+            <p className="text-xs text-text-muted" data-unresolved-reason="">
+              {owner.reason}
+            </p>
+          )}
+          <p className="honesty-note text-[11px] text-text-secondary">
+            {HONESTY_COPY.unresolvedOwner}
+          </p>
+        </>
       )}
     </section>
   );
@@ -206,14 +244,68 @@ function SemanticReferenceDetail({
 function ObservationDetail({
   reference,
   observation,
+  decision,
 }: {
   reference: RecordReference;
   observation: Observation;
+  decision: EligibilityDecision | null;
 }) {
+  const policyStudyId =
+    reference.recordType === "observation" ? (reference.policyStudyId ?? null) : null;
+  const explanation = decision ? explainDecision(decision) : null;
   return (
     <div data-record-detail="observation" className="flex flex-col p-4 text-sm">
       <ReferenceHeader reference={reference} />
+      {policyStudyId && (
+        <p
+          data-policy-evidence=""
+          aria-label={HONESTY_COPY.policyEvidenceAria}
+          className="inline-flex w-fit items-center gap-1.5 rounded-md border border-edge px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted"
+        >
+          {HONESTY_COPY.policyEvidence}
+        </p>
+      )}
       <OwnerCard reference={reference} />
+      {explanation && (
+        <section data-observation-eligibility="" className="flex flex-col gap-2 py-4">
+          <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-text-muted">
+            Eligibility
+          </h2>
+          {/* Classification + status as icon + word, never color alone
+              (§K.3; Child 04 wording reused verbatim). */}
+          <p className="flex flex-wrap items-center gap-2 text-sm text-text-secondary">
+            <span className="font-medium text-text">
+              {EVIDENCE_CLASS_LABELS[decision!.evidenceClass]}
+            </span>
+            <span>·</span>
+            <span className="flex items-center gap-1.5">
+              {decision!.status === "eligible" ? (
+                <CheckCircle2 size={14} className="text-success" aria-hidden="true" />
+              ) : (
+                <AlertTriangle size={14} className="text-warning" aria-hidden="true" />
+              )}
+              {explanation.statusLabel}
+            </span>
+          </p>
+          <p className="text-xs text-text-muted">{explanation.statusDescription}</p>
+          <ul className="flex flex-col gap-1" role="list" aria-label="Rules passed">
+            {explanation.reasonLines.map((line) => (
+              <li
+                key={line.code}
+                data-eligibility-rule=""
+                className="flex items-start gap-1.5 text-xs text-text-secondary"
+              >
+                <CheckCircle2
+                  size={13}
+                  className="mt-0.5 shrink-0 text-success"
+                  aria-hidden="true"
+                />
+                <span>{line.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="flex flex-col gap-2 py-4">
         <h2 className="font-mono text-xs font-semibold uppercase tracking-wider text-text-muted">
           Exact source references
@@ -235,11 +327,25 @@ function ObservationDetail({
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
           <dt className="text-text-muted">Task</dt>
           <dd className="break-all font-mono text-text-secondary">
-            {observation.taskId}@{observation.taskVersion}
+            <Link
+              to={
+                observation.taskVersion
+                  ? `/tasks/${encodeURIComponent(observation.taskId)}/versions/${observation.taskVersion}`
+                  : `/tasks/${encodeURIComponent(observation.taskId)}`
+              }
+              className="hover:text-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {observation.taskId}@{observation.taskVersion}
+            </Link>
           </dd>
           <dt className="text-text-muted">Model configuration</dt>
           <dd className="break-all font-mono text-text-secondary">
-            {observation.modelConfigurationId}
+            <Link
+              to={`/models/${encodeURIComponent(observation.modelConfigurationId)}`}
+              className="hover:text-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {observation.modelConfigurationId}
+            </Link>
           </dd>
           <dt className="text-text-muted">Judge accepted</dt>
           <dd className="text-text-secondary">
@@ -292,10 +398,12 @@ export function RecordDetail({
       const reference = await repository.getReference(recordType, recordId);
       if (!reference) return { ...INITIAL_STATE, loading: false };
       let observation: Observation | null = null;
+      let observationDecision: EligibilityDecision | null = null;
       let policyChildren: PolicyStudyChildren | null = null;
       let childRecords: RecordReference[] = [];
       if (reference.recordType === "observation") {
         observation = await repository.getObservation(reference.id);
+        observationDecision = await repository.getObservationDecision(reference.id);
       } else if (reference.recordType === "comparison") {
         const page = await repository.list({
           type: "task-execution",
@@ -311,7 +419,15 @@ export function RecordDetail({
         policyChildren = await repository.getPolicyStudyChildren(reference.id);
         childRecords = policyChildren.items;
       }
-      return { reference, observation, policyChildren, childRecords, loading: false, error: null };
+      return {
+        reference,
+        observation,
+        decision: observationDecision,
+        policyChildren,
+        childRecords,
+        loading: false,
+        error: null,
+      };
     })()
       .then((nextState) => {
         if (active) setState(nextState);
@@ -376,7 +492,11 @@ export function RecordDetail({
   }
   if (state.reference.recordType === "observation") {
     return state.observation ? (
-      <ObservationDetail reference={state.reference} observation={state.observation} />
+      <ObservationDetail
+        reference={state.reference}
+        observation={state.observation}
+        decision={state.decision}
+      />
     ) : (
       <RecordNotFound recordType="observation" id={recordId} />
     );
@@ -429,6 +549,14 @@ function TaskExecutionDetail({
     return <div className="animate-pulse-ease m-4 h-28 rounded-md bg-raised opacity-60" />;
   }
   if (!record) return <RecordNotFound recordType="task-execution" id={reference.id} />;
+  // §L.1 owner opener: exact runs owned by an Evaluation or Policy Study get
+  // a context-labeled owner action. Ad-hoc runs owned by Compare are covered
+  // by the configuration-only "Open in Compare" handoff below, so no second
+  // owner button is rendered for them.
+  const owner =
+    reference.runSource.kind === "experiment" || reference.runSource.kind === "policy-study"
+      ? resolveRecordOwner(reference)
+      : null;
   return (
     <RunDetail
       record={record}
@@ -436,6 +564,8 @@ function TaskExecutionDetail({
       focusJudgeAttemptId={focusJudgeAttemptId}
       onOpenInCompare={onOpenInCompare}
       copyHref={recordDetailHref(reference)}
+      ownerHref={owner?.ownerHref ?? null}
+      ownerActionLabel={owner ? ownerActionLabel(owner) : undefined}
     />
   );
 }
@@ -458,12 +588,18 @@ function LegacyDetail({
     };
   }, [repository, reference.id]);
   return summary ? (
-    <LegacyRunDetail
-      summary={summary}
-      copyHref={recordDetailHref(reference)}
-      backHref="/records"
-      backLabel="Back to Records"
-    />
+    <div data-record-detail="legacy" className="flex flex-col p-4 text-sm">
+      <ReferenceHeader reference={reference} />
+      {/* §F unresolved block: legacy origins never render a guessed link. */}
+      <OwnerCard reference={reference} />
+      <LegacyRunDetail
+        summary={summary}
+        copyHref={recordDetailHref(reference)}
+        backHref="/records"
+        backLabel="Back to Records"
+        preservedPayload={summary}
+      />
+    </div>
   ) : (
     <RecordNotFound recordType="legacy" id={reference.id} />
   );

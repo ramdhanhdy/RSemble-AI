@@ -217,6 +217,7 @@ export function composeRecordReferences(input: RecordsCompositionInput): RecordR
       runId: observation.runId,
       taskId: observation.taskId,
       modelConfigurationId: observation.modelConfigurationId,
+      policyStudyId: input.policyStudyIdByRunId[observation.runId] ?? null,
     };
     references.push(reference);
   }

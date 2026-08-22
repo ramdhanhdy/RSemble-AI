@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, GitCompare, History } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { RecordsRepository } from "../../lib/records/records-repository";
+import {
+  RecordsIndexBuildError,
+  type RecordsRepository,
+} from "../../lib/records/records-repository";
 import type { RecordsPage, RecordsQuery } from "../../lib/records/records-query";
 import type { RecordType } from "../../lib/records/record-reference";
+import { RecordsIndexErrorPanel } from "./RecordsIndexErrorPanel";
 import { RecordTypeRow } from "../../ui/RecordTypeRow";
 import { RecordsFilters, EMPTY_RECORDS_FILTERS, type RecordsFiltersValue } from "./RecordsFilters";
 
@@ -28,7 +32,7 @@ export function RecordsList({
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [page, setPage] = useState<RecordsPage>(EMPTY_PAGE);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | RecordsIndexBuildError | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const requestId = useRef(0);
   const committedText = useRef(initialFilters.text);
@@ -95,7 +99,13 @@ export function RecordsList({
       })
       .catch((reason: unknown) => {
         if (requestId.current !== currentRequest) return;
-        setError(reason instanceof Error ? reason.message : "Unknown storage error");
+        setError(
+          reason instanceof RecordsIndexBuildError
+            ? reason
+            : reason instanceof Error
+              ? reason.message
+              : "Unknown storage error",
+        );
       })
       .finally(() => {
         if (requestId.current === currentRequest) setLoading(false);
@@ -160,6 +170,11 @@ export function RecordsList({
             />
           ))}
         </div>
+      ) : error instanceof RecordsIndexBuildError ? (
+        <RecordsIndexErrorPanel
+          diagnostics={error.diagnostics}
+          onRetry={() => setReloadToken((token) => token + 1)}
+        />
       ) : error ? (
         <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center">
           <AlertCircle size={18} className="text-error" aria-hidden="true" />

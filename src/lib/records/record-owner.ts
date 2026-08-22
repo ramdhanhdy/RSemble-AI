@@ -108,6 +108,21 @@ export function resolveRecordOwner(reference: RecordReference): OwningContextRes
   }
 }
 
+/** §L.1 action vocabulary: the owner opener uses context-specific wording
+ *  resolved from the owning kind, never a generic "Open owning context". */
+const OWNER_ACTION_LABELS: Record<OwningContextResolution["ownerKind"], string> = {
+  compare: "Open in Compare",
+  evaluation: "Open evaluation",
+  task: "Open Task Set",
+  model: "Open model configuration",
+  lab: "Open study",
+  legacy: "Open owning context",
+};
+
+export function ownerActionLabel(owner: OwningContextResolution): string {
+  return OWNER_ACTION_LABELS[owner.ownerKind];
+}
+
 export function recordDetailHref(reference: RecordReference): string {
   return `/records/${reference.recordType}/${encodeURIComponent(reference.id)}`;
 }

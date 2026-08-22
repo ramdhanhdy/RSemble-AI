@@ -3,12 +3,13 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Observation } from "../../lib/evidence/evidence-types";
-import type { RunRecordV2 } from "../../lib/persistence/run-types";
+import type { EligibilityDecision, Observation } from "../../lib/evidence/evidence-types";
+import type { LegacyRunSummary, RunRecordV2 } from "../../lib/persistence/run-types";
 import type { RecordsRepository } from "../../lib/records/records-repository";
 import type {
   ObservationRecordReference,
   PolicyStudyReference,
+  RecordReference,
   TaskExecutionRecordReference,
 } from "../../lib/records/record-reference";
 import { RecordDetail } from "./RecordDetail";
@@ -54,6 +55,7 @@ function repository(overrides: Partial<RecordsRepository> = {}): RecordsReposito
     getTaskExecution: vi.fn(async () => null),
     getLegacySummary: vi.fn(async () => null),
     getObservation: vi.fn(async () => null),
+    getObservationDecision: vi.fn(async () => null),
     getPolicyStudyRecord: vi.fn(async () => null),
     getPolicyStudyChildren: vi.fn(async () => ({
       trialCount: 142,
@@ -62,12 +64,13 @@ function repository(overrides: Partial<RecordsRepository> = {}): RecordsReposito
       items: Array.from({ length: 20 }, (_, index) => child(index)),
     })),
     ...overrides,
-  };
+  } as RecordsRepository;
 }
 
 async function renderDetail(
   repo: RecordsRepository,
-  recordType: "policy-study" | "observation" | "task-execution",
+  recordType:
+    "policy-study" | "observation" | "task-execution" | "comparison" | "evaluation" | "legacy",
   recordId: string,
   focus?: { candidateId?: string; judgeAttemptId?: string },
 ) {
@@ -256,6 +259,271 @@ describe("RecordDetail", () => {
     const heading = harness.container.querySelector<HTMLElement>("[data-detail-heading]");
     expect(document.activeElement).not.toBe(heading);
     expect(document.activeElement?.getAttribute("data-candidate-id")).toBe("c1");
+    act(() => harness.root.unmount());
+  });
+});
+
+describe("Typed details — Task 8 canonical completion", () => {
+  const comparisonReference: RecordReference = {
+    recordType: "comparison",
+    id: "cmp-1",
+    createdAt: 1_000,
+    updatedAt: 1_100,
+    title: "Frontend reliability compare",
+    status: "completed",
+    mode: "rank",
+    source: "adhoc",
+    modelKeys: ["m/a", "m/b"],
+    searchText: "cmp-1 frontend reliability",
+    ownerHint: "in Compare",
+    runId: "run-1",
+    taskBinding: { kind: "ad_hoc", inputSnapshotRef: "snap-1" },
+  };
+
+  const evaluationReference: RecordReference = {
+    recordType: "evaluation",
+    id: "eval-1",
+    createdAt: 1_000,
+    updatedAt: 1_100,
+    title: "Suite run eval-1",
+    status: "completed",
+    mode: null,
+    source: "experiment",
+    modelKeys: ["openrouter:gpt-4o"],
+    searchText: "eval-1 suite run",
+    ownerHint: "in Evaluations",
+    taskSetId: "ts-1",
+    taskSetVersion: 1,
+    childRunIds: ["run-1"],
+  };
+
+  const legacyReference: RecordReference = {
+    recordType: "legacy",
+    id: "legacy-1",
+    createdAt: 1_000,
+    updatedAt: 1_000,
+    title: "Imported comparison",
+    status: null,
+    mode: null,
+    source: "legacy",
+    modelKeys: ["gpt-3.5"],
+    searchText: "legacy-1 imported comparison",
+    ownerHint: "Origin unresolved — preserved as imported",
+    ownerCrosswalk: null,
+  };
+
+  const legacySummary: LegacyRunSummary = {
+    kind: "legacy",
+    schemaVersion: "1-import",
+    id: "legacy-1",
+    createdAt: 1_000,
+    taskExcerpt: "Imported comparison",
+    modelKeys: ["gpt-3.5"],
+    winnerKeys: ["gpt-3.5"],
+    scoresByModelKey: { "gpt-3.5": 4.5 },
+    detailAvailable: false,
+    searchText: "legacy-1 imported comparison",
+  };
+
+  function ownerAction(container: HTMLElement): HTMLElement | null {
+    return container.querySelector<HTMLElement>("[data-owner-action]");
+  }
+
+  it("labels semantic owner actions with their context, not generic words", async () => {
+    const comparisonRepo = repository({
+      getReference: vi.fn(async () => comparisonReference),
+      list: vi.fn(async () => ({
+        items: [taskExecutionReference],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      })),
+    });
+    const comparisonView = await renderDetail(
+      comparisonRepo as RecordsRepository,
+      "comparison",
+      "cmp-1",
+    );
+    expect(ownerAction(comparisonView.container)?.textContent).toContain("Open in Compare");
+    expect(ownerAction(comparisonView.container)?.getAttribute("href")).toBe(
+      "/compare/results/cmp-1",
+    );
+    act(() => comparisonView.root.unmount());
+
+    const evaluationRepo = repository({
+      getReference: vi.fn(async () => evaluationReference),
+      list: vi.fn(async () => ({
+        items: [taskExecutionReference],
+        total: 1,
+        offset: 0,
+        limit: 500,
+      })),
+    });
+    const evaluationView = await renderDetail(
+      evaluationRepo as RecordsRepository,
+      "evaluation",
+      "eval-1",
+    );
+    expect(ownerAction(evaluationView.container)?.textContent).toContain("Open evaluation");
+    expect(ownerAction(evaluationView.container)?.getAttribute("href")).toBe(
+      "/evaluations/results/eval-1",
+    );
+    act(() => evaluationView.root.unmount());
+
+    // The policy study keeps its single Lab owner action.
+    const studyView = await renderDetail(repository(), "policy-study", "study-1");
+    expect(ownerAction(studyView.container)?.textContent).toContain("Open study");
+    expect(ownerAction(studyView.container)?.getAttribute("href")).toBe("/lab/studies/study-1");
+    act(() => studyView.root.unmount());
+  });
+
+  it("keeps the configuration-only honesty token under Open in Compare", async () => {
+    const record = fullRunRecord();
+    const repo = repository({
+      getReference: vi.fn(async () => taskExecutionReference),
+      getTaskExecution: vi.fn(async () => record),
+    });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <RecordDetail
+            repository={repo}
+            recordType="task-execution"
+            recordId="run-1"
+            focusCandidateId={null}
+            focusJudgeAttemptId={null}
+            onOpenInCompare={() => {}}
+          />
+        </MemoryRouter>,
+      );
+    });
+    for (let index = 0; index < 5; index++) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(container.querySelector("[data-action='open-in-compare']")).not.toBeNull();
+    expect(container.textContent).toContain(
+      "Loads configuration only — no outputs, no execution, no lineage.",
+    );
+    act(() => root.unmount());
+  });
+
+  it("offers the evaluation owner action on an experiment-owned exact run", async () => {
+    const record = fullRunRecord();
+    const owned: TaskExecutionRecordReference = {
+      ...taskExecutionReference,
+      ownerHint: "in an Evaluation",
+      runSource: { kind: "experiment", evaluationExecutionId: "eval-1", taskSetId: "ts-1" },
+    };
+    const repo = repository({
+      getReference: vi.fn(async () => owned),
+      getTaskExecution: vi.fn(async () => record),
+    });
+    const harness = await renderDetail(repo, "task-execution", "run-1");
+    const action = ownerAction(harness.container);
+    expect(action?.textContent).toContain("Open evaluation");
+    expect(action?.getAttribute("href")).toBe("/evaluations/results/eval-1");
+    act(() => harness.root.unmount());
+  });
+
+  it("renders the observation eligibility panel as icon plus word, never color alone", async () => {
+    const reference: ObservationRecordReference = {
+      ...({
+        recordType: "observation",
+        id: "observation-1",
+        createdAt: 2_000,
+        updatedAt: 2_000,
+        title: "Observation for task-1",
+        status: "completed",
+        mode: null,
+        source: "experiment",
+        modelKeys: ["openrouter:qwen3.8-max"],
+        searchText: "observation-1 task-1",
+        ownerHint: "from an Evaluation",
+        sourceKind: "evaluation",
+        sourceResultId: "evaluation-1",
+        runId: "run-1",
+        taskId: "task-1",
+        modelConfigurationId: "model-config-1",
+      } as ObservationRecordReference),
+      policyStudyId: "study-1",
+    };
+    const observation = {
+      id: "observation-1",
+      sourceKind: "evaluation",
+      sourceResultId: "evaluation-1",
+      runId: "run-1",
+      taskId: "task-1",
+      taskVersion: 2,
+      modelConfigurationId: "model-config-1",
+      candidateAttemptId: "candidate-attempt-1",
+      assessmentRef: { judgeAttemptId: "judge-attempt-1" },
+      outcome: { judgeAccepted: true, verifierPassed: true },
+    } as Observation;
+    const decision: EligibilityDecision = {
+      observationId: "observation-1",
+      ruleVersion: 3,
+      status: "eligible",
+      evidenceClass: "comparable",
+      allowedUses: ["task_descriptive"],
+      reasonCodes: ["verifier_passed", "protocol_complete"],
+      comparabilityCohortId: "cohort-1",
+      decidedAt: 5_000,
+    };
+    const repo = repository({
+      getReference: vi.fn(async () => reference),
+      getObservation: vi.fn(async () => observation),
+      getObservationDecision: vi.fn(async () => decision),
+    });
+    const harness = await renderDetail(repo as RecordsRepository, "observation", "observation-1");
+    const panel = harness.container.querySelector("[data-observation-eligibility]");
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain("Comparable");
+    expect(panel?.textContent).toContain("Eligible");
+    // Rules passed render as icon + word rows.
+    const rules = panel!.querySelectorAll("[data-eligibility-rule]");
+    expect(rules.length).toBe(2);
+    expect(rules[0]!.querySelector("svg")).not.toBeNull();
+    expect(panel?.textContent).toContain("The deterministic verifier passed.");
+    // Study-linked observation carries the policy-evidence marker.
+    const marker = harness.container.querySelector("[data-policy-evidence]");
+    expect(marker?.getAttribute("aria-label")).toBe(
+      "This result is policy evidence about the configuration, not evidence about this model.",
+    );
+    // Owner backlink to the Task context.
+    // Owner backlink to the canonical Task context.
+    expect(harness.container.querySelector("a[href='/tasks/task-1/versions/2']")).not.toBeNull();
+    expect(harness.container.querySelector("a[href='/models/model-config-1']")).not.toBeNull();
+    act(() => harness.root.unmount());
+  });
+
+  it("keeps Legacy known-fields-only with provenance and the preserved payload", async () => {
+    const repo = repository({
+      getReference: vi.fn(async () => legacyReference),
+      getLegacySummary: vi.fn(async () => legacySummary),
+    });
+    const harness = await renderDetail(repo as RecordsRepository, "legacy", "legacy-1");
+    expect(harness.container.textContent).toContain("Origin unresolved");
+    expect(harness.container.textContent).toContain("This record's historical owner is unknown.");
+    // Import provenance from the summary's own fields — never fabricated.
+    expect(harness.container.textContent).toContain("1-import");
+    const disclosure = harness.container.querySelector<HTMLButtonElement>(
+      "button[data-payload-disclosure]",
+    )!;
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(harness.container.querySelector("[data-payload-panel]")).toBeNull();
+    await act(async () => {
+      disclosure.click();
+    });
+    const panel = harness.container.querySelector("[data-payload-panel]");
+    expect(panel).not.toBeNull();
+    expect(panel?.className).toContain("max-h-96");
+    expect(panel?.textContent).toContain('"schemaVersion":"1-import"');
+    expect(panel?.textContent).toContain('"taskExcerpt":"Imported comparison"');
     act(() => harness.root.unmount());
   });
 });

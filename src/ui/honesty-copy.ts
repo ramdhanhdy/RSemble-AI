@@ -6,6 +6,9 @@ export const HONESTY_COPY = {
     "This record's historical owner is unknown. RSemble never guesses an owner — exact evidence below remains fully inspectable.",
   ledgerScope:
     "Records preserve exact execution provenance. Meaningful results live in Compare, Evaluations, Lab, and Models.",
+  policyEvidence: "policy evidence",
+  policyEvidenceAria:
+    "This result is policy evidence about the configuration, not evidence about this model.",
   deviceLocalUnknown:
     "Records are device-local. A link copied from another device will not resolve here.",
 } as const;
