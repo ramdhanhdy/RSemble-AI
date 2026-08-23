@@ -109,7 +109,7 @@ describe("AttentionPopover", () => {
     const text = h.container.textContent ?? "";
     expect(text).not.toMatch(/Retry|Resume|Add model/i);
     const link = h.$("[data-attention-item]");
-    expect(link?.getAttribute("href")).toBe("/evaluations/results/exp-1");
+    expect(link?.getAttribute("href")).toBe("/evaluations/results/exp-1#attention");
     await act(async () => {
       link?.click();
     });

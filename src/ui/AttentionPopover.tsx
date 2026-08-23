@@ -82,7 +82,7 @@ export function AttentionPopover({
             {snapshot.visible.map((row) => (
               <li key={row.key}>
                 <Link
-                  to={row.ownerHref}
+                  to={`${row.ownerHref}#attention`}
                   data-attention-item
                   className="block rounded-md border border-edge bg-panel px-3 py-2 text-sm text-text hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   onClick={() => setOpen(false)}

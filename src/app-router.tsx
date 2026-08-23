@@ -95,6 +95,11 @@ const ModelsWorkspace = lazy(() =>
     default: m.ModelsWorkspace,
   })),
 );
+const AttentionRoute = lazy(() =>
+  import("./workspaces/attention/AttentionRoute").then((m) => ({
+    default: m.AttentionRoute,
+  })),
+);
 
 function RouteFallback() {
   return (
@@ -142,6 +147,7 @@ export function AppRoutes({
         path="/records/:recordType/:recordId"
         element={withSuspense(<RecordsWorkspace onOpenInCompare={onOpenInCompare} />)}
       />
+      <Route path="/attention" element={withSuspense(<AttentionRoute />)} />
       <Route path="/runs" element={<LegacyRunsRedirect />} />
       <Route
         path="/runs/:runId"
