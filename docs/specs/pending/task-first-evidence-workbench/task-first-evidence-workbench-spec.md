@@ -82,15 +82,9 @@ A complete implementation lets a user:
 
 ### 4.1 Primary topology
 
-**Current state (after Child 06):** primary navigation is Compare · Evaluations · Runs. The Research Lab is reachable at direct routes (`/lab`, `/lab/studies/:studyId`, `/lab/recipes`, `/lab/model-pools`) plus Task Set backlinks; it is not an inert primary destination.
+**Current state (after Child 08, user-accepted 2026-08-23 at `709b78d`):** primary navigation is Compare · Evaluations · Lab · Models on desktop and mobile. Records is a secondary typed audit ledger with `/runs/:runId` compatibility.
 
-**Authorized target (after Child 08):** the final primary navigation becomes:
-
-```text
-Compare · Evaluations · Lab · Models
-```
-
-Records remains a secondary typed audit ledger with `/runs/:runId` compatibility. This target is not implemented in Child 06; Child 08 switches primary navigation only after Compare, Evaluations, Lab, and Models are all functional.
+**Authorized target (after Child 09):** Bounded Attention introduces actionable recovery handoffs into the utility cluster without altering primary navigation.
 
 Secondary global utilities are:
 
@@ -672,7 +666,7 @@ Child 10 must create or consolidate executable invariant tests proving:
 | 05 Compare Results | 02 + 04 complete | Compare owns durable history, promotion/linking, evidence receipts, retry/recovery, exact record links | ✅ Shipped (2026-08-18) |
 | 06 Research Lab / Policy Studies | 01–05 complete | Generic first-party study substrate powers complete Policy Studies; Fusion is one tested method, reusable assets live in Lab, playbooks hand off explicitly to Compare, archive v3 replaces Fusion shapes | In progress |
 | 07 Model evidence profiles | 04 + 05 + 06 complete | Qualified evidence views, coverage, uncertainty, cohort filtering, drilldown, prohibited-claim tests pass | Pending |
-| 08 Shell / Records | 03 + 05 + 06 + 07 complete | Final topology ships without inert destinations; Records and all legacy deep links work | Pending |
+| 08 Shell / Records | 03 + 05 + 06 + 07 complete | Final topology ships without inert destinations; Records and all legacy deep links work | Accepted (2026-08-23 at `709b78d`; historical Run 30 re-gate rejection at `0311c9d` preserved) |
 | 09 Attention | 03 + 05 + 06 + 08 complete | Membership/supersession/handoff semantics pass; no execution lives in Attention | Pending |
 | 10 Hardening | 01–09 complete | Search, archive compatibility, collision hardening, migration repair, performance, responsive/a11y QA, and authority reconciliation pass | Pending |
 
@@ -708,7 +702,7 @@ Deferred concepts receive no inert navigation, placeholder dashboards, or schema
 |---|---|
 | P01 | Task-level evidence is the durable analytical foundation; Task Set totals are contextual summaries. |
 | P02 | Tasks have explicit stable identity, immutable executable versions, and concrete instances. Prompt hashes do not define semantic identity. |
-| P03 | Primary navigation becomes Compare · Evaluations · Lab · Models; Records is secondary. (Current state after Child 06: Compare · Evaluations · Runs with Lab at direct routes; target after Child 08.) |
+| P03 | Primary navigation becomes Compare · Evaluations · Lab · Models; Records is secondary. (Current state after Child 08: Compare · Evaluations · Lab · Models with Records secondary; Attention remains the Child 09 target.) |
 | P04 | Exact RunRecordV2, ExperimentRecord, and existing Fusion Study evidence is preserved and indexed, not rewritten into a universal replacement object. |
 | P05 | Comparison Results belong to Compare; Evaluation Results belong to their Task Set; observations belong to task/model evidence; attempts stay subordinate. |
 | P06 | Existing scoring Profiles become Rubrics before model evidence profiles ship. |

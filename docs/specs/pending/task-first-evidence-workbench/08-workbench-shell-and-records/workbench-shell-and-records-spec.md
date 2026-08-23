@@ -1,9 +1,13 @@
 # Workbench Shell and Records — Canonical Child 08 Specification
 
-**Status:** Pending · single normative Child 08 authority
+**Status:** Accepted (user-accepted 2026-08-23 at `709b78d`) · single normative Child 08 authority
 **Parent:** [`../task-first-evidence-workbench-spec.md`](../task-first-evidence-workbench-spec.md)
 **Dependencies:** 03 Task Sets and Evaluations; 05 Contextual Compare Results; 06 Research Lab /
 Policy Studies; 07 Model Evidence Profiles
+**Acceptance:** User accepted Child 08 after a completely fresh final closer returned PASS over
+`6a8424b..709b78d`. Historical Run 30 stopped at a second browser-gate rejection at `0311c9d`;
+later user-authorized direct repair is `0311c9d..709b78d`. That rejection remains history and is
+not rewritten as a pass. Not pushed; not a claim that the task-first program is complete.
 **Canonical visual reference:** `docs/explorations/future-task-first-ui/child08-canonical-states.html`
 (illustrates this spec; never overrides it — where the HTML and this document conflict, **this
 document wins**). The older phase-A/B/C exploration HTML files in the same directory are

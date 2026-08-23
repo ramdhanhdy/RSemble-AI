@@ -312,7 +312,7 @@ This document records architectural decisions made for RSemble AI.
 ---
 
 ## Decision #19: Task-First Primary Navigation, Secondary Records Utility, and Legacy Compatibility
-- **Date:** 2026-08-23
+- **Date:** 2026-08-23; user-accepted 2026-08-23 at `709b78d` after a fresh closer PASS. Historical Run 30 second browser-gate rejection at `0311c9d` remains on record and is not rewritten as a pass. Not pushed.
 - **Context:** RSemble AI previously presented Runs as a primary workspace alongside Compare and Evaluations. Child 08 switches the primary product topology to the four task-first domains (Compare, Evaluations, Lab, Models) while preserving exact execution provenance through a secondary typed audit utility (Records).
 - **Decision:**
   - **(a) Primary navigation switch.** Primary navigation on desktop and mobile comprises exactly four items: **Compare · Evaluations · Lab · Models** in order, implemented as `NavLink`s with `aria-current="page"` and a static 2px accent indicator. The word "Runs" is retired from all current UI labels and links.

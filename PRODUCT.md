@@ -1,7 +1,7 @@
 # PRODUCT.md — RSemble AI Product Specification
 
 > Status: Implemented (four primary workspaces Compare · Evaluations · Lab · Models live, secondary typed Records shipped, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped, canonical Task Sets + ownership crosswalks shipped, Observations and Evidence provenance shipped, Contextual Compare Results and task promotion shipped, Research Lab and Policy Studies shipped, qualified Model evidence profiles shipped, shell and Records navigation shipped)
-> Last reconciled: 2026-08-23 at commit `56cf088` (Child 08 — Workbench Shell and Records)
+> Last reconciled: 2026-08-23 at commit `709b78d` (Child 08 user-accepted after fresh closer PASS; historical Run 30 re-gate rejection at `0311c9d` preserved; not pushed)
 >
 > **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
 > "Profiles" are now "Rubrics" in all user-facing surfaces, domain code, routes,
