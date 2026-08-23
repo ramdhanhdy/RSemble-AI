@@ -51,6 +51,7 @@ import {
   type ExperimentRecoveryMessage,
 } from "./ExperimentRecoveryDialog";
 import { ExperimentAddModelDialog, type AddModelDialogMessage } from "./ExperimentAddModelDialog";
+import { AttentionOwnerHandoff } from "./AttentionOwnerHandoff";
 export interface ExperimentResultsProps {
   experiment: ExperimentRecord;
   resolveRunRecord: (runId: string) => Promise<RunRecordV2 | null>;
@@ -847,6 +848,7 @@ export function ExperimentResults({
       {/* Recovery toolbar (spec §11.1) — above the matrix, only while this surface
           owns the lease. Reports repairable vs fallback counts and offers the
           batch repair plus the existing full-roster retry fallback. */}
+      <AttentionOwnerHandoff recoveryAvailable={showRecoveryToolbar} />
       {showRecoveryToolbar ? (
         <section
           aria-label="Recovery"
