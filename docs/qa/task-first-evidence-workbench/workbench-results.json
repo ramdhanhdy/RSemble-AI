@@ -1,18 +1,19 @@
 {
-  "generatedAt": "2026-08-23T22:01:12.526Z",
+  "generatedAt": "2026-08-23T22:09:26.485Z",
   "environment": {
     "os": "Windows_NT 10.0.26200 (win32)",
     "arch": "x64",
     "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
     "cpuCount": 16,
     "totalMemoryMb": 16005,
-    "freeMemoryMb": 1639,
+    "freeMemoryMb": 729,
     "node": "v25.9.0",
-    "pid": 18008
+    "pid": 13248
   },
   "spec": "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
   "harness": "qa-task-first-workbench",
-  "status": "complete",
+  "status": "not_executed",
+  "reason": "Dry-run / receipt-only flag passed",
   "matrix": {
     "specReference": "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
     "declaredViewports": [
@@ -118,15 +119,13 @@
       ]
     },
     "declaredProbes": [
-      "focus_restoration_and_visible_indicators",
-      "landmarks_and_table_semantics",
-      "touch_targets_minimum_44px_and_separation",
-      "per_element_horizontal_overflow_and_hash_wrapping",
-      "console_error_and_uncaught_exception_zero_tolerance",
-      "no_inert_interactive_controls",
-      "zero_real_provider_network_egress",
-      "secret_probe_credential_leak_prevention",
-      "local_link_device_scoped_copy_wording"
+      "deterministic_fixture_integrity",
+      "e_drive_containment_policy",
+      "zero_paid_provider_egress_contract",
+      "secret_probe_sanitization_contract",
+      "responsive_ladder_coverage",
+      "accessibility_conditions_coverage",
+      "primary_and_secondary_routes_coverage"
     ]
   },
   "corpusSummary": {
@@ -148,44 +147,52 @@
   "probes": [
     {
       "name": "deterministic_fixture_integrity",
-      "pass": true,
+      "pass": null,
+      "not_executed": true,
       "description": "Corpus entities strictly adhere to schema v15 shape"
     },
     {
       "name": "e_drive_containment_policy",
-      "pass": true,
+      "pass": null,
+      "not_executed": true,
       "description": "All QA paths, caches, profiles, and dumps contained on E:"
     },
     {
       "name": "zero_paid_provider_egress_contract",
-      "pass": true,
+      "pass": null,
+      "not_executed": true,
       "description": "Mock network egress gate intercepts all external AI endpoints"
     },
     {
       "name": "secret_probe_sanitization_contract",
-      "pass": true,
+      "pass": null,
+      "not_executed": true,
       "description": "Credential tokens in error fields redacted before UI rendering"
     },
     {
       "name": "responsive_ladder_coverage",
-      "pass": true,
+      "pass": null,
+      "not_executed": true,
       "description": "All 4 viewports (1440, 1024, 768, 390) registered and probed"
     },
     {
       "name": "accessibility_conditions_coverage",
-      "pass": true,
+      "pass": null,
+      "not_executed": true,
       "description": "200% zoom, reduced motion, keyboard-only, and semantic landmarks registered"
     },
     {
       "name": "primary_and_secondary_routes_coverage",
-      "pass": true,
+      "pass": null,
+      "not_executed": true,
       "description": "All 22 primary, 11 secondary, and 3 canonical/retired fusion routes covered"
     }
   ],
   "summary": {
     "totalProbes": 7,
-    "passedProbes": 7,
+    "passedProbes": 0,
     "failedProbes": 0,
-    "verdict": "PASS"
+    "notExecutedProbes": 7,
+    "verdict": "RECEIPT_ONLY"
   }
 }

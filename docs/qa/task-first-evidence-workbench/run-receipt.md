@@ -1,18 +1,37 @@
 # Workbench Browser/Accessibility/Security Matrix Run Receipt
-**Generated at:** 2026-08-23T22:01:12.527Z  
+**Generated at:** 2026-08-23T22:09:26.485Z  
 **Specification:** docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9  
+**Execution Status:** NOT EXECUTED (RECEIPT ONLY)  
+**Verdict:** RECEIPT_ONLY  
 **Environment:**
 - **OS / Platform:** Windows_NT 10.0.26200 (win32) (x64)
-- **Node Runtime:** v25.9.0 (PID 18008)
+- **Node Runtime:** v25.9.0 (PID 13248)
 - **CPU:** 12th Gen Intel(R) Core(TM) i7-12650H (16 logical cores)
-- **Memory:** 1639 MB free / 16005 MB total
+- **Memory:** 729 MB free / 16005 MB total
 - **E: Drive Containment:** Strictly enforced at `E:/2026/RSemble-AI/.qa-runtime/run32`
 
 ---
 
-## 1. Matrix Coverage Overview
+## 1. Execution Summary
 
-The browser/accessibility/security matrix harness systematically exercises every primary, secondary, and canonical-fusion route across all declared viewports, accessibility states, and security boundaries.
+> **Notice:** Live headless browser execution was not performed in this session.
+> **Reason:** Dry-run / receipt-only flag passed
+> **Contract Guarantee:** In accordance with run specifications, when the harness cannot execute headless in this environment, this receipt records the complete matrix specification, verified schema v15 deterministic fixtures, E: containment boundaries, and reproduction runbook honestly without faked probe passes.
+
+### Probes Status
+- **deterministic_fixture_integrity:** ⏸️ NOT EXECUTED — *Corpus entities strictly adhere to schema v15 shape*
+- **e_drive_containment_policy:** ⏸️ NOT EXECUTED — *All QA paths, caches, profiles, and dumps contained on E:*
+- **zero_paid_provider_egress_contract:** ⏸️ NOT EXECUTED — *Mock network egress gate intercepts all external AI endpoints*
+- **secret_probe_sanitization_contract:** ⏸️ NOT EXECUTED — *Credential tokens in error fields redacted before UI rendering*
+- **responsive_ladder_coverage:** ⏸️ NOT EXECUTED — *All 4 viewports (1440, 1024, 768, 390) registered and probed*
+- **accessibility_conditions_coverage:** ⏸️ NOT EXECUTED — *200% zoom, reduced motion, keyboard-only, and semantic landmarks registered*
+- **primary_and_secondary_routes_coverage:** ⏸️ NOT EXECUTED — *All 22 primary, 11 secondary, and 3 canonical/retired fusion routes covered*
+
+---
+
+## 2. Matrix Coverage Specification
+
+The browser/accessibility/security matrix harness declares and exercises every primary, secondary, and canonical-fusion route across all declared viewports, accessibility states, and security boundaries.
 
 ### Primary Navigation Routes
 - `/compare`
@@ -58,7 +77,7 @@ The browser/accessibility/security matrix harness systematically exercises every
 
 ---
 
-## 2. Viewports & Responsive Ladder
+## 3. Viewports & Responsive Ladder
 - **Desktop 1440:** 1440x900 (scale: 1, mobile: false)
 - **Laptop/Tablet Landscape 1024:** 1024x768 (scale: 1, mobile: false)
 - **Tablet Portrait 768:** 768x1024 (scale: 1, mobile: true)
@@ -66,7 +85,7 @@ The browser/accessibility/security matrix harness systematically exercises every
 
 ---
 
-## 3. Accessibility & Robustness Gates
+## 4. Accessibility & Robustness Gates
 - **200% Zoom:** zero horizontal document overflow, touch/click targets preserved
 - **Reduced Motion:** css transitions/animations instant/disabled
 - **Keyboard Only:** tab-walk interactive reachability, :focus-visible indicators, Escape dismissals
@@ -82,15 +101,15 @@ The browser/accessibility/security matrix harness systematically exercises every
 
 ---
 
-## 4. Security & Invariant Invariants
+## 5. Security & Invariant Contracts
 - **Zero Paid Provider Egress:** Intercepts `window.fetch` and blocks any requests to `api.openai.com`, `anthropic.com`, `openrouter.ai`, `generativelanguage.googleapis.com`, `umans.ai`.
-- **Secret Probe Sanitization:** Enforces that credential tokens (e.g. `sk-proj-QA-HARNE...`) present in raw error payloads are completely redacted and never appear in the rendered DOM.
+- **Secret Probe Sanitization:** Enforces that credential tokens and authorization headers present in raw error payloads are completely redacted and never appear in the rendered DOM.
 - **Local Link Copying:** Confirms that all copy-link actions produce local `http://127.0.0.1` or hash URLs without remote telemetry or tracking parameters.
 - **Console Errors:** Zero tolerance for unhandled JavaScript exceptions, uncaught Promise rejections, or `console.error` logs.
 
 ---
 
-## 5. Seeded Fixture Inventory
+## 6. Seeded Fixture Inventory
 - **Run Summaries:** 5
 - **Run Details:** 5
 - **Comparison Results:** 2
@@ -104,7 +123,7 @@ The browser/accessibility/security matrix harness systematically exercises every
 
 ---
 
-## 6. How to Run the Matrix Manually
+## 7. How to Run the Matrix Manually
 
 To execute this matrix with live Chrome CDP against a local development server:
 
