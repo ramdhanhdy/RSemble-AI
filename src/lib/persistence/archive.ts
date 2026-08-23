@@ -2487,6 +2487,88 @@ export async function exportWorkbenchArchiveV3(
 
     emit("scan");
     throwIfAborted();
+
+    const violations: string[] = [];
+    // Scan artifact bytes for credential-like material
+    for (const ab of taskArtifactBytes) {
+      const decoded = decodeBase64Bytes(ab.bytesBase64);
+      if (decoded !== null) {
+        const text = new TextDecoder("utf-8", { fatal: false }).decode(decoded);
+        if (CREDENTIAL_LIKE_INLINE.test(text)) {
+          violations.push(
+            `tasks.taskArtifactBytes[${ab.id}] carries credential-like material (value ${REDACTED})`,
+          );
+        }
+      }
+    }
+    // Deep credential-VALUE scan of every structured record.
+    // Identity-key fields are skipped (they legitimately repeat entity ids).
+    // Diagnostics name entity/collection + id, never the matched value.
+    const scanStructured = (label: string, id: string, entity: unknown) => {
+      if (v2ScanForCredentialValue(entity)) {
+        violations.push(`${label}[${id}] contains credential-like material (value ${REDACTED})`);
+      }
+    };
+    for (const s of summaries) scanStructured("runs.summaries", s.id, s);
+    for (const d of details) scanStructured("runs.details", d.id, d);
+    for (const r of identities) scanStructured("rubrics.identities", r.id, r);
+    for (const r of versions) scanStructured("rubrics.versions", `${r.id}@${r.version}`, r);
+    for (const s of suites) scanStructured("suites", s.id, s);
+    for (const e of experiments) scanStructured("experiments", e.id, e);
+    for (const t of taskRecords) scanStructured("tasks.tasks", t.id, t);
+    for (const v of taskVersions)
+      scanStructured("tasks.taskVersions", `${v.taskId}@${v.version}`, v);
+    for (const a of taskArtifacts) scanStructured("tasks.taskArtifacts", a.id, a);
+    for (const i of taskInstances) scanStructured("tasks.taskInstances", i.id, i);
+    for (const f of taskFamilies) scanStructured("tasks.taskFamilies", f.id, f);
+    for (const a of taskFamilyAssignments) scanStructured("tasks.taskFamilyAssignments", a.id, a);
+    for (const r of taskFamilyRelations) scanStructured("tasks.taskFamilyRelations", r.id, r);
+    for (const a of taskFacetAnnotations) scanStructured("tasks.taskFacetAnnotations", a.id, a);
+    for (const c of taskMigrationCrosswalks)
+      scanStructured("tasks.taskMigrationCrosswalks", c.legacyScopeKey, c);
+    for (const r of taskSetRecords) scanStructured("taskSets.records", r.id, r);
+    for (const v of taskSetVersions)
+      scanStructured("taskSets.versions", `${v.taskSetId}@${v.version}`, v);
+    for (const m of taskSetMaterializations) scanStructured("taskSets.materializations", m.id, m);
+    for (const c of taskSetOwnershipCrosswalks)
+      scanStructured("taskSets.ownershipCrosswalks", c.key, c);
+    for (const mc of modelConfigurations) scanStructured("evidence.modelConfigurations", mc.id, mc);
+    for (const obs of evidenceObservations) scanStructured("evidence.observations", obs.id, obs);
+    for (const d of evidenceDecisions)
+      scanStructured("evidence.evidenceDecisions", `${d.observationId}#${d.ruleVersion}`, d);
+    for (const j of evidenceIndexJobs)
+      scanStructured("evidence.evidenceIndexJobs", j.sourceResultId, j);
+    for (const vo of verifierOutcomes)
+      scanStructured("evidence.verifierOutcomes", verifierOutcomeKey(vo), vo);
+    for (const index of comparisonIndexes) scanStructured("comparisons.indexes", index.id, index);
+    for (const snap of inputSnapshots)
+      scanStructured("comparisons.inputSnapshots", snap.runId, snap);
+    for (const limitation of comparisonLimitations)
+      scanStructured("comparisons.limitations", limitation.runId, limitation);
+    // Lab collections (Child 06)
+    for (const r of recipeRecords) scanStructured("lab.recipeRecords", r.id, r);
+    for (const v of recipeVersions)
+      scanStructured("lab.recipeVersions", `${v.recipeId}@${v.version}`, v);
+    for (const p of poolRecords) scanStructured("lab.poolRecords", p.id, p);
+    for (const v of poolVersions)
+      scanStructured("lab.poolVersions", `${v.poolId}@${v.version}`, v);
+    for (const s of studies) scanStructured("lab.studies", s.id, s);
+    for (const t of trials) scanStructured("lab.trials", t.id, t);
+    for (const a of attempts) scanStructured("lab.attempts", a.id, a);
+    for (const o of observations) scanStructured("lab.observations", o.id, o);
+    for (const p of playbooks) scanStructured("lab.playbooks", p.id, p);
+    // Model Rollup definitions (Child 07)
+    for (const r of modelRollupRecords) scanStructured("modelRollups.records", r.id, r);
+    for (const v of modelRollupVersions)
+      scanStructured("modelRollups.versions", `${v.rollupId}@${v.version}`, v);
+
+    if (violations.length > 0) {
+      throw new StorageError(
+        "validation",
+        `Export blocked: prohibited credential/auth material found. ${violations.join("; ")}`,
+      );
+    }
+
     completeStage("scan");
 
     emit("seal");
