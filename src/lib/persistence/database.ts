@@ -56,11 +56,11 @@
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
-import { migrateEmbeddedLegacyTasks } from "./canonical-task-migration";
 import {
-  ensureFusionToResearchLabMigration,
-  performFusionToResearchLabCutoverUpgrade,
-} from "../migrations/fusion-to-research-lab";
+  createMigrationRegistry,
+  type MigrationRunReport,
+} from "./migration-registry";
+import { performFusionToResearchLabCutoverUpgrade } from "../migrations/fusion-to-research-lab";
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { ObservationSourceKind } from "../evidence/evidence-types";
 import type { VerificationKind } from "../evaluations/evaluation-types";
@@ -908,6 +908,9 @@ export interface DatabaseHandle {
   /** Non-fatal failure that leaves existing Compare storage operational while
    *  preventing the canonical Task repository from being published. */
   taskMigrationError: StorageError | null;
+  /** Startup migration orchestration report from the migration registry
+   *  (Child 10 Task 8). Null until the blocking phase settles. */
+  migrationReport: MigrationRunReport | null;
   /** Resolves when the database is open and Task migration has settled. Rejects
    *  only when the underlying database itself cannot be opened. */
   ready: Promise<void>;
@@ -928,6 +931,7 @@ export function createDatabase(name?: string): DatabaseHandle {
     db,
     state: db.state,
     taskMigrationError: null,
+    migrationReport: null,
     ready: Promise.resolve(),
   };
 
@@ -938,18 +942,27 @@ export function createDatabase(name?: string): DatabaseHandle {
   handle.ready = db
     .open()
     .then(async () => {
+      const registry = createMigrationRegistry({ db });
       try {
-        await migrateEmbeddedLegacyTasks(db);
+        // Blocking steps (legacy history, canonical Tasks, Fusion → Lab
+        // receipt, Task Sets, Comparison Results) complete before ready.
+        const report = await registry.run();
+        handle.migrationReport = report;
+        const canonical = report.steps.find((s) => s.id === "canonical-tasks");
+        if (canonical && canonical.status === "failed") {
+          // Canonical Task migration is additive. Its failure must not turn
+          // the established Run/Evaluation/Compare stores unavailable.
+          handle.taskMigrationError = new StorageError(
+            "validation",
+            canonical.detail ?? "Canonical Task migration failed",
+          );
+        }
       } catch (err) {
-        // Canonical Task migration is additive. Its failure must not turn the
-        // established Run/Evaluation/Compare stores into an unavailable DB.
         handle.taskMigrationError = classifyStorageError(err);
       }
-      try {
-        await ensureFusionToResearchLabMigration(db);
-      } catch {
-        // Fresh DB or already migrated
-      }
+      // Background steps (search index rebuild) run resumably after startup;
+      // failures surface through the diagnostics surface, never startup.
+      void registry.runBackground().catch(() => undefined);
     })
     .then(
       () => undefined,
