@@ -103,6 +103,7 @@ import {
 import {
   ARCHIVE_V3_FORMAT_VERSION,
   ARCHIVE_V3_STORAGE_VERSION,
+  computeArchiveV3ContentDigests,
   computeArchiveV3PayloadDigest,
   detectLegacyFusionArchive,
   isWorkbenchArchiveV3,
@@ -209,6 +210,11 @@ import {
   type ModelRollupRecord,
   type ModelRollupVersion,
 } from "../model-rollups/model-rollup-types";
+import { EVIDENCE_RULE_VERSION } from "../evidence/evidence-eligibility";
+import {
+  QUERY_AGGREGATION_RULE_VERSION,
+  QUERY_UNCERTAINTY_RULE_VERSION,
+} from "../model-profiles/model-evidence-query";
 // --- Archive shape -------------------------------------------------------------
 
 export interface WorkbenchArchiveV1 {
@@ -2535,8 +2541,14 @@ export async function exportWorkbenchArchiveV3(
         storageVersion: ARCHIVE_V3_STORAGE_VERSION,
         exportedAt: nowTimestamp,
         producer: "rsemble-ai",
+        appVersion: "0.1.0",
         counts,
         payloadDigest: "",
+        contentDigests: {},
+        observationRuleVersions: [EVIDENCE_RULE_VERSION],
+        aggregationRuleVersions: [QUERY_AGGREGATION_RULE_VERSION],
+        uncertaintyRuleVersions: [QUERY_UNCERTAINTY_RULE_VERSION],
+        localScopeNotice: "Local workbench export. No remote transport metadata. Credentials excluded.",
         disclosure: { scope: "local", notes: ARCHIVE_V2_DISCLOSURE_NOTES },
       },
       runs: {
@@ -2600,6 +2612,7 @@ export async function exportWorkbenchArchiveV3(
     };
 
     archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+    archive.manifest.contentDigests = computeArchiveV3ContentDigests(archive);
 
     const validation = validateArchiveV3(JSON.parse(JSON.stringify(archive)));
     if (!validation.valid) {

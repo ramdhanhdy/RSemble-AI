@@ -20,7 +20,7 @@ import {
 } from "../lib/persistence/repository-context";
 import { RSembleEvaluationDB } from "../lib/persistence/database";
 import { importWorkbenchArchive, type WorkbenchArchiveV1 } from "../lib/persistence/archive";
-import { computeArchiveV3PayloadDigest } from "../lib/persistence/archive-v3-types";
+import { computeArchiveV3ContentDigests, computeArchiveV3PayloadDigest } from "../lib/persistence/archive-v3-types";
 import type { EvaluationSuite } from "../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../lib/persistence/run-types";
 import * as fx from "../lib/persistence/archive-v2-fixtures";
@@ -404,6 +404,7 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     const incoming = v3fx.buildValidArchiveV3Fixture();
     incoming.suites[0] = { ...incoming.suites[0], name: "changed" };
     incoming.manifest.payloadDigest = computeArchiveV3PayloadDigest(incoming);
+    incoming.manifest.contentDigests = computeArchiveV3ContentDigests(incoming);
     const h = renderActions(contextValue(db, "ready"));
     const file = new File([JSON.stringify(incoming)], "v3.json", { type: "application/json" });
     await chooseFile(h, file);
@@ -441,7 +442,7 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     const poisoned = v3fx.buildValidArchiveV3Fixture();
     (poisoned.lab.recipeRecords[0] as unknown as Record<string, unknown>).notes = secret;
     poisoned.manifest.payloadDigest = computeArchiveV3PayloadDigest(poisoned);
-
+    poisoned.manifest.contentDigests = computeArchiveV3ContentDigests(poisoned);
     const h = renderActions(contextValue(db, "ready"));
     const file = new File([JSON.stringify(poisoned)], "poisoned.json", {
       type: "application/json",

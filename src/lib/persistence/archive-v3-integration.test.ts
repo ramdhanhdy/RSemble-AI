@@ -33,6 +33,7 @@ import "fake-indexeddb/auto";
 import { describe, expect, it } from "vitest";
 import {
   ARCHIVE_V3_FORMAT_VERSION,
+  computeArchiveV3ContentDigests,
   computeArchiveV3PayloadDigest,
   validateArchiveV3,
   type WorkbenchArchiveV3,
@@ -553,7 +554,7 @@ describe("archive v3 integration — collision rejection and idempotency", () =>
     const modified = JSON.parse(JSON.stringify(exported)) as WorkbenchArchiveV3;
     modified.lab.studies[0].title = "Modified Colliding Title";
     modified.manifest.payloadDigest = computeArchiveV3PayloadDigest(modified);
-
+    modified.manifest.contentDigests = computeArchiveV3ContentDigests(modified);
     const preview = await previewWorkbenchArchive(db, modified);
     expect(preview.format).toBe("v3");
     expect(preview.collisions.some((c) => c.key === modified.lab.studies[0].id)).toBe(true);

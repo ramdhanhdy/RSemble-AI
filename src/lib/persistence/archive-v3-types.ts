@@ -164,10 +164,22 @@ export interface ArchiveV3Manifest {
   storageVersion: number;
   exportedAt: number;
   producer: string;
+  /** Application version at export time (from package.json). */
+  appVersion: string;
   counts: ArchiveV3EntityCounts;
   /** Integrity digest (`sha256:<hex>`) over the canonical JSON of the data
    *  payload (all collections except the manifest itself). */
   payloadDigest: string;
+  /** Per-collection integrity digests (`sha256:<hex>`). One entry per
+   *  top-level collection key present in the envelope. Digests verify
+   *  integrity only — they are not semantic identity hashes. */
+  contentDigests: Record<string, string>;
+  /** Active rule versions at export time. */
+  observationRuleVersions: number[];
+  aggregationRuleVersions: number[];
+  uncertaintyRuleVersions: number[];
+  /** Local-scope disclosure notice. */
+  localScopeNotice: string;
   disclosure: ArchiveV3Disclosure;
 }
 
@@ -396,6 +408,44 @@ export function computeArchiveV3PayloadDigest(archive: WorkbenchArchiveV3): stri
   const canonical = canonicalJsonString(payloadForDigest(archive));
   const bytes = new TextEncoder().encode(canonical);
   return computeArtifactDigest(bytes);
+}
+
+/** Collection keys included in per-collection content digests. */
+const CONTENT_DIGEST_COLLECTION_KEYS = [
+  "runs",
+  "rubrics",
+  "suites",
+  "experiments",
+  "tasks",
+  "taskSets",
+  "evidence",
+  "comparisons",
+  "lab",
+] as const;
+
+/** Compute per-collection integrity digests. Each top-level collection is
+ *  canonicalized independently and hashed with SHA-256. The result is a map
+ *  from collection key to `sha256:<hex>`. Collections with zero entities
+ *  still produce a digest (of their empty canonical form). */
+export function computeArchiveV3ContentDigests(
+  archive: WorkbenchArchiveV3,
+): Record<string, string> {
+  const digests: Record<string, string> = {};
+  const payload = payloadForDigest(archive);
+  for (const key of CONTENT_DIGEST_COLLECTION_KEYS) {
+    const collection = (payload as Record<string, unknown>)[key];
+    if (collection !== undefined) {
+      const canonical = canonicalJsonString(collection);
+      const bytes = new TextEncoder().encode(canonical);
+      digests[key] = computeArtifactDigest(bytes);
+    }
+  }
+  if (archive.modelRollups !== undefined) {
+    const canonical = canonicalJsonString(archive.modelRollups);
+    const bytes = new TextEncoder().encode(canonical);
+    digests["modelRollups"] = computeArtifactDigest(bytes);
+  }
+  return digests;
 }
 
 // --- Type guard --------------------------------------------------------------
@@ -695,6 +745,36 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
     });
   }
 
+  // New manifest fields (backward-compatible: older archives may omit them).
+  // When present they must be valid; absence is not an error.
+  if (manifest.appVersion !== undefined && !isNonEmptyString(manifest.appVersion)) {
+    errors.push({ field: "manifest.appVersion", message: "appVersion must be a non-empty string when present." });
+  }
+  if (manifest.contentDigests !== undefined) {
+    if (!isRecord(manifest.contentDigests)) {
+      errors.push({ field: "manifest.contentDigests", message: "contentDigests must be an object when present." });
+    } else {
+      for (const [key, value] of Object.entries(manifest.contentDigests)) {
+        if (typeof value !== "string" || !value.startsWith("sha256:")) {
+          errors.push({ field: `manifest.contentDigests.${key}`, message: "each content digest must be a sha256:<hex> string." });
+        }
+      }
+    }
+  }
+  const validateRuleVersionArray = (field: string, value: unknown) => {
+    if (value !== undefined) {
+      if (!Array.isArray(value) || !value.every((v) => Number.isInteger(v) && v > 0)) {
+        errors.push({ field: `manifest.${field}`, message: `${field} must be an array of positive integers when present.` });
+      }
+    }
+  };
+  validateRuleVersionArray("observationRuleVersions", manifest.observationRuleVersions);
+  validateRuleVersionArray("aggregationRuleVersions", manifest.aggregationRuleVersions);
+  validateRuleVersionArray("uncertaintyRuleVersions", manifest.uncertaintyRuleVersions);
+  if (manifest.localScopeNotice !== undefined && typeof manifest.localScopeNotice !== "string") {
+    errors.push({ field: "manifest.localScopeNotice", message: "localScopeNotice must be a string when present." });
+  }
+
   const runs = value.runs;
   const rubrics = value.rubrics;
   const suites = value.suites;
@@ -873,6 +953,34 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
       field: "manifest.payloadDigest",
       message: `payload digest mismatch: declared ${archive.manifest.payloadDigest}, recomputed ${recomputedDigest}.`,
     });
+  }
+
+  // Content digests integrity check (when present)
+  if (archive.manifest.contentDigests !== undefined) {
+    const recomputedContentDigests = computeArchiveV3ContentDigests(archive);
+    for (const [key, declared] of Object.entries(archive.manifest.contentDigests)) {
+      const recomputed = recomputedContentDigests[key];
+      if (recomputed === undefined) {
+        errors.push({
+          field: `manifest.contentDigests.${key}`,
+          message: `content digest declared for unknown collection "${key}".`,
+        });
+      } else if (declared !== recomputed) {
+        errors.push({
+          field: `manifest.contentDigests.${key}`,
+          message: `content digest mismatch for "${key}": declared ${declared}, recomputed ${recomputed}.`,
+        });
+      }
+    }
+    // Check for missing digests (collections present but not in contentDigests)
+    for (const key of Object.keys(recomputedContentDigests)) {
+      if (!(key in archive.manifest.contentDigests)) {
+        errors.push({
+          field: `manifest.contentDigests`,
+          message: `content digest missing for collection "${key}".`,
+        });
+      }
+    }
   }
 
   // Prohibited content scan

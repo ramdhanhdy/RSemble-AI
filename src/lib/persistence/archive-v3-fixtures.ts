@@ -19,6 +19,7 @@
 import {
   ARCHIVE_V3_FORMAT_VERSION,
   ARCHIVE_V3_STORAGE_VERSION,
+  computeArchiveV3ContentDigests,
   computeArchiveV3PayloadDigest,
   type ArchiveV3ComparisonInputSnapshot,
   type ArchiveV3EntityCounts,
@@ -486,8 +487,14 @@ export function buildValidArchiveV3Fixture(): WorkbenchArchiveV3 {
       storageVersion: ARCHIVE_V3_STORAGE_VERSION,
       exportedAt: 1000,
       producer: "rsemble-ai",
+      appVersion: "0.1.0",
       counts,
       payloadDigest: "",
+      contentDigests: {},
+      observationRuleVersions: [1],
+      aggregationRuleVersions: [1],
+      uncertaintyRuleVersions: [1],
+      localScopeNotice: "Local workbench export. No remote transport metadata. Credentials excluded.",
       disclosure: {
         scope: "local",
         notes: "Local workbench export. No remote transport metadata.",
@@ -532,11 +539,17 @@ export function buildValidArchiveV3Fixture(): WorkbenchArchiveV3 {
   };
 
   archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+  archive.manifest.contentDigests = computeArchiveV3ContentDigests(archive);
   return archive;
 }
 
 export function cloneArchiveV3(archive: WorkbenchArchiveV3): WorkbenchArchiveV3 {
-  return JSON.parse(JSON.stringify(archive)) as WorkbenchArchiveV3;
+  const cloned = JSON.parse(JSON.stringify(archive)) as WorkbenchArchiveV3;
+  // Strip per-collection content digests from clones — tests that mutate
+  // the fixture must recompute both payloadDigest and contentDigests.
+  // The validator treats missing contentDigests as backward-compatible.
+  delete (cloned.manifest as unknown as Record<string, unknown>).contentDigests;
+  return cloned;
 }
 
 // --- Database seeder for v3 --------------------------------------------------

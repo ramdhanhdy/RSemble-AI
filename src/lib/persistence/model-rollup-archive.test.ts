@@ -7,7 +7,7 @@ import {
 } from "../model-rollups/model-rollup-types";
 import { buildValidArchiveV3Fixture } from "./archive-v3-fixtures";
 import { buildValidNonFusionArchiveV2Fixture } from "./archive-v2-fixtures";
-import { computeArchiveV3PayloadDigest, validateArchiveV3 } from "./archive-v3-types";
+import { computeArchiveV3ContentDigests, computeArchiveV3PayloadDigest, validateArchiveV3 } from "./archive-v3-types";
 import {
   commitPreviewWorkbenchArchiveV3,
   exportWorkbenchArchiveV3,
@@ -42,6 +42,7 @@ function withRollups() {
   archive.manifest.counts.modelRollups = 1;
   archive.manifest.counts.modelRollupVersions = 1;
   archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+  archive.manifest.contentDigests = computeArchiveV3ContentDigests(archive);
   return archive;
 }
 
@@ -67,8 +68,8 @@ describe("archive v3 Model Rollup authority", () => {
     const earlier = buildValidArchiveV3Fixture();
     delete earlier.modelRollups;
     delete earlier.manifest.counts.modelRollups;
-    delete earlier.manifest.counts.modelRollupVersions;
     earlier.manifest.payloadDigest = computeArchiveV3PayloadDigest(earlier);
+    earlier.manifest.contentDigests = computeArchiveV3ContentDigests(earlier);
     expect(validateArchiveV3(earlier).valid).toBe(true);
   });
 
@@ -79,6 +80,7 @@ describe("archive v3 Model Rollup authority", () => {
       aggregationPolicy: "pooled",
     } as unknown as typeof VERSION;
     policy.manifest.payloadDigest = computeArchiveV3PayloadDigest(policy);
+    policy.manifest.contentDigests = computeArchiveV3ContentDigests(policy);
     expect(validateArchiveV3(policy).valid).toBe(false);
 
     const dangling = withRollups();
@@ -87,6 +89,7 @@ describe("archive v3 Model Rollup authority", () => {
       memberConfigurationIds: [`mc:sha256:${"f".repeat(64)}`],
     });
     dangling.manifest.payloadDigest = computeArchiveV3PayloadDigest(dangling);
+    dangling.manifest.contentDigests = computeArchiveV3ContentDigests(dangling);
     expect(validateArchiveV3(dangling).valid).toBe(false);
   });
 
@@ -99,6 +102,7 @@ describe("archive v3 Model Rollup authority", () => {
       version: 2,
     });
     archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+    archive.manifest.contentDigests = computeArchiveV3ContentDigests(archive);
 
     await expect(previewWorkbenchArchive(target, archive)).rejects.toMatchObject({
       kind: "validation",
