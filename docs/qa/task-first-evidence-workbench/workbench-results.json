@@ -10,12 +10,12 @@
     "node": "v25.9.0",
     "pid": 13248
   },
-  "spec": "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
+  "spec": "docs/specs/archive/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
   "harness": "qa-task-first-workbench",
   "status": "not_executed",
   "reason": "Dry-run / receipt-only flag passed",
   "matrix": {
-    "specReference": "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
+    "specReference": "docs/specs/archive/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
     "declaredViewports": [
       {
         "name": "Desktop 1440",

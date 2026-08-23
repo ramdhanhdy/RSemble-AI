@@ -21,8 +21,8 @@ re-execute. Each has commits landing the work; most have QA evidence under
 | 9router-support | 9Router provider adapter + SSE termination | provider registered |
 | evaluations-identity-ux | workload/rubric identity grammar, honest tokens, stable geometry | `docs/qa/evaluations-identity-ux/` |
 | design-motion-refinement | motion refinements + QA captures | `docs/qa/design-motion-refinement/` |
-| 01-rubric-terminology | Scoring Profiles renamed to Rubrics; legacy stores/routes remain readable | `docs/qa/rubric-terminology/` |
 | 02-canonical-tasks | Canonical Tasks with immutable versions, instances, families, facets, conservative legacy migration, and archive v2 base | `docs/qa/canonical-tasks/` |
+| task-first-evidence-workbench | Governing parent plus ten child specs (01 Rubrics → 10 Hardening). All children shipped/archived: 01–02 archived; 03 Task Sets (2026-08-16); 04 Observations; 05 Contextual Compare; 06 Research Lab; 07 Model evidence profiles; 08 Shell/Records (2026-08-23 at `709b78d`); 09 Attention; 10 Retrieval/hardening (2026-08-24). | `docs/qa/task-first-evidence-workbench/` (performance + workbench receipts), `docs/qa/model-evidence-profiles/`, `docs/qa/records-workbench/`, `docs/qa/research-lab/`, `docs/qa/compare-results/`, `docs/qa/evidence-matrix/` |
 
 ## pending/
 
@@ -31,5 +31,4 @@ spec is stale, read its grounding audit first.
 
 | Spec | Status |
 | --- | --- |
-| [task-first-evidence-workbench/](./pending/task-first-evidence-workbench/) | **In progress.** Governing parent plus remaining child specs. Children 01–02 archived; 03–06 shipped (specs remain in `pending/` per the Child 03+ folder-move precedent); Child 07 implemented pending independent closure review; Child 08 user-accepted 2026-08-23 at `709b78d` (historical Run 30 re-gate rejection at `0311c9d` preserved; not pushed); Children 09–10 remain pending. |
 | ui-redesign-spec.md | **Stale (audit 2026-08-04)** — predates 140 commits; most items already shipped via other components; palette and icon-rail sections conflict with current DESIGN.md. See `ui-redesign-grounding-audit.md`. Genuinely unshipped remnants: gradient CTA, focus mode (⌘\), self-judge warning, compare diff highlighting. |

@@ -1,6 +1,6 @@
 # RSemble AI Task-First Evidence Workbench — Governing Product Specification
 
-**Status:** Pending · authoritative target-state contract for this program
+**Status:** Archived (2026-08-24) — all ten children shipped; program folder moved to `docs/specs/archive/task-first-evidence-workbench/`. This document remains the governing target-state contract for the shipped program.
 **Version:** 1.0.0
 **Production baseline:** `feat/runs-fairness-baseline` at `309130e`
 **Program index:** [`README.md`](./README.md)
@@ -664,11 +664,11 @@ Child 10 must create or consolidate executable invariant tests proving:
 | 03 Task Sets/Evaluations | 01 + 02 complete | Set versions reference canonical Task Versions; ordinary executions and Fusion Studies preserve exact snapshots/results/recovery/extension and route/archive compatibility | ✅ Shipped (2026-08-16) |
 | 04 Observations/Evidence | 01–03 complete | Idempotent derivation, eligibility reason codes, counting and comparability invariants pass | ✅ Shipped (2026-08-17) |
 | 05 Compare Results | 02 + 04 complete | Compare owns durable history, promotion/linking, evidence receipts, retry/recovery, exact record links | ✅ Shipped (2026-08-18) |
-| 06 Research Lab / Policy Studies | 01–05 complete | Generic first-party study substrate powers complete Policy Studies; Fusion is one tested method, reusable assets live in Lab, playbooks hand off explicitly to Compare, archive v3 replaces Fusion shapes | Shipped (functional; spec remains in `pending/`) |
-| 07 Model evidence profiles | 04 + 05 + 06 complete | Qualified evidence views, coverage, uncertainty, cohort filtering, drilldown, prohibited-claim tests pass | Implemented — pending independent closure review |
-| 08 Shell / Records | 03 + 05 + 06 + 07 complete | Final topology ships without inert destinations; Records and all legacy deep links work | Accepted (2026-08-23 at `709b78d`; historical Run 30 re-gate rejection at `0311c9d` preserved) |
-| 09 Attention | 03 + 05 + 06 + 08 complete | Membership/supersession/handoff semantics pass; no execution lives in Attention | Pending |
-| 10 Hardening | 01–09 complete | Search, archive compatibility, collision hardening, migration repair, performance, responsive/a11y QA, and authority reconciliation pass | Pending |
+| 06 Research Lab / Policy Studies | 01–05 complete | Generic first-party study substrate powers complete Policy Studies; Fusion is one tested method, reusable assets live in Lab, playbooks hand off explicitly to Compare, archive v3 replaces Fusion shapes | ✅ Shipped |
+| 07 Model evidence profiles | 04 + 05 + 06 complete | Qualified evidence views, coverage, uncertainty, cohort filtering, drilldown, prohibited-claim tests pass | ✅ Shipped |
+| 08 Shell / Records | 03 + 05 + 06 + 07 complete | Final topology ships without inert destinations; Records and all legacy deep links work | ✅ Shipped (2026-08-23 at `709b78d`; historical Run 30 re-gate rejection at `0311c9d` preserved) |
+| 09 Attention | 03 + 05 + 06 + 08 complete | Membership/supersession/handoff semantics pass; no execution lives in Attention | ✅ Shipped |
+| 10 Hardening | 01–09 complete | Search, archive compatibility, collision hardening, migration repair, performance, responsive/a11y QA, and authority reconciliation pass | ✅ Shipped |
 
 Children may not be marked complete with placeholder controls, hidden compatibility debt, or a later child required to make their core outcome truthful.
 

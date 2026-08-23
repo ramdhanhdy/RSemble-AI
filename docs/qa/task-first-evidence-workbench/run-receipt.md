@@ -1,6 +1,6 @@
 # Workbench Browser/Accessibility/Security Matrix Run Receipt
 **Generated at:** 2026-08-23T22:09:26.485Z  
-**Specification:** docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9  
+**Specification:** docs/specs/archive/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9  
 **Execution Status:** NOT EXECUTED (RECEIPT ONLY)  
 **Verdict:** RECEIPT_ONLY  
 **Environment:**

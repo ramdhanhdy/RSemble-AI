@@ -29,7 +29,7 @@ This document records architectural decisions made for RSemble AI.
 > children. See Decision #13 for the load-bearing contract.
 >
 > **Reconciliation note (Child 03, 2026-08-16):** Canonical Task Sets are
-> shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> shipped (spec: `docs/specs/archive/task-first-evidence-workbench/
 > 03-task-sets-and-evaluations/task-sets-and-evaluations-spec.md`). A Task Set
 > owns versioned task membership: `TaskSetRecord` (mutable administrative state
 > via compare-and-swap), immutable `TaskSetVersion` / WorkloadManifest (members
@@ -65,7 +65,7 @@ This document records architectural decisions made for RSemble AI.
 > **Reconciliation note (Child 04, 2026-08-17):** Canonical Task Observations,
 > immutable Eligibility Decisions, exact Model Configuration snapshots,
 > evidence rule/version metadata, and the archive v2 optional `evidence` payload
-> extension are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> extension are shipped (spec: `docs/specs/archive/task-first-evidence-workbench/
 > 04-observations-and-evidence/observations-and-evidence-spec.md`). Observations
 > are immutable references/indexes over exact evidence without duplicating
 > candidate output or full rationale. Operational retries and reused outputs
@@ -79,7 +79,7 @@ This document records architectural decisions made for RSemble AI.
 > See Decision #14 for the load-bearing contract.
 
 > **Reconciliation note (Child 05, 2026-08-18):** Contextual Compare Results
-> and task promotion are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> and task promotion are shipped (spec: `docs/specs/archive/task-first-evidence-workbench/
 > 05-contextual-compare-results/contextual-compare-results-spec.md`). Compare
 > owns a `ComparisonResultIndex` (`id == runId`) with task binding, lineage,
 > and evidence receipt revision. Canonical routes `/compare` and
@@ -92,7 +92,7 @@ This document records architectural decisions made for RSemble AI.
 >
 > **Reconciliation note (Child 06 T12, 2026-08-19):** The executable Fusion
 > Study seams are retired (REV-5/REV-6, spec:
-> `docs/specs/pending/task-first-evidence-workbench/
+> `docs/specs/archive/task-first-evidence-workbench/
 > 06-research-lab-policy-studies/`). The live
 > `/evaluations/sets/:taskSetId/fusion/:studyId` route, `FusionStudyView` /
 > `FusionStudyPanel`, and the Dexie-backed Fusion Study repository phenotype
@@ -112,6 +112,7 @@ This document records architectural decisions made for RSemble AI.
 > Result); "Fusion Study" as a live product authority is gone.
 > **Reconciliation note (Child 07, 2026-08-21):** **Implemented — pending independent closure review.** Models is a direct-route current candidate, not a primary-navigation claim. Evidence respondents remain exact model configurations with explicit identity/version uncertainty, cohort separation, stratified-only metrics, uncertainty receipts, and drilldown to source Observations. Versioned Model Rollups persist exact pinned members and heterogeneity; they never imply a pooled respondent, universal score, rank, best model, or causal claim. The closure evidence and corpus manifest are recorded in `docs/qa/model-evidence-profiles/results.json`; pending status remains until an independent closure review.
 >
+> **Reconciliation note (Program archival, 2026-08-24):** The task-first evidence workbench program is complete. All ten children (01 Rubrics → 10 Hardening) are shipped; the program folder moved from `docs/specs/pending/` to `docs/specs/archive/task-first-evidence-workbench/`. Child 07 (Model evidence profiles) and Child 09 (Attention) closed shipped; Child 10 (Retrieval, archive, migration, and authority hardening) shipped this run. `PRODUCT.md`, `CLAUDE.md`, and `docs/specs/README.md` are reconciled to the shipped task-first topology (Compare · Evaluations · Lab · Models with secondary Records). Historical decisions below preserve their original terminology and provenance; only spec path pointers were updated from `pending/` to `archive/`.
 ---
 
 ## Decision #1: Focused Direction (Split Workspace / Variation B)
@@ -280,7 +281,7 @@ This document records architectural decisions made for RSemble AI.
 
 ## Decision #14: Observations, Eligibility Decisions, Model Configuration Snapshots, and Archive v2 Evidence Extension
 - **Date:** 2026-08-17
-- **Context:** Evaluation runs produced exact candidate and judge/verifier evidence, but there was no immutable Task Observation index, canonical model configuration identity, automatic evidence eligibility classification, comparability cohort fingerprinting, or evidence receipt disclosure. Repeated attempts, operational retries, and roster extensions risked inflating sample counts or masking execution variability. Spec: `docs/specs/pending/task-first-evidence-workbench/04-observations-and-evidence/observations-and-evidence-spec.md`; plan: `docs/specs/pending/task-first-evidence-workbench/04-observations-and-evidence/implementation-plan.md`.
+- **Context:** Evaluation runs produced exact candidate and judge/verifier evidence, but there was no immutable Task Observation index, canonical model configuration identity, automatic evidence eligibility classification, comparability cohort fingerprinting, or evidence receipt disclosure. Repeated attempts, operational retries, and roster extensions risked inflating sample counts or masking execution variability. Spec: `docs/specs/archive/task-first-evidence-workbench/04-observations-and-evidence/observations-and-evidence-spec.md`; plan: `docs/specs/archive/task-first-evidence-workbench/04-observations-and-evidence/implementation-plan.md`.
 - **Decision:** Ship canonical Task Observations and evidence provenance with the following load-bearing choices:
   - **(a) Reference-only indexing, no raw content duplication.** An Observation is an immutable reference/index over exact RunRecordV2 / ExperimentRecord evidence. It never embeds candidate messages, candidate output text, full judge rationale, or streaming buffers. Prohibited field paths are rejected by runtime guards.
   - **(b) Canonical Model Configuration identity.** Snapshots resolve only stored facts (providerId, requestedModel, resolvedModel, resolvedVersion, reasoning settings, tool scaffolds, sanitized runtime settings). Unknown resolved versions remain unknown; no speculative version rollup. Content collisions on duplicate IDs abort with corruption errors.
@@ -296,7 +297,7 @@ This document records architectural decisions made for RSemble AI.
 
 ## Decision #15: Contextual Compare Results, Task Promotion, and Archive v2 Comparison Extension
 - **Date:** 2026-08-18
-- **Context:** Compare runs produced exact RunRecordV2 evidence but had no semantic result identity, no result route, no task binding, no promotion workflow, no evidence receipt, and no recovery lineage. Users had to visit the raw run ledger to revisit a comparison. Spec: `docs/specs/pending/task-first-evidence-workbench/05-contextual-compare-results/contextual-compare-results-spec.md`; plan: `docs/specs/pending/task-first-evidence-workbench/05-contextual-compare-results/implementation-plan.md`.
+- **Context:** Compare runs produced exact RunRecordV2 evidence but had no semantic result identity, no result route, no task binding, no promotion workflow, no evidence receipt, and no recovery lineage. Users had to visit the raw run ledger to revisit a comparison. Spec: `docs/specs/archive/task-first-evidence-workbench/05-contextual-compare-results/contextual-compare-results-spec.md`; plan: `docs/specs/archive/task-first-evidence-workbench/05-contextual-compare-results/implementation-plan.md`.
 - **Decision:** Ship contextual Compare Results with the following load-bearing choices:
   - **(a) Comparison Result identity.** A lightweight `ComparisonResultIndex` (`id == runId`) carries status, mode, title, task binding (`ad_hoc` with input-snapshot ref or `canonical` with taskId/version), active observation IDs, evidence receipt revision, and lineage. The index never copies candidate outputs or judge rationale; RunRecordV2 remains exact result authority.
   - **(b) Canonical routes and reload.** `/compare` and `/compare/results/:comparisonId` reconstruct Rank/Fuse output from exact persisted state on reload without in-memory reducer state. `/runs/:runId` remains an exact-record route and links back to the Compare result when source is Compare.

@@ -10,7 +10,7 @@
     "node": "v25.9.0",
     "pid": 16656
   },
-  "spec": "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §7",
+  "spec": "docs/specs/archive/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §7",
   "summary": {
     "totalBudgets": 8,
     "passedBudgets": 8,

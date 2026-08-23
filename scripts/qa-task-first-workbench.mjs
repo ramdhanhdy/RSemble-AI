@@ -125,7 +125,7 @@ const RECEIPT_FILE = path.join(RETAINED_EVIDENCE_DIR, "run-receipt.md");
 
 export const SPEC_MATRIX = {
   specReference:
-    "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
+    "docs/specs/archive/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
   declaredViewports: [
     { name: "Desktop 1440", width: 1440, height: 900, scale: 1, mobile: false },
     { name: "Laptop/Tablet Landscape 1024", width: 1024, height: 768, scale: 1, mobile: false },

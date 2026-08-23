@@ -599,7 +599,7 @@ async function main() {
   const fullReport = {
     generatedAt: new Date().toISOString(),
     environment: sysInfo,
-    spec: "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §7",
+    spec: "docs/specs/archive/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §7",
     summary: {
       totalBudgets: budgetEntries.length,
       passedBudgets: passedCount,

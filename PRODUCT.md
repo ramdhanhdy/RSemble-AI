@@ -1,7 +1,7 @@
 # PRODUCT.md — RSemble AI Product Specification
 
-> Status: Implemented (four primary workspaces Compare · Evaluations · Lab · Models live, secondary typed Records shipped, hardening contracts D1–D6 live, Rubric terminology shipped, canonical Tasks shipped, canonical Task Sets + ownership crosswalks shipped, Observations and Evidence provenance shipped, Contextual Compare Results and task promotion shipped, Research Lab and Policy Studies shipped, qualified Model evidence profiles shipped, shell and Records navigation shipped)
-> Last reconciled: 2026-08-23 at commit `709b78d` (Child 08 user-accepted after fresh closer PASS; historical Run 30 re-gate rejection at `0311c9d` preserved; not pushed)
+> Status: Implemented — task-first evidence workbench shipped. Four primary workspaces (Compare · Evaluations · Lab · Models) live, secondary typed Records shipped, all ten program children (01 Rubrics → 10 Hardening) shipped/archived (program archived 2026-08-24 at `docs/specs/archive/task-first-evidence-workbench/`). Hardening contracts D1–D6 live.
+> Last reconciled: 2026-08-24 (program archival; Child 08 user-accepted 2026-08-23 at `709b78d`; historical Run 30 re-gate rejection at `0311c9d` preserved; not pushed)
 >
 > **Terminology note (Child 01, 2026-08-12):** Scoring objects previously called
 > "Profiles" are now "Rubrics" in all user-facing surfaces, domain code, routes,
@@ -32,7 +32,7 @@
 > `docs/specs/archive/02-canonical-tasks/`).
 
 > **Reconciliation note (Child 03, 2026-08-16):** Canonical Task Sets are
-> shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> shipped (spec: `docs/specs/archive/task-first-evidence-workbench/
 > 03-task-sets-and-evaluations/task-sets-and-evaluations-spec.md`). A Task Set
 > now owns versioned task membership: `TaskSetRecord` (mutable administrative
 > state via compare-and-swap), immutable `TaskSetVersion` / WorkloadManifest
@@ -53,7 +53,7 @@
 > **Reconciliation note (Child 04, 2026-08-17):** Canonical Task Observations,
 > immutable Eligibility Decisions, exact Model Configuration snapshots,
 > evidence rule/version metadata, and the archive v2 optional `evidence` payload
-> extension are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> extension are shipped (spec: `docs/specs/archive/task-first-evidence-workbench/
 > 04-observations-and-evidence/observations-and-evidence-spec.md`). An
 > Observation is an immutable reference/index over exact RunRecordV2 /
 > ExperimentRecord evidence, never duplicating raw candidate outputs or full judge
@@ -71,7 +71,7 @@
 >
 > **Reconciliation note (Child 08, 2026-08-23):** Task-first primary navigation
 > (**Compare · Evaluations · Lab · Models**) and secondary typed Records are shipped
-> (spec: `docs/specs/pending/task-first-evidence-workbench/
+> (spec: `docs/specs/archive/task-first-evidence-workbench/
 > 08-workbench-shell-and-records/workbench-shell-and-records-spec.md`). Primary
 > navigation comprises exactly four top-level destinations on desktop and mobile.
 > Records is a typed read-model utility accessible via a bounded secondary drawer
@@ -84,7 +84,7 @@
 > introduces the new ledger address on first launch when prior run records exist.
 
 > **Reconciliation note (Child 05, 2026-08-18):** Contextual Compare Results
-> and task promotion are shipped (spec: `docs/specs/pending/task-first-evidence-workbench/
+> and task promotion are shipped (spec: `docs/specs/archive/task-first-evidence-workbench/
 > 05-contextual-compare-results/contextual-compare-results-spec.md`). Compare
 > owns a lightweight `ComparisonResultIndex` (`id == runId`) with status, mode,
 > title, task binding (`ad_hoc` or `canonical` with taskId/version), active
@@ -115,7 +115,7 @@
 >
 > **Reconciled (Child 06, 2026-08-19):** The Research Lab and Policy Studies
 > child is in progress (spec:
-> `docs/specs/pending/task-first-evidence-workbench/
+> `docs/specs/archive/task-first-evidence-workbench/
 > 06-research-lab-policy-studies/`). The current product topology after
 > Child 06 is **Compare · Evaluations · Runs** in primary navigation, with
 > the Research Lab reachable at direct routes (`/lab`,
@@ -144,12 +144,13 @@ One pipeline, two finish modes:
 - **Rank**: Which candidate model performed best.
 - **Fuse**: One merged answer synthesized from the strongest candidates.
 
-The product has three top-level workspaces:
-- **Compare** — the working surface for one-off fanout → Judge → Rank/Fuse work.
-- **Runs** — an audit surface making previous work searchable: task inputs, outputs, Judge evidence, scores, configuration, and failures.
+The product has four primary workspaces (the task-first topology shipped via the evidence workbench program):
+- **Compare** — the working surface for one-off fanout → Judge → Rank/Fuse work, owning contextual Compare Results with task binding, evidence receipts, and recovery lineage.
 - **Evaluations** — an audit surface grouping several tasks into a versioned local Task Set, executing the same comparison pipeline per task, and presenting a model-by-task result matrix.
+- **Lab** — the Research Lab owning Policy Studies, reusable Fusion Recipes/Model Pools, and Policy Playbooks (direct routes `/lab`, `/lab/studies/:studyId`, `/lab/recipes`, `/lab/model-pools`).
+- **Models** — qualified, coverage-aware model evidence profiles with uncertainty and exact supporting Observations (direct route `/models` plus profile, evidence drilldown, and versioned rollup routes).
 
-These are navigation destinations, not pipeline modes. Rank/Fuse remains the per-task finish choice and is shown only where it is relevant (Compare). The evaluation feature is local-first and single-user: it introduces no hosted backend, accounts, collaboration, public benchmark publishing, or general workflow canvas.
+These are navigation destinations, not pipeline modes. Rank/Fuse remains the per-task finish choice and is shown only where it is relevant (Compare). **Records** is a secondary typed audit ledger (six typed references: `comparison`, `evaluation`, `policy-study`, `task-execution`, `observation`, `legacy`) accessible via a bounded quick drawer at ≥1024px and a direct `/records` route below 1024px, with `/runs/:runId` compatibility preserving all historical deep links. The evaluation feature is local-first and single-user: it introduces no hosted backend, accounts, collaboration, public benchmark publishing, or general workflow canvas.
 
 Canonical Tasks — versioned, immutable task definitions with concrete instances, families, and facets — exist as a secondary catalog (`/tasks`) independent of any one comparison or Task Set, reachable through the command palette rather than primary navigation.
 
@@ -189,13 +190,13 @@ Task → Evaluation → Compare (N models in parallel) → Judge
 - **Localhost Node Codex bridge**: Lightweight 127.0.0.1 process that also serves as an allowlisted proxy for compatible providers (e.g. 9Router). The bridge forwards only approved method/path pairs to server-configured upstreams; it is not a general-purpose proxy. When `RSEMBLE_BRIDGE_SECRET` is configured it **must** be presented as `X-RSemble-Bridge-Secret` on every credential-bearing endpoint; `/health` stays unauthenticated (Plan 002 decision D3, `DECISIONS.md` #11).
 - **Evaluation-driven blind judging**: Configurable judge model evaluates anonymized candidates against holistic judgment or a versioned evaluation rubric. Rubrics support explicit **graded criteria** (authored 1–5 anchors, integer scoring) and **binary checks** (true/false) organized into ALL-mode **Requirement Groups**, plus legacy 1/3/5 rubrics. Scoring derives the authoritative **rank value** `Q − λ·(1−C)` (Q = graded weighted mean, C = weighted group pass share, λ = compliance influence in [0,1], default 1.0) with a bounded `max(1, rankValue)` presentation score and explicit floor disclosure. **Compliance-only rubrics** (no graded criteria) have no Q and no rankValue/rankScore: they rank on C in the 0–100% compliance domain and display C-labeled per…
 - **Rank & Fuse finishes**: The single mode toggle lives in the Compare workspace toolbar (immediately above the split panes) and switches between Rank and Fuse. It is the sole per-task finish switch, shown only in Compare; the global header is route-invariant and never carries it.
-- **Three workspaces — Compare, Runs, Evaluations**: Navigation destinations, not pipeline modes. Compare is the one-off working surface; Runs and Evaluations are audit surfaces. Rubric and Task Set editors are working surfaces nested inside Evaluations.
+- **Four primary workspaces — Compare, Evaluations, Lab, Models**: Navigation destinations, not pipeline modes. Compare is the one-off working surface; Evaluations is the versioned Task Set audit/working surface; Lab owns Policy Studies and reusable research assets; Models owns qualified evidence profiles. Records is a secondary typed audit ledger, not a primary destination. Rubric and Task Set editors are working surfaces nested inside Evaluations.
 - **Durable run history**: Browser-local (IndexedDB) persistence of complete run evidence — task inputs, candidate outputs, Judge evidence, scores, configuration, and failures — so completed, partial, failed, aborted, and interrupted runs are inspectable after reload.
 - **Local evaluation Task Sets**: Versioned Task Sets of multiple tasks, each executed one at a time through the existing comparison pipeline, with a model-by-task result matrix, transparent coverage, equal-task aggregation, and provenance links to underlying run evidence. Rubrics are versioned and immutable; Task Sets pin to rubric versions. Task Set executions produce immutable experiment snapshots with per-task results, coverage, and provenance — experiment history is auditable but not semantic-searchable in this phase. Task Sets and rubrics can also be **authored or shared as Task Set package files** and imported as new entities (distinct from whole-workbench archive backup/restore).
 - **Reasoning-effort policy**: Task Sets and Compare can request a shared candidate and Judge reasoning effort (Provider default / Minimal / Low / Medium / High / X-high / Max). Effort is part of the immutable experiment snapshot and protocol fingerprint; each run records requested and effective levels. A shared name is a controlled request — it does not prove model families spend equal compute or tokens.
 - **Auditable cost provenance**: Every paid stage (candidate, Judge, Fusion) persists provider-reported usage/cost when the provider exposes it, a clearly labeled catalog estimate when only exact pricing is known, or Unknown otherwise. Costs render from the pricing snapshot captured at execution time, never today's catalog. Reused evidence is never double-charged.
 - **Fusion Study (policy discovery on a Task Set)**: An Evaluations experiment type attached to a Task Set version that discovers, empirically, which execution policy — best-fixed single model, Rank over a pair, Fuse under a versioned recipe, or rubric-aware refine-the-winner — gives the best quality/cost tradeoff for that Task Set. Policies are compared **blocked** on shared candidate generations and development-judge evidence; a separate holdout judge evaluates policy outputs blind (development/holdout separation is mandatory). Fusion recipes are versioned artifacts with explicit `rubricAccess` and verification flags; candidates always reach the synthesizer anonymized — blindness is an invariant, never an experimental variable. Studies proceed by elimination (recipes) and a predeclared shortlist rule (pairs), report the complete screened-pair table, and produce a per-Task Set **playbook** with two visibly different claim levels — **Exploratory** (best observed configuration under this pool and protocol) and **Confirmed** (the preselected configuration held on a fresh Task Set version without re-selection). **"Do not fuse" is a first-class playbook verdict**, not a failure state.
-- **Structured workspaces vs. exploratory semantic intelligence**: The three workspaces (Compare, Runs, Evaluations) are committed, structured audit and working surfaces with explicit data contracts. Embedding search, semantic clustering, "Ask history," and automatic benchmark generation remain exploratory roadmap phases that require the structured history to exist first; they are not part of the current approved scope and must not be implied by the workspace UI.
+- **Structured workspaces vs. exploratory semantic intelligence**: The four task-first workspaces (Compare, Evaluations, Lab, Models) plus the secondary Records audit ledger are committed, structured audit and working surfaces with explicit data contracts. Embedding search, semantic clustering, "Ask history," and automatic benchmark generation remain exploratory roadmap phases that require the structured history to exist first; they are not part of the current approved scope and must not be implied by the workspace UI.
 - **Canonical Tasks (independent task identity)**: Tasks exist independently of any comparison or Task Set with opaque identity, append-only immutable Task Versions (candidate-visible instruction/context/contract changes create the next version), concrete Task Instances deduplicated by exact normalized input digest, explicit Task Families with a primary assignment, and a versioned Facet taxonomy with authored/suggested annotations and provenance. A conservative, idempotent legacy-suite migration creates `legacy-task-set` Tasks through deterministic crosswalks without rewriting Run/Experiment/Fusion source evidence. Tasks are a secondary `/tasks` catalog reachable via the command palette and contextual links — not a fourth primary workspace. The extensible archive v2 envelope round-trips exact current Run, Experiment, and all seven Fusion Study stores plus canonical Rubrics and Task entities; archive v1 remains importable, and a non-identical ID collision aborts in preview before any write (full collision remapping is deferred to a later child).
 
 ### OUT Scope (§5 Scope Fence)

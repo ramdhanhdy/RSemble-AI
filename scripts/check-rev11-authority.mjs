@@ -26,8 +26,8 @@ function read(rel) {
 }
 
 const SPEC =
-  "docs/specs/pending/task-first-evidence-workbench/task-first-evidence-workbench-spec.md";
-const README = "docs/specs/pending/task-first-evidence-workbench/README.md";
+  "docs/specs/archive/task-first-evidence-workbench/task-first-evidence-workbench-spec.md";
+const README = "docs/specs/archive/task-first-evidence-workbench/README.md";
 const SPECS_README = "docs/specs/README.md";
 const PRODUCT = "PRODUCT.md";
 
