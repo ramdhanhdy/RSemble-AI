@@ -1,87 +1,87 @@
 {
-  "generatedAt": "2026-08-23T21:18:38.379Z",
+  "generatedAt": "2026-08-23T21:21:14.790Z",
   "environment": {
     "os": "Windows_NT 10.0.26200 (win32)",
     "arch": "x64",
     "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
     "cpuCount": 16,
     "totalMemoryMb": 16005,
-    "freeMemoryMb": 879,
+    "freeMemoryMb": 1822,
     "node": "v25.9.0",
-    "pid": 17376
+    "pid": 13776
   },
   "spec": "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §7",
   "summary": {
     "totalBudgets": 8,
-    "passedBudgets": 1,
-    "failedBudgets": 7,
-    "verdict": "FAIL"
+    "passedBudgets": 8,
+    "failedBudgets": 0,
+    "verdict": "PASS"
   },
   "budgets": {
     "commandPaletteSearch": {
       "name": "command-palette search (10,000 entities, first 20 grouped hits)",
       "corpusSize": 10000,
-      "declaredBudgetMs": 0.001,
-      "measuredP95Ms": 25.85,
+      "declaredBudgetMs": 150,
+      "measuredP95Ms": 28.76,
       "hitsReturned": 20,
       "groupsReturned": 10,
-      "pass": false
+      "pass": true
     },
     "searchRoutePagination": {
       "name": "full Search route pagination bounded to <= 100 rows",
       "corpusSize": 10000,
       "declaredLimit": 100,
-      "page1RenderedRows": 0,
-      "page2RenderedRows": 0,
-      "totalMatching": 0,
-      "pass": false
+      "page1RenderedRows": 100,
+      "page2RenderedRows": 100,
+      "totalMatching": 10000,
+      "pass": true
     },
     "recordsFirstPage": {
       "name": "Records first page query over 10,000 summaries (p95)",
       "corpusSize": 10000,
-      "declaredBudgetMs": 0.001,
-      "measuredP95Ms": 0.61,
+      "declaredBudgetMs": 200,
+      "measuredP95Ms": 0.79,
       "pageRows": 50,
       "totalRecords": 10000,
-      "pass": false
+      "pass": true
     },
     "attentionRecompute": {
       "name": "Attention recompute over 10,000 items (p95)",
       "corpusSize": 10000,
-      "declaredBudgetMs": 0.001,
-      "measuredP95Ms": 0.6,
+      "declaredBudgetMs": 150,
+      "measuredP95Ms": 0.78,
       "visibleItemsCount": 5,
       "deduplicatedTotal": 1500,
       "overflowLabel": "9+",
       "zeroPaidExecutionEgress": true,
-      "pass": false
+      "pass": true
     },
     "modelEvidenceQuery": {
       "name": "model evidence query over 50,000 Observations (uncached <= 1s, cached <= 100ms)",
       "corpusSize": 50000,
-      "declaredUncachedBudgetMs": 0.001,
-      "measuredUncachedP95Ms": 23.93,
-      "declaredCachedBudgetMs": 0.0001,
-      "measuredCachedP95Ms": 0.0026,
+      "declaredUncachedBudgetMs": 1000,
+      "measuredUncachedP95Ms": 17.39,
+      "declaredCachedBudgetMs": 100,
+      "measuredCachedP95Ms": 0.0024,
       "workerOffloadSupported": true,
-      "pass": false
+      "pass": true
     },
     "startupMigrationInspection": {
       "name": "startup lightweight migration inspection on verified current database (p95)",
-      "declaredBudgetMs": 0.001,
-      "measuredP95Ms": 0.59,
+      "declaredBudgetMs": 100,
+      "measuredP95Ms": 0.47,
       "inspectedStepsCount": 7,
       "allStepsVerified": true,
-      "pass": false
+      "pass": true
     },
     "heavyRebuildChunking": {
       "name": "heavy rebuild yields progress with chunk target <= 50ms",
       "corpusSize": 1000,
       "chunkCount": 10,
-      "declaredMaxChunkBudgetMs": 0.001,
-      "measuredMaxChunkMs": 8.35,
+      "declaredMaxChunkBudgetMs": 50,
+      "measuredMaxChunkMs": 10.78,
       "totalIndexed": 1000,
-      "pass": false
+      "pass": true
     },
     "archiveExportImportProgressAndCancel": {
       "name": "archive export/import reports progress and remains cancellable before commit boundaries",

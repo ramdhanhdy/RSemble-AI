@@ -3,12 +3,12 @@
 // qa-task-first-performance.mjs — Task 11 Performance Budgets Measurement Gate
 // (Child 10 Task 11, spec §7)
 //
-// Measures performance budgets for:
-//   1. Command-palette search (10,000 entities, p95 <= 150ms, first 20 grouped hits)
-//   2. Full Search route pagination (<= 100 result rows per page)
+// Measures and enforces performance budgets across declared corpus sizes:
+//   1. Command-palette search (10,000 indexed entities, p95 <= 150ms, first 20 grouped hits)
+//   2. Full Search route pagination (10,000 entities, paginated at <= 100 result rows per page)
 //   3. Records first page (10,000 summaries, p95 <= 200ms)
 //   4. Attention recompute (10,000 summaries, p95 <= 150ms, zero paid execution)
-//   5. Model evidence query (50,000 observations, cached <= 100ms, uncached <= 1000ms, Worker-capable)
+//   5. Model evidence query (50,000 Observations, cached <= 100ms, uncached <= 1000ms, Worker-capable)
 //   6. Startup lightweight migration inspection (verified current DB, p95 <= 100ms)
 //   7. Heavy rebuild chunking (progress yielding, <= 50ms animation frame chunk target)
 //   8. Archive export/import progress and cancellation (progress events, cancellable before commit)
@@ -29,25 +29,16 @@ const ROOT = path.resolve(__dirname, "..");
 const OUT_DIR = path.join(ROOT, "docs", "qa", "task-first-evidence-workbench");
 const OUT_FILE = path.join(OUT_DIR, "performance-results.json");
 
-// RED phase initial strict uncalibrated budget thresholds (deliberately failing to prove RED)
-const RED_BUDGET_SEARCH_MS = 0.001; // 1 microsecond (fails RED)
-const RED_BUDGET_RECORDS_MS = 0.001;
-const RED_BUDGET_ATTENTION_MS = 0.001;
-const RED_BUDGET_MODEL_UNCACHED_MS = 0.001;
-const RED_BUDGET_MODEL_CACHED_MS = 0.0001;
-const RED_BUDGET_MIGRATION_INSPECT_MS = 0.001;
-const RED_BUDGET_REBUILD_CHUNK_MS = 0.001;
-
 // Spec §7 Declared Budgets
 export const SPEC_BUDGETS = {
-  SEARCH_P95_MS: RED_BUDGET_SEARCH_MS, // Spec is 150ms (calibrated in GREEN)
-  SEARCH_PAGE_SIZE_LIMIT: 100,
-  RECORDS_P95_MS: RED_BUDGET_RECORDS_MS, // Spec is 200ms (calibrated in GREEN)
-  ATTENTION_P95_MS: RED_BUDGET_ATTENTION_MS, // Spec is 150ms (calibrated in GREEN)
-  MODEL_EVIDENCE_UNCACHED_P95_MS: RED_BUDGET_MODEL_UNCACHED_MS, // Spec is 1000ms (calibrated in GREEN)
-  MODEL_EVIDENCE_CACHED_P95_MS: RED_BUDGET_MODEL_CACHED_MS, // Spec is 100ms (calibrated in GREEN)
-  MIGRATION_INSPECT_P95_MS: RED_BUDGET_MIGRATION_INSPECT_MS, // Spec is 100ms (calibrated in GREEN)
-  REBUILD_CHUNK_MAX_MS: RED_BUDGET_REBUILD_CHUNK_MS, // Spec is 50ms chunk target (calibrated in GREEN)
+  SEARCH_P95_MS: 150, // command-palette search returns first 20 grouped hits from 10k entities within 150ms at p95
+  SEARCH_PAGE_SIZE_LIMIT: 100, // full Search route paginates without rendering more than 100 result rows at once
+  RECORDS_P95_MS: 200, // Records first page over 10,000 summaries within 200ms at p95
+  ATTENTION_P95_MS: 150, // Attention recompute over 10,000 summaries within 150ms at p95
+  MODEL_EVIDENCE_UNCACHED_P95_MS: 1000, // model evidence query over 50k Observations uncached within 1s at p95
+  MODEL_EVIDENCE_CACHED_P95_MS: 100, // model evidence query over 50k Observations cached within 100ms at p95
+  MIGRATION_INSPECT_P95_MS: 100, // startup lightweight migration inspection within 100ms for verified current DB
+  REBUILD_CHUNK_MAX_MS: 50, // heavy rebuild yields progress and does not block UI longer than animation frame chunk target (50ms)
 };
 
 function u(relPath) {
@@ -105,7 +96,7 @@ async function run() {
     const latencies = [];
     for (let i = 0; i < 50; i++) {
       const t0 = performance.now();
-      const page = querySearchIndex(index, { text: \`entity \${i * 10}\`, limit: 20 });
+      querySearchIndex(index, { text: \`entity \${i * 10}\`, limit: 20 });
       latencies.push(performance.now() - t0);
     }
     latencies.sort((a, b) => a - b);
@@ -132,17 +123,17 @@ async function run() {
         type: types[i % types.length],
         id: \`page-entity-\${i}\`,
         revision: 1,
-        title: \`Page Entity Title \${i}\`,
+        title: \`Page Entity Title \${i} target\`,
         subtitle: \`Subtitle \${i}\`,
         ownerHref: \`/entities/\${i}\`,
-        tokens: ["common-token", \`tag-\${i % 10}\`],
+        tokens: ["target", "item", \`tag-\${i % 10}\`],
         updatedAt: 1700000000000 + i,
         indexSchemaVersion: 1
       });
     }
     const index = createSearchIndex(docs);
-    const page1 = querySearchIndex(index, { text: "common-token", limit: 100, offset: 0 });
-    const page2 = querySearchIndex(index, { text: "common-token", limit: 100, offset: 100 });
+    const page1 = querySearchIndex(index, { text: "target", limit: 100, offset: 0 });
+    const page2 = querySearchIndex(index, { text: "target", limit: 100, offset: 100 });
 
     results.searchRoutePagination = {
       name: "full Search route pagination bounded to <= 100 rows",
@@ -154,6 +145,8 @@ async function run() {
       pass: page1.items.length <= config.SEARCH_PAGE_SIZE_LIMIT &&
             page2.items.length <= config.SEARCH_PAGE_SIZE_LIMIT &&
             page1.total === 10000 &&
+            page1.items.length === 100 &&
+            page2.items.length === 100 &&
             page1.items[0]?.document.id !== page2.items[0]?.document.id
     };
   }
@@ -331,7 +324,6 @@ async function run() {
       selectProfileObservations(query, corpus);
       uncachedLatencies.push(performance.now() - t0);
     }
-    latencies(uncachedLatencies);
     uncachedLatencies.sort((a, b) => a - b);
     const uncachedP95 = uncachedLatencies[Math.floor(uncachedLatencies.length * 0.95)];
 
@@ -348,8 +340,6 @@ async function run() {
     }
     cachedLatencies.sort((a, b) => a - b);
     const cachedP95 = cachedLatencies[Math.floor(cachedLatencies.length * 0.95)];
-
-    function latencies(arr) {}
 
     results.modelEvidenceQuery = {
       name: "model evidence query over 50,000 Observations (uncached <= 1s, cached <= 100ms)",
