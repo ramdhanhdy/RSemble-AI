@@ -2296,9 +2296,14 @@ async function run() {
       const persistedTarget = JSON.stringify(targetRow ?? null);
       const persistedRawSecret = persistedTarget.includes(token);
       const persistedRedaction = persistedTarget.includes(redactedMarker);
-      const hashMatchesTarget = location.hash.endsWith(targetRunId);
-      const titleMatchesTarget = text.includes(targetTitle);
-      const failedStatusVisible = /\\bFailed\\b/i.test(text);
+      const canonicalHash = '#/records/task-execution/' + targetRunId;
+      const detailRoot = document.querySelector('[data-run-detail]');
+      const detailHeading = detailRoot?.querySelector('[data-detail-heading]')?.textContent?.trim() ?? '';
+      const detailStatus =
+        detailRoot?.querySelector('[data-section="header"] [data-status-mark]')?.textContent?.trim() ?? '';
+      const hashMatchesTarget = location.hash === canonicalHash;
+      const titleMatchesTarget = detailHeading === targetTitle;
+      const failedStatusVisible = detailStatus === 'Failed';
       const renderedFailedRecord = hashMatchesTarget && titleMatchesTarget && failedStatusVisible;
       const leaked = text.includes(token) || html.includes(token);
       const paidCalls = window.__qaPaidProviderCalls || [];

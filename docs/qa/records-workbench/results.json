@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-23T06:42:11.376Z",
+  "generatedAt": "2026-08-23T06:53:47.134Z",
   "command": "npm run qa:records",
   "baseUrl": "http://127.0.0.1:5198/",
   "runtimeContainment": {
     "root": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30",
-    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787467331372",
-    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787467331373",
-    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787467331373",
+    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787468027133",
+    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787468027133",
+    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787468027133",
     "tempDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\temp",
     "retainedEvidenceDir": "E:\\2026\\RSemble-AI\\docs\\qa\\records-workbench",
     "verifiedDrive": "E:"
