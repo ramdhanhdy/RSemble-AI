@@ -24,6 +24,8 @@ import { HexCubeLogo } from "./brand-icons";
 import { useMediaQuery } from "./useMediaQuery";
 import { WorkspaceNav } from "./WorkspaceNav";
 import { RecordsMovePointer } from "./RecordsMovePointer";
+import { AttentionHost } from "./AttentionHost";
+import type { AttentionQueryResult } from "../lib/attention/attention-query";
 
 export type ConnectionState = "ready" | "running" | "degraded" | "offline" | "checking";
 
@@ -88,6 +90,7 @@ export function Header({
   onOpenRecords,
   recordsTriggerRef,
   hasExistingRuns,
+  attention,
 }: {
   running: boolean;
   onOpenCommand?: () => void;
@@ -108,6 +111,8 @@ export function Header({
   recordsTriggerRef?: Ref<HTMLButtonElement>;
   /** Explicit override for migration pointer existing-runs check */
   hasExistingRuns?: boolean;
+  /** Optional Attention snapshot override (tests). Live query starts otherwise. */
+  attention?: AttentionQueryResult;
 }) {
   const pill = livePill(running, connectionState);
   const elapsed = useRunElapsed(running);
@@ -166,6 +171,7 @@ export function Header({
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">⌘</kbd>
           <kbd className="rounded-sm border border-edge bg-card px-1.5 py-0.5">K</kbd>
         </button>
+        <AttentionHost snapshot={attention} />
         {/* Records — secondary chrome at every width (spec §G.4). >=1024:
             drawer trigger; below: plain /records link. Same bordered grammar
             as the palette trigger, never accent-filled. */}
