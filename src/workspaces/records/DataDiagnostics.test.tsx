@@ -30,8 +30,7 @@ import {
 import { DataDiagnostics } from "./DataDiagnostics";
 
 vi.mock("../../lib/persistence/migration-registry", async (importOriginal) => {
-  const mod =
-    await importOriginal<typeof import("../../lib/persistence/migration-registry")>();
+  const mod = await importOriginal<typeof import("../../lib/persistence/migration-registry")>();
   return {
     ...mod,
     verifyMigrationState: vi.fn(mod.verifyMigrationState),

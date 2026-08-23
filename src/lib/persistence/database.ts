@@ -56,10 +56,7 @@
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
-import {
-  createMigrationRegistry,
-  type MigrationRunReport,
-} from "./migration-registry";
+import { createMigrationRegistry, type MigrationRunReport } from "./migration-registry";
 import { performFusionToResearchLabCutoverUpgrade } from "../migrations/fusion-to-research-lab";
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { ObservationSourceKind } from "../evidence/evidence-types";

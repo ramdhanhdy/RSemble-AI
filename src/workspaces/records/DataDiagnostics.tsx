@@ -18,10 +18,7 @@ import { useContext, useEffect, useState, type ReactElement, type ReactNode } fr
 import { ArrowLeft, Play, RefreshCw, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 
-import {
-  RepositoryContext,
-  useStorageState,
-} from "../../lib/persistence/repository-context";
+import { RepositoryContext, useStorageState } from "../../lib/persistence/repository-context";
 import {
   classifyStorageError,
   StorageError,
@@ -206,6 +203,10 @@ function safeStorageErrorMessage(err: unknown): string {
       return "Storage was upgraded in another tab. Reload the page to continue.";
     case "unavailable":
       return "Storage is unavailable in this browser context.";
+    case "validation":
+      return "The storage check failed validation. No data was changed.";
+    case "conflict":
+      return "A storage conflict was detected. Reload the page to resume.";
     default:
       return "The storage check failed validation. No data was changed.";
   }
@@ -217,9 +218,7 @@ const buttonClass =
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2 rounded border border-edge bg-panel p-3">
-      <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">
-        {title}
-      </h2>
+      <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-muted">{title}</h2>
       {children}
     </section>
   );
@@ -317,8 +316,8 @@ export function DataDiagnostics(): ReactElement {
           <h1 className="text-lg font-semibold text-text">Data diagnostics</h1>
           <p className="text-xs text-text-secondary">
             Read-only inspection of storage schema, migrations, and derived indexes. Repairs are
-            limited to resuming migrations and rebuilding disposable derived indexes — exact
-            source records are never modified here.
+            limited to resuming migrations and rebuilding disposable derived indexes — exact source
+            records are never modified here.
           </p>
         </header>
 
@@ -330,8 +329,8 @@ export function DataDiagnostics(): ReactElement {
           >
             <p className="font-medium text-text">Storage is {storageState}</p>
             <p>
-              Diagnostics are unavailable while storage is blocked or upgraded by another tab.
-              Close other RSemble tabs or reload the page, then return here.
+              Diagnostics are unavailable while storage is blocked or upgraded by another tab. Close
+              other RSemble tabs or reload the page, then return here.
             </p>
           </div>
         )}
@@ -489,11 +488,7 @@ export function DataDiagnostics(): ReactElement {
             </div>
 
             {actionResult !== null && (
-              <p
-                role="status"
-                data-diag="action-result"
-                className="text-xs text-text-secondary"
-              >
+              <p role="status" data-diag="action-result" className="text-xs text-text-secondary">
                 {actionResult}
               </p>
             )}

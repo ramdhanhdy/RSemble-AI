@@ -527,10 +527,12 @@ async function main() {
     totalMemoryMb: Math.round(os.totalmem() / (1024 * 1024)),
     freeMemoryMb: Math.round(os.freemem() / (1024 * 1024)),
     node: process.version,
-    pid: process.pid
+    pid: process.pid,
   };
 
-  console.log(`Environment: ${sysInfo.os} | CPU: ${sysInfo.cpu} (${sysInfo.cpuCount} cores) | Node: ${sysInfo.node}`);
+  console.log(
+    `Environment: ${sysInfo.os} | CPU: ${sysInfo.cpu} (${sysInfo.cpuCount} cores) | Node: ${sysInfo.node}`,
+  );
   console.log("Executing performance measurements across declared corpus sizes...\n");
 
   const tsxCli = path.join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
@@ -543,7 +545,7 @@ async function main() {
     const result = spawnSync(process.execPath, [tsxCli, tempScriptPath], {
       cwd: ROOT,
       encoding: "utf8",
-      maxBuffer: 10 * 1024 * 1024
+      maxBuffer: 10 * 1024 * 1024,
     });
 
     if (result.status !== 0) {
@@ -562,7 +564,9 @@ async function main() {
   try {
     // Find json line in stdout
     const lines = runOutput.trim().split("\n");
-    const jsonLine = lines.reverse().find(l => l.trim().startsWith("{") && l.trim().endsWith("}"));
+    const jsonLine = lines
+      .reverse()
+      .find((l) => l.trim().startsWith("{") && l.trim().endsWith("}"));
     if (!jsonLine) {
       throw new Error("No JSON results found in runner output");
     }
@@ -574,7 +578,7 @@ async function main() {
   }
 
   const budgetEntries = Object.entries(rawResults);
-  const passedCount = budgetEntries.filter(([_, b]) => b.pass).length;
+  const passedCount = budgetEntries.filter(([, b]) => b.pass).length;
   const failedCount = budgetEntries.length - passedCount;
   const overallPass = failedCount === 0;
 
@@ -582,18 +586,24 @@ async function main() {
   console.log("Performance Budgets Results Summary:");
   console.log("-----------------------------------------------------------------------------");
 
-  for (const [key, b] of budgetEntries) {
+  for (const [, b] of budgetEntries) {
     const status = b.pass ? "[PASS]" : "[FAIL]";
     console.log(`${status} ${b.name}`);
     if (b.measuredP95Ms !== undefined && b.declaredBudgetMs !== undefined) {
-      console.log(`       Measured p95: ${b.measuredP95Ms}ms | Declared budget: ${b.declaredBudgetMs}ms`);
+      console.log(
+        `       Measured p95: ${b.measuredP95Ms}ms | Declared budget: ${b.declaredBudgetMs}ms`,
+      );
     } else if (b.measuredMaxChunkMs !== undefined && b.declaredMaxChunkBudgetMs !== undefined) {
-      console.log(`       Max chunk: ${b.measuredMaxChunkMs}ms | Declared target: ${b.declaredMaxChunkBudgetMs}ms`);
+      console.log(
+        `       Max chunk: ${b.measuredMaxChunkMs}ms | Declared target: ${b.declaredMaxChunkBudgetMs}ms`,
+      );
     }
   }
 
   console.log("-----------------------------------------------------------------------------");
-  console.log(`Verdict: ${overallPass ? "PASS" : "FAIL"} (${passedCount}/${budgetEntries.length} budgets passed)`);
+  console.log(
+    `Verdict: ${overallPass ? "PASS" : "FAIL"} (${passedCount}/${budgetEntries.length} budgets passed)`,
+  );
   console.log("-----------------------------------------------------------------------------");
 
   const fullReport = {
@@ -604,9 +614,9 @@ async function main() {
       totalBudgets: budgetEntries.length,
       passedBudgets: passedCount,
       failedBudgets: failedCount,
-      verdict: overallPass ? "PASS" : "FAIL"
+      verdict: overallPass ? "PASS" : "FAIL",
     },
-    budgets: rawResults
+    budgets: rawResults,
   };
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -622,7 +632,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error("Fatal error in performance gate:", err);
   process.exit(1);
 });

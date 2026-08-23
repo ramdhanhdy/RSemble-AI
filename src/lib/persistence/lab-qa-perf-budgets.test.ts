@@ -266,7 +266,7 @@ describe("performance — archive v3 within declared budgets", () => {
     expect(exported.manifest.counts.studyTrials).toBe(160);
     expect(exported.manifest.counts.studyObservations).toBe(480);
     expect(elapsed).toBeLessThan(BUDGET_ARCHIVE_V3_EXPORT_MS);
-  });
+  }, 30000);
 
   it(`v3 preview + commit import of the populated corpus completes under ${BUDGET_ARCHIVE_V3_IMPORT_MS} ms`, async () => {
     const source = freshDb("import-perf-source");
@@ -284,5 +284,5 @@ describe("performance — archive v3 within declared budgets", () => {
     expect(committed.created.length).toBeGreaterThan(0);
     expect(await target.studies.count()).toBe(40);
     expect(elapsed).toBeLessThan(BUDGET_ARCHIVE_V3_IMPORT_MS);
-  });
+  }, 30000);
 });

@@ -18,19 +18,13 @@
 // 10. partial migrations and ID collisions
 // =============================================================================
 
-import type {
-  ComparisonResultIndex,
-} from "../../../src/lib/compare/comparison-result-types";
+import type { ComparisonResultIndex } from "../../../src/lib/compare/comparison-result-types";
 import type {
   EvaluationRubric,
-  EvaluationSuite,
   ExperimentRecord,
   RubricRecord,
 } from "../../../src/lib/evaluations/evaluation-types";
-import type {
-  TaskSetRecord,
-  TaskSetVersion,
-} from "../../../src/lib/evaluations/task-set-types";
+import type { TaskSetRecord, TaskSetVersion } from "../../../src/lib/evaluations/task-set-types";
 import type {
   EligibilityDecision,
   ExecutedVerifierOutcome,
@@ -41,7 +35,7 @@ import type { EvidenceLedgerRow } from "../../../src/lib/evidence/evidence-count
 import type {
   RSembleEvaluationDB,
   TaskSetOwnershipCrosswalkRow,
-  PolicyPlaybookRow,
+  PolicyPlaybookRecordRow,
 } from "../../../src/lib/persistence/database";
 import type {
   FullRunSummaryV2,
@@ -50,23 +44,15 @@ import type {
 } from "../../../src/lib/persistence/run-types";
 import type { TaskSetMaterializationRecord } from "../../../src/lib/persistence/evaluation-repository";
 import type { WorkbenchArchiveV1 } from "../../../src/lib/persistence/archive";
+import type { LabRecipeRecord, LabRecipeVersion } from "../../../src/lib/studies/lab-recipe-types";
+import type { ModelPoolRecord, ModelPoolVersion } from "../../../src/lib/studies/model-pool-types";
 import type {
-  LabRecipeRecord,
-  LabRecipeVersion,
-} from "../../../src/lib/studies/lab-recipe-types";
-import type {
-  ModelPoolRecord,
-  ModelPoolVersion,
-} from "../../../src/lib/studies/model-pool-types";
-import type {
-  PolicyReportPayload,
   PolicyStudyObservation,
   PolicyStudyRecord,
   PolicyStudyTrial,
 } from "../../../src/lib/studies/policy/policy-study-types";
 import type { StudyAttempt } from "../../../src/lib/studies/study-types";
 import type {
-  TaskArtifact,
   TaskFacetAnnotation,
   TaskFamily,
   TaskFamilyAssignment,
@@ -158,7 +144,7 @@ export interface DeterministicCorpus {
     trials: PolicyStudyTrial[];
     attempts: StudyAttempt[];
     studyObservations: PolicyStudyObservation[];
-    playbooks: PolicyPlaybookRow[];
+    playbooks: PolicyPlaybookRecordRow[];
     crosswalks: TaskSetOwnershipCrosswalkRow[];
   };
   collisionEntities: {
@@ -190,14 +176,12 @@ export async function buildDeterministicCorpus(
 ): Promise<DeterministicCorpus> {
   // 1. Rubrics
   const rubric1 = v2fx.makeRubricRecord("rubric-1");
-  rubric1.name = "Code Quality & Correctness";
   const rubric1_v1 = v2fx.makeRubricVersion("rubric-1", 1);
-  rubric1_v1.title = "Code Quality & Correctness v1";
+  rubric1_v1.name = "Code Quality & Correctness v1";
 
   const rubric2 = v2fx.makeRubricRecord("rubric-2");
-  rubric2.name = "Reasoning Depth";
   const rubric2_v1 = v2fx.makeRubricVersion("rubric-2", 1);
-  rubric2_v1.title = "Reasoning Depth v1";
+  rubric2_v1.name = "Reasoning Depth v1";
 
   await db.profiles.put(v2fx.profileRow(rubric1));
   await db.profiles.put(v2fx.profileRow(rubric2));
@@ -207,17 +191,19 @@ export async function buildDeterministicCorpus(
   // 2. Tasks, Versions, Artifacts, Instances, Families, Facets
   const task1 = v2fx.makeTaskRecord("task-canon-1");
   task1.latestVersion = 2;
-  task1.name = "Refactor State Machine";
-  task1.description = "Refactor concurrent lease state machine";
 
   const task2 = v2fx.makeTaskRecord("task-canon-2");
   task2.latestVersion = 1;
-  task2.name = "Deadlock Prevention";
-  task2.description = "Analyze two-phase lock ordering";
 
-  const artifactBytes1 = new TextEncoder().encode("export function solveStateMachine() { return true; }");
-  const artifactBytes2 = new TextEncoder().encode("export function solveStateMachineV2() { return 42; }");
-  const artifactBytes3 = new TextEncoder().encode("export function solveDeadlock() { return 'ok'; }");
+  const artifactBytes1 = new TextEncoder().encode(
+    "export function solveStateMachine() { return true; }",
+  );
+  const artifactBytes2 = new TextEncoder().encode(
+    "export function solveStateMachineV2() { return 42; }",
+  );
+  const artifactBytes3 = new TextEncoder().encode(
+    "export function solveDeadlock() { return 'ok'; }",
+  );
 
   const artifact1 = v2fx.makeTaskArtifact("art-1", artifactBytes1);
   const artifact2 = v2fx.makeTaskArtifact("art-2", artifactBytes2);
@@ -225,15 +211,15 @@ export async function buildDeterministicCorpus(
 
   const task1_v1 = v2fx.makeTaskVersion("task-canon-1", 1, "art-1");
   task1_v1.title = "Refactor State Machine v1";
-  task1_v1.rubricRef = { id: "rubric-1", version: 1 };
+  task1_v1.taskVerifierRef = { id: "rubric-1", version: 1 };
 
   const task1_v2 = v2fx.makeTaskVersion("task-canon-1", 2, "art-2");
   task1_v2.title = "Refactor State Machine v2";
-  task1_v2.rubricRef = { id: "rubric-1", version: 1 };
+  task1_v2.taskVerifierRef = { id: "rubric-1", version: 1 };
 
   const task2_v1 = v2fx.makeTaskVersion("task-canon-2", 1, "art-3");
   task2_v1.title = "Deadlock Prevention v1";
-  task2_v1.rubricRef = { id: "rubric-2", version: 1 };
+  task2_v1.taskVerifierRef = { id: "rubric-2", version: 1 };
 
   const inst1_v1 = v2fx.makeTaskInstance("inst-1-v1", "task-canon-1", 1, "seed-1");
   const inst1_v2 = v2fx.makeTaskInstance("inst-1-v2", "task-canon-1", 2, "seed-1");
@@ -254,7 +240,7 @@ export async function buildDeterministicCorpus(
 
   const facet1 = v2fx.makeTaskFacetAnnotation("facet-1", "task-canon-1");
   facet1.facetId = "engineering";
-  facet1.value = "debugging";
+  facet1.valueId = "debugging";
 
   await db.tasks.put(v2fx.taskRecordRow(task1));
   await db.tasks.put(v2fx.taskRecordRow(task2));
@@ -281,7 +267,6 @@ export async function buildDeterministicCorpus(
   // ID-collision entity across distinct collections (Task vs TaskSet)
   const collisionTaskId = "collision-entity-1";
   const collisionTask = v2fx.makeTaskRecord(collisionTaskId);
-  collisionTask.name = "ID Collision Task Entity";
   const collisionTaskVersion = v2fx.makeTaskVersion(collisionTaskId, 1, "art-1");
   await db.tasks.put(v2fx.taskRecordRow(collisionTask));
   await db.taskVersions.put(v2fx.taskVersionRow(collisionTaskVersion));
@@ -293,7 +278,6 @@ export async function buildDeterministicCorpus(
   taskSet1.description = "Core suite for client reliability and state recovery";
 
   const taskSet1_v1 = v2fx.makeTaskSetVersion("taskset-1", 1);
-  taskSet1_v1.name = "Frontend Reliability v1";
   taskSet1_v1.members = [
     {
       id: "member-1",
@@ -309,7 +293,6 @@ export async function buildDeterministicCorpus(
   ];
 
   const taskSet1_v2 = v2fx.makeTaskSetVersion("taskset-1", 2);
-  taskSet1_v2.name = "Frontend Reliability v2";
   taskSet1_v2.members = [
     {
       id: "member-1",
@@ -394,11 +377,11 @@ export async function buildDeterministicCorpus(
   run1.source = { kind: "adhoc" };
 
   const runAdHoc = v2fx.makeRunDetail("run-adhoc");
-  runAdHoc.title = "Ad-hoc Comparison Execution";
+  runAdHoc.task.title = "Ad-hoc Comparison Execution";
   runAdHoc.source = { kind: "adhoc" };
 
   const runRetry = v2fx.makeRunDetail("run-retry");
-  runRetry.title = "Retry Execution on State Machine";
+  runRetry.task.title = "Retry Execution on State Machine";
   runRetry.source = { kind: "adhoc" };
   runRetry.candidates = [
     {
@@ -479,7 +462,7 @@ export async function buildDeterministicCorpus(
 
   // Re-fuse run fixture
   const runReFuse = v2fx.makeRunDetail("run-refuse");
-  runReFuse.title = "Comparison With Re-Fuse Attempt";
+  runReFuse.task.title = "Comparison With Re-Fuse Attempt";
   runReFuse.mode = "fuse";
   runReFuse.source = { kind: "adhoc" };
   runReFuse.candidates = [
@@ -891,7 +874,7 @@ export async function buildDeterministicCorpus(
   const studyObs1 = v3fx.makePolicyStudyObservation("obs-study-1", "study-exploratory", "trial-1");
 
   const playbook1 = v3fx.makePolicyReportPayload("study-exploratory");
-  const playbookRow1: PolicyPlaybookRow = {
+  const playbookRow1: PolicyPlaybookRecordRow = {
     id: "study-exploratory",
     studyId: "study-exploratory",
     definitionFingerprint: studyExploratory.definitionFingerprint,
@@ -901,7 +884,7 @@ export async function buildDeterministicCorpus(
   };
 
   const playbook2 = v3fx.makePolicyReportPayload("study-confirmed");
-  const playbookRow2: PolicyPlaybookRow = {
+  const playbookRow2: PolicyPlaybookRecordRow = {
     id: "study-confirmed",
     studyId: "study-confirmed",
     definitionFingerprint: studyConfirmed.definitionFingerprint,

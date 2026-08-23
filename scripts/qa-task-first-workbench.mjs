@@ -32,7 +32,6 @@
 // =============================================================================
 
 import { spawn } from "node:child_process";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -110,14 +109,13 @@ assertEContainment("BROWSER_DIR", BROWSER_DIR);
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run") || args.includes("--receipt-only");
 const explicitBaseUrl =
-  process.env.QA_BASE_URL ??
-  (args.find((a) => a.startsWith("--base-url="))?.split("=")[1] ?? null);
+  process.env.QA_BASE_URL ?? args.find((a) => a.startsWith("--base-url="))?.split("=")[1] ?? null;
 const BROWSER_PORT = process.env.QA_PORT ? Number(process.env.QA_PORT) : 5198;
 const baseUrl = explicitBaseUrl ?? `http://127.0.0.1:${BROWSER_PORT}/`;
 const chromePath =
   process.env.CHROME_PATH ??
-  (args.find((a) => a.startsWith("--chrome-path="))?.split("=")[1] ??
-    "C:/Program Files/Google/Chrome/Application/chrome.exe");
+  args.find((a) => a.startsWith("--chrome-path="))?.split("=")[1] ??
+  "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const debugPort = process.env.CDP_PORT ? Number(process.env.CDP_PORT) : 9398;
 
 const OUT_FILE = path.join(RETAINED_EVIDENCE_DIR, "workbench-results.json");
@@ -507,11 +505,9 @@ export function buildDeterministicCorpus() {
   });
 
   const cmp1 = makeRunRecord("cmp-rank-adhoc-1", "Ad-hoc QuickSort Optimization");
-  const cmp2 = makeRunRecord(
-    "cmp-fuse-canonical-1",
-    "Canonical Matrix Multiplication Fuse",
-    { mode: "fuse" },
-  );
+  const cmp2 = makeRunRecord("cmp-fuse-canonical-1", "Canonical Matrix Multiplication Fuse", {
+    mode: "fuse",
+  });
   const runExact1 = makeRunRecord("run-exact-task-1", "Task Set Execution: QuickSort");
   const runLongId = makeRunRecord(
     "run-longfields-id-0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -1094,13 +1090,11 @@ async function main() {
     },
     {
       name: "accessibility_conditions_coverage",
-      description:
-        "200% zoom, reduced motion, keyboard-only, and semantic landmarks registered",
+      description: "200% zoom, reduced motion, keyboard-only, and semantic landmarks registered",
     },
     {
       name: "primary_and_secondary_routes_coverage",
-      description:
-        "All 22 primary, 11 secondary, and 3 canonical/retired fusion routes covered",
+      description: "All 22 primary, 11 secondary, and 3 canonical/retired fusion routes covered",
     },
   ];
 
@@ -1272,8 +1266,7 @@ async function main() {
       probesResult.push({
         name: "accessibility_conditions_coverage",
         pass: Boolean(a11yOk),
-        description:
-          "200% zoom, reduced motion, keyboard-only, and semantic landmarks registered",
+        description: "200% zoom, reduced motion, keyboard-only, and semantic landmarks registered",
       });
 
       // Probe 7: primary_and_secondary_routes_coverage
@@ -1288,8 +1281,7 @@ async function main() {
       probesResult.push({
         name: "primary_and_secondary_routes_coverage",
         pass: routesOk && cdp.unhandledExceptions.length === 0,
-        description:
-          "All 22 primary, 11 secondary, and 3 canonical/retired fusion routes covered",
+        description: "All 22 primary, 11 secondary, and 3 canonical/retired fusion routes covered",
       });
     } catch (err) {
       executionStatus = "not_executed";

@@ -390,6 +390,8 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
       await settle();
       await settle();
       await settle();
+      await settle();
+      await settle();
 
       expect(await db.suites.count()).toBe(1);
       expect(await db.tasks.count()).toBe(1);

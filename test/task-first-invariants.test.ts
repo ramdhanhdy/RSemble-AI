@@ -28,10 +28,7 @@ import {
   buildDeterministicCorpus,
   CORPUS_DETERMINISTIC_NOW,
   DeterministicCorpus,
-  DIGEST_A,
-  DIGEST_B,
   MC_EXACT_ID,
-  MC_ROLLING_ID,
 } from "./fixtures/task-first-evidence/corpus";
 import { RSembleEvaluationDB } from "../src/lib/persistence/database";
 import { createRecordsRepository } from "../src/lib/records/records-repository";
@@ -46,10 +43,7 @@ import {
   runMigrationRegistry,
   verifyMigrationState,
 } from "../src/lib/persistence/migration-registry";
-import {
-  canonicalTaskMigrationMarkerKey,
-  migrateEmbeddedLegacyTasks,
-} from "../src/lib/persistence/canonical-task-migration";
+import { migrateEmbeddedLegacyTasks } from "../src/lib/persistence/canonical-task-migration";
 import {
   migrateSuitesToTaskSets,
   taskSetMigrationMarkerKey,
@@ -64,7 +58,6 @@ import { computePairedEvidence } from "../src/lib/model-profiles/paired-comparis
 import {
   FORBIDDEN_CLAIM_PHRASES,
   buildProfileClaim,
-  MIN_CLAIM_RESOLVED_UNITS,
   type ClaimCohortInput,
 } from "../src/lib/model-profiles/profile-claims";
 import {
@@ -83,11 +76,16 @@ import {
   commitPreviewWorkbenchArchiveV2,
   commitPreviewWorkbenchArchiveV3,
 } from "../src/lib/persistence/archive";
-import {
-  buildValidNonFusionArchiveV2Fixture,
-} from "../src/lib/persistence/archive-v2-fixtures";
+import { buildValidNonFusionArchiveV2Fixture } from "../src/lib/persistence/archive-v2-fixtures";
 import { buildValidArchiveV3Fixture } from "../src/lib/persistence/archive-v3-fixtures";
+import type { TaskSetRecord, TaskSetVersion } from "../src/lib/evaluations/task-set-types";
+import type { TaskRecord } from "../src/lib/tasks/task-types";
 import { EVIDENCE_PROHIBITED_KEYS } from "../src/lib/evidence/evidence-validation";
+import {
+  type ModelConfigurationSnapshot,
+  type Observation,
+  type EligibilityDecision,
+} from "../src/lib/evidence/evidence-types";
 import { selectProfileObservations } from "../src/lib/model-profiles/profile-observation-selection";
 import { canonicalizeModelEvidenceQuery } from "../src/lib/model-profiles/model-evidence-query";
 import { queryEvaluationAttention } from "../src/lib/attention/evaluation-attention";
@@ -128,14 +126,12 @@ describe("Cross-child invariant harness (spec §6)", () => {
       expect(fetchedRun?.candidates[0].attempts[0].status).toBe("failed");
       expect(fetchedRun?.candidates[0].attempts[1].status).toBe("completed");
       expect(fetchedRun?.judge?.attempts).toHaveLength(2);
-      expect(fetchedRun?.winnerKeys).toEqual([
-        "openrouter:anthropic/claude-3.5-sonnet",
-      ]);
+      expect(fetchedRun?.winnerKeys).toEqual(["openrouter:anthropic/claude-3.5-sonnet"]);
 
       const recordsRepo = createRecordsRepository({
         runRepo,
-        comparisonRepo: createComparisonRepository(db),
-        evaluationRepo: createEvaluationRepository(db),
+        comparisonRepo: createComparisonRepository(db, runRepo),
+        evaluationRepo: createEvaluationRepository(db, runRepo),
         studyRepo: createStudyRepository(db),
         evidenceRepo: createEvidenceRepository(db),
       });
@@ -152,7 +148,8 @@ describe("Cross-child invariant harness (spec §6)", () => {
     });
 
     it("retrieves exact ExperimentRecord and its frozen task set and protocol references", async () => {
-      const evalRepo = createEvaluationRepository(db);
+      const runRepo = createRunRepository(db);
+      const evalRepo = createEvaluationRepository(db, runRepo);
       const exp = await evalRepo.getExperiment("exp-complete");
 
       expect(exp).not.toBeNull();
@@ -171,10 +168,11 @@ describe("Cross-child invariant harness (spec §6)", () => {
       expect(study?.claimLevel).toBe("exploratory");
       expect(study?.definition.workload.taskSetId).toBe("taskset-1");
 
+      const runRepo = createRunRepository(db);
       const recordsRepo = createRecordsRepository({
-        runRepo: createRunRepository(db),
-        comparisonRepo: createComparisonRepository(db),
-        evaluationRepo: createEvaluationRepository(db),
+        runRepo,
+        comparisonRepo: createComparisonRepository(db, runRepo),
+        evaluationRepo: createEvaluationRepository(db, runRepo),
         studyRepo,
         evidenceRepo: createEvidenceRepository(db),
       });
@@ -187,23 +185,23 @@ describe("Cross-child invariant harness (spec §6)", () => {
     it("persists and retrieves exact Task Sets, versions, materializations, and repaired evaluation records", async () => {
       const taskSet = await db.taskSets.get("taskset-1");
       expect(taskSet).toBeDefined();
-      expect(taskSet?.record.name).toBe("Frontend Reliability Set");
+      expect((taskSet!.record as TaskSetRecord).name).toBe("Frontend Reliability Set");
       expect(taskSet?.latestVersion).toBe(2);
 
       const v1 = await db.taskSetVersions.get(["taskset-1", 1]);
       expect(v1).toBeDefined();
-      expect(v1?.version_.members).toHaveLength(1);
+      expect((v1!.version_ as TaskSetVersion).members).toHaveLength(1);
 
       const v2 = await db.taskSetVersions.get(["taskset-1", 2]);
       expect(v2).toBeDefined();
-      expect(v2?.version_.members).toHaveLength(2);
-
+      expect((v2!.version_ as TaskSetVersion).members).toHaveLength(2);
       const mat = await db.taskSetMaterializations.get("mat-1");
       expect(mat).toBeDefined();
       expect(mat?.taskSetId).toBe("taskset-1");
       expect(mat?.taskSetVersion).toBe(1);
 
-      const evalRepo = createEvaluationRepository(db);
+      const runRepo = createRunRepository(db);
+      const evalRepo = createEvaluationRepository(db, runRepo);
       const repaired = await evalRepo.getExperiment("exp-repaired");
       expect(repaired).toBeDefined();
       expect(repaired?.status).toBe("completed");
@@ -221,10 +219,9 @@ describe("Cross-child invariant harness (spec §6)", () => {
       // ID collision across collections: distinct tables preserve same ID without conflict
       const colTask = await db.tasks.get("collision-entity-1");
       const colTaskSet = await db.taskSets.get("collision-entity-1");
-      expect(colTask).toBeDefined();
+      expect((colTask!.record as TaskRecord).id).toBe("collision-entity-1");
       expect(colTaskSet).toBeDefined();
-      expect(colTask?.record.name).toBe("ID Collision Task Entity");
-      expect(colTaskSet?.record.name).toBe("ID Collision TaskSet Entity");
+      expect((colTaskSet!.record as TaskSetRecord).name).toBe("ID Collision TaskSet Entity");
 
       // Partial migration state: research lab receipt stored while task set migration pending
       const receipt = await db.storageMeta.get(fusionToResearchLabReceiptKey);
@@ -345,44 +342,50 @@ describe("Cross-child invariant harness (spec §6)", () => {
         selectionA: {
           kind: "exact",
           modelConfiguration: corpus.modelConfigurations.exact,
+          eligibilityRuleVersion: 1,
           cells: [
             {
+              cellKey: `${obsA.taskId}:${obsA.modelConfigurationId}`,
               executionLineageId: obsA.executionLineageId,
               taskId: obsA.taskId,
+              taskVersion: 1,
+              taskInstanceId: obsA.taskInstanceId,
               modelConfigurationId: obsA.modelConfigurationId,
               active: {
                 observation: obsA,
                 decision: corpus.evidence.decisions[0],
-                evaluator: { kind: "judge", id: "judge-1" },
-                protocolFingerprint: "sha256:fp",
-                taskVersionRef: { id: "task-canon-1", version: 1 },
-                comparabilityCohortId: "cohort-1",
+                ledger: corpus.evidence.countingRows[0] ?? null,
               },
-              unsupported: [],
+              supersededAssessments: [],
             },
           ],
           unauthorized: [],
+          declaredReplicateGroups: [],
+          undeclaredRepeats: [],
         },
         selectionB: {
           kind: "exact",
           modelConfiguration: corpus.modelConfigurations.rolling,
+          eligibilityRuleVersion: 1,
           cells: [
             {
+              cellKey: `${obsB.taskId}:${obsB.modelConfigurationId}`,
               executionLineageId: obsB.executionLineageId,
               taskId: obsB.taskId,
+              taskVersion: 2,
+              taskInstanceId: obsB.taskInstanceId,
               modelConfigurationId: obsB.modelConfigurationId,
               active: {
                 observation: obsB,
                 decision: corpus.evidence.decisions[1],
-                evaluator: { kind: "judge", id: "judge-1" },
-                protocolFingerprint: "sha256:fp",
-                taskVersionRef: { id: "task-canon-1", version: 2 },
-                comparabilityCohortId: "cohort-1",
+                ledger: corpus.evidence.countingRows[1] ?? null,
               },
-              unsupported: [],
+              supersededAssessments: [],
             },
           ],
           unauthorized: [],
+          declaredReplicateGroups: [],
+          undeclaredRepeats: [],
         },
         uncertainty: {
           taskFamilyRelations: corpus.tasks.familyRelations,
@@ -505,7 +508,9 @@ describe("Cross-child invariant harness (spec §6)", () => {
       expect(taskDoc).toBeDefined();
       expect(taskDoc?.ownerHref).toBe("/tasks/task-canon-1");
 
-      const studyDoc = allDocs.find((d) => d.type === "fusion_study" && d.id === "study-exploratory");
+      const studyDoc = allDocs.find(
+        (d) => d.type === "fusion_study" && d.id === "study-exploratory",
+      );
       expect(studyDoc).toBeDefined();
       expect(studyDoc?.ownerHref).toBe("/lab/studies/study-exploratory");
 
@@ -515,10 +520,11 @@ describe("Cross-child invariant harness (spec §6)", () => {
     });
 
     it("records repository preserves exact RecordType and resolves exact owner context", async () => {
+      const runRepo = createRunRepository(db);
       const recordsRepo = createRecordsRepository({
-        runRepo: createRunRepository(db),
-        comparisonRepo: createComparisonRepository(db),
-        evaluationRepo: createEvaluationRepository(db),
+        runRepo,
+        comparisonRepo: createComparisonRepository(db, runRepo),
+        evaluationRepo: createEvaluationRepository(db, runRepo),
         studyRepo: createStudyRepository(db),
         evidenceRepo: createEvidenceRepository(db),
       });
@@ -552,11 +558,11 @@ describe("Cross-child invariant harness (spec §6)", () => {
         expect(item.kind).toBe("evaluation_recovery");
         expect(item.ownerHref).toBe(`/evaluations/results/${corpus.experiments.expIncomplete.id}`);
         // Non-execution handoff: purely navigational, no lifecycle/execution properties
-        expect((item as Record<string, unknown>).execute).toBeUndefined();
-        expect((item as Record<string, unknown>).onRecover).toBeUndefined();
-        expect((item as Record<string, unknown>).retry).toBeUndefined();
-        expect((item as Record<string, unknown>).status).toBeUndefined();
-        expect((item as Record<string, unknown>).dismissed).toBeUndefined();
+        expect((item as unknown as Record<string, unknown>).execute).toBeUndefined();
+        expect((item as unknown as Record<string, unknown>).onRecover).toBeUndefined();
+        expect((item as unknown as Record<string, unknown>).retry).toBeUndefined();
+        expect((item as unknown as Record<string, unknown>).status).toBeUndefined();
+        expect((item as unknown as Record<string, unknown>).dismissed).toBeUndefined();
       }
 
       const compItems = queryComparisonAttention({ index: corpus.comparisons.canonical });
@@ -564,7 +570,9 @@ describe("Cross-child invariant harness (spec §6)", () => {
 
       const merged = mergeDeduplicateAndSortAttention(evalItems);
       expect(merged.total).toBe(evalItems.length);
-      expect(merged.items[0].ownerHref).toBe(`/evaluations/results/${corpus.experiments.expIncomplete.id}`);
+      expect(merged.items[0].ownerHref).toBe(
+        `/evaluations/results/${corpus.experiments.expIncomplete.id}`,
+      );
     });
   });
 
@@ -631,7 +639,9 @@ describe("Cross-child invariant harness (spec §6)", () => {
   describe("Invariant 8: Legacy routes/archives valid and owner adapters preserve ownership", () => {
     it("imports legacy non-fusion v2 archive and v3 archive cleanly without errors", async () => {
       const v2Archive = buildValidNonFusionArchiveV2Fixture();
-      const freshDb1 = new RSembleEvaluationDB(`legacy-v2-test-${Math.random().toString(36).slice(2)}`);
+      const freshDb1 = new RSembleEvaluationDB(
+        `legacy-v2-test-${Math.random().toString(36).slice(2)}`,
+      );
       await freshDb1.open();
 
       const preview2 = await previewWorkbenchArchive(freshDb1, v2Archive as never, {
@@ -672,9 +682,7 @@ describe("Cross-child invariant harness (spec §6)", () => {
       expect(xwalkConfirmed?.taskSetId).toBe("taskset-1");
       expect(xwalkConfirmed?.version).toBe(2);
 
-      const xwalkExp = await db.taskSetOwnershipCrosswalk.get(
-        "ts-xwalk:exp:exp-complete",
-      );
+      const xwalkExp = await db.taskSetOwnershipCrosswalk.get("ts-xwalk:exp:exp-complete");
       expect(xwalkExp).toBeDefined();
       expect(xwalkExp?.status).toBe("unresolved");
       expect(xwalkExp?.version).toBeNull();
@@ -722,9 +730,13 @@ describe("Cross-child invariant harness (spec §6)", () => {
       });
 
       const selection = selectProfileObservations(query, {
-        configurations: (await db.modelConfigurations.toArray()).map((r) => r.snapshot),
-        observations: await db.observations.toArray(),
-        decisions: (await db.evidenceDecisions.toArray()).map((r) => r.decision),
+        configurations: (await db.modelConfigurations.toArray()).map(
+          (r) => r.snapshot as ModelConfigurationSnapshot,
+        ),
+        observations: (await db.observations.toArray()).map((r) => r.observation as Observation),
+        decisions: (await db.evidenceDecisions.toArray()).map(
+          (r) => r.decision as EligibilityDecision,
+        ),
         ledgerRows: corpus.evidence.countingRows,
       });
 

@@ -6,7 +6,12 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
-    include: ["src/**/*.test.{ts,tsx}", "server/tests/**/*.test.ts", "shared/**/*.test.ts", "test/**/*.test.{ts,tsx}"],
+    include: [
+      "src/**/*.test.{ts,tsx}",
+      "server/tests/**/*.test.ts",
+      "shared/**/*.test.ts",
+      "test/**/*.test.{ts,tsx}",
+    ],
     // Shared test environment setup (Plan 006 quality gate):
     //  - marks the environment as a React act() environment;
     //  - fails tests that emit unexpected console.warn/console.error so new

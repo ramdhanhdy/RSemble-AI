@@ -86,12 +86,7 @@ export interface MigrationStep {
 // --- Reports ------------------------------------------------------------------
 
 export type MigrationStepStatus =
-  | "pending"
-  | "complete"
-  | "failed"
-  | "deferred"
-  | "blocked-dependency"
-  | "skipped-owner";
+  "pending" | "complete" | "failed" | "deferred" | "blocked-dependency" | "skipped-owner";
 
 export interface MigrationStepState {
   id: string;
@@ -275,7 +270,10 @@ export function createMigrationRegistry(options: MigrationRegistryOptions): Migr
   }
 
   async function writeCursor(stepId: string, cursor: MigrationCursor): Promise<void> {
-    await db.storageMeta.put({ key: migrationCursorKey(stepId), value: { position: cursor.position } });
+    await db.storageMeta.put({
+      key: migrationCursorKey(stepId),
+      value: { position: cursor.position },
+    });
   }
 
   async function clearCursor(stepId: string): Promise<void> {
@@ -581,8 +579,7 @@ export function createDefaultMigrationSteps(db: RSembleEvaluationDB): MigrationS
       return {
         done: result.errors.length === 0,
         processed: result.imported + result.skipped,
-        detail:
-          result.errors.length > 0 ? `${result.errors.length} entries failed` : undefined,
+        detail: result.errors.length > 0 ? `${result.errors.length} entries failed` : undefined,
       };
     },
     verify: async () => {
@@ -643,7 +640,11 @@ export function createDefaultMigrationSteps(db: RSembleEvaluationDB): MigrationS
     dependencies: ["canonical-tasks"],
     blocking: true,
     inspect: async () => ({
-      needed: !isMarkerValue(await readMetaValue(db, taskSetMigrationMarkerKey), "task-set-migration", 1),
+      needed: !isMarkerValue(
+        await readMetaValue(db, taskSetMigrationMarkerKey),
+        "task-set-migration",
+        1,
+      ),
     }),
     apply: async () => {
       const result = await migrateSuitesToTaskSets(db);
@@ -653,7 +654,11 @@ export function createDefaultMigrationSteps(db: RSembleEvaluationDB): MigrationS
       };
     },
     verify: async () => ({
-      ok: isMarkerValue(await readMetaValue(db, taskSetMigrationMarkerKey), "task-set-migration", 1),
+      ok: isMarkerValue(
+        await readMetaValue(db, taskSetMigrationMarkerKey),
+        "task-set-migration",
+        1,
+      ),
     }),
   };
 
@@ -757,6 +762,8 @@ export async function runMigrationRegistry(
 }
 
 /** Read-only verification of every production migration step. */
-export async function verifyMigrationState(db: RSembleEvaluationDB): Promise<MigrationVerifyReport> {
+export async function verifyMigrationState(
+  db: RSembleEvaluationDB,
+): Promise<MigrationVerifyReport> {
   return createMigrationRegistry({ db }).verify();
 }
