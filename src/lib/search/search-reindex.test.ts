@@ -21,10 +21,12 @@ import {
   modelRollupToSearchDocument,
   observationToSearchDocument,
   recordToSearchDocument,
+  createDexieSearchSourceResolver,
   type SearchSourceResolver,
   type SearchReindexMetaStore,
 } from "./search-reindex";
 import { createInMemorySearchIndexRepository } from "../persistence/search-index-repository";
+import { createDatabase } from "../persistence/database";
 import type { SearchDocument, SearchDocumentType } from "./search-types";
 
 describe("Search entity extractors", () => {
@@ -189,6 +191,57 @@ describe("Search entity extractors", () => {
         updatedAt: 1000,
         archivedAt: null,
         origin: "first-party",
+      }),
+    ).toThrow(/secret/i);
+  });
+  it("reproduction B1: rejects credential-like raw inputs before tokenization in all extractor fields", () => {
+    // modelKeys
+    expect(() =>
+      recordToSearchDocument({
+        id: "run-1",
+        kind: "eval",
+        revision: 1,
+        createdAt: 1,
+        status: "ok",
+        mode: "rank",
+        modelKeys: ["sk-secret123456"],
+        name: "Safe run",
+      }),
+    ).toThrow(/secret/i);
+
+    // runId in comparison
+    expect(() =>
+      comparisonToSearchDocument({
+        id: "cmp-1",
+        runId: "sk-secret123456",
+        status: "completed",
+        mode: "head-to-head",
+        createdAt: 1000,
+        revision: 1,
+        name: "Compare run",
+      }),
+    ).toThrow(/secret/i);
+
+    // suiteId in evaluation
+    expect(() =>
+      evaluationToSearchDocument({
+        id: "exp-1",
+        revision: 1,
+        suiteId: "sk-secret123456",
+        createdAt: 1000,
+        status: "completed",
+        name: "Eval run",
+      }),
+    ).toThrow(/secret/i);
+
+    // origin in task
+    expect(() =>
+      taskToSearchDocument({
+        id: "task-1",
+        revision: 1,
+        name: "Task 1",
+        updatedAt: 1000,
+        origin: "sk-secret123456",
       }),
     ).toThrow(/secret/i);
   });
@@ -472,6 +525,151 @@ describe("Resumable full rebuild & idempotency", () => {
     expect(chunk3.done).toBe(true);
     expect(chunk3.nextCursor).toBeNull();
     expect(await searchRepo.countDocuments()).toBe(15);
+  });
+  it("reproduction B2: rebuildSearchIndex removes deleted orphans from repository", async () => {
+    const searchRepo = createInMemorySearchIndexRepository();
+    await searchRepo.putDocument({
+      type: "task",
+      id: "orphan-deleted",
+      revision: 1,
+      title: "Deleted task",
+      subtitle: "Should not be kept",
+      ownerHref: "/tasks/orphan-deleted",
+      tokens: ["deleted", "task"],
+      updatedAt: 1000,
+      indexSchemaVersion: 1,
+    });
+
+    const resolver: SearchSourceResolver = {
+      async resolveDocument(ref) {
+        if (ref.id === "orphan-deleted") return null;
+        return null;
+      },
+      async listAllSources() {
+        return [
+          {
+            type: "task",
+            id: "keep-a",
+            revision: 1,
+            title: "Keep A",
+            subtitle: "Task A",
+            ownerHref: "/tasks/keep-a",
+            tokens: ["keep", "a"],
+            updatedAt: 2000,
+            indexSchemaVersion: 1,
+          },
+        ];
+      },
+    };
+
+    await rebuildSearchIndex({ searchRepo, resolver });
+    const docs = await searchRepo.listDocuments();
+    const ids = docs.map((d) => d.id);
+    expect(ids).toEqual(["keep-a"]);
+    expect(await searchRepo.countDocuments()).toBe(1);
+  });
+
+  it("reproduction B2: rebuildSearchIndexChunk removes deleted orphans on cursor=null sweep", async () => {
+    const searchRepo = createInMemorySearchIndexRepository();
+    await searchRepo.putDocument({
+      type: "task",
+      id: "orphan-deleted",
+      revision: 1,
+      title: "Deleted task",
+      subtitle: "Should not be kept",
+      ownerHref: "/tasks/orphan-deleted",
+      tokens: ["deleted", "task"],
+      updatedAt: 1000,
+      indexSchemaVersion: 1,
+    });
+
+    const resolver: SearchSourceResolver = {
+      async resolveDocument() {
+        return null;
+      },
+      async listAllSources() {
+        return [
+          {
+            type: "task",
+            id: "keep-a",
+            revision: 1,
+            title: "Keep A",
+            subtitle: "Task A",
+            ownerHref: "/tasks/keep-a",
+            tokens: ["keep", "a"],
+            updatedAt: 2000,
+            indexSchemaVersion: 1,
+          },
+        ];
+      },
+    };
+
+    const chunkRes = await rebuildSearchIndexChunk({
+      searchRepo,
+      resolver,
+      cursor: null,
+      batchSize: 10,
+    });
+
+    expect(chunkRes.done).toBe(true);
+    const docs = await searchRepo.listDocuments();
+    const ids = docs.map((d) => d.id);
+    expect(ids).toEqual(["keep-a"]);
+  });
+
+  it("reproduction C4: createDexieSearchSourceResolver resolves entities from live Dexie database", async () => {
+    const handle = createDatabase("test-search-c4");
+    await handle.ready;
+    const db = handle.db;
+
+    // Seed live tables
+    await db.tasks.put({
+      id: "task-live-1",
+      record: { name: "Live Task", description: "From Dexie" },
+      latestVersion: 1,
+      createdAt: 1000,
+      updatedAt: 1000,
+      archivedAt: null,
+      origin: "first-party",
+      revision: 1,
+    });
+    await db.taskVersions.put({
+      taskId: "task-live-1",
+      version: 1,
+      version_: { title: "Live Task Version 1" },
+      createdAt: 1000,
+    });
+
+    await db.runSummaries.put({
+      id: "run-live-1",
+      kind: "full",
+      summary: { name: "Live Run" },
+      revision: 1,
+      createdAt: 2000,
+      completedAt: 2500,
+      status: "completed",
+      mode: "eval",
+      sourceKind: "eval",
+      sourceProtocolFingerprint: null,
+      sourceExperimentTaskAttemptId: null,
+      modelKeys: ["gpt-4o"],
+    });
+
+    const resolver = createDexieSearchSourceResolver(db);
+    const taskDoc = await resolver.resolveDocument({ type: "task", id: "task-live-1" });
+    expect(taskDoc).not.toBeNull();
+    expect(taskDoc?.id).toBe("task-live-1");
+    expect(taskDoc?.title).toBe("Live Task");
+
+    const runDoc = await resolver.resolveDocument({ type: "record", id: "run-live-1" });
+    expect(runDoc).not.toBeNull();
+    expect(runDoc?.id).toBe("run-live-1");
+    expect(runDoc?.title).toBe("Live Run");
+
+    const allSources = await resolver.listAllSources!();
+    const allIds = allSources.map((s) => s.id);
+    expect(allIds).toContain("task-live-1");
+    expect(allIds).toContain("run-live-1");
   });
 });
 

@@ -11,6 +11,7 @@
 // =============================================================================
 
 import {
+  assertSafeString,
   parseSearchDocument,
   SEARCH_INDEX_SCHEMA_VERSION,
   type SearchDocument,
@@ -31,6 +32,7 @@ export function extractTokens(...inputs: (string | undefined | null | string[])[
     const list = Array.isArray(input) ? input : [input];
     for (const item of list) {
       if (typeof item !== "string" || item.length === 0) continue;
+      assertSafeString("input", item);
       const folded = foldSearchText(item);
       const words = folded.split(/[\s_\-./\\:,;!?'"()[\]{}#@&+=<>*^%$~`]+/);
       for (const word of words) {
@@ -547,7 +549,10 @@ export async function rebuildSearchIndex(deps: SearchRebuildDeps): Promise<Searc
     }
   }
 
-  await deps.searchRepo.putDocuments(validated);
+  await deps.searchRepo.clear();
+  if (validated.length > 0) {
+    await deps.searchRepo.putDocuments(validated);
+  }
 
   return {
     indexedCount: validated.length,
@@ -571,11 +576,16 @@ export interface SearchRebuildChunkResult {
 export async function rebuildSearchIndexChunk(
   deps: SearchRebuildChunkDeps,
 ): Promise<SearchRebuildChunkResult> {
+  const isFirstChunk = deps.cursor === null;
   const offset = deps.cursor ? Number.parseInt(deps.cursor, 10) || 0 : 0;
   let allSources: SearchDocument[] = [];
 
   if (deps.resolver.listAllSources) {
     allSources = await deps.resolver.listAllSources();
+  }
+
+  if (isFirstChunk) {
+    await deps.searchRepo.clear();
   }
 
   const chunk = allSources.slice(offset, offset + deps.batchSize);
@@ -730,4 +740,361 @@ export async function rebuildSearchIndexWithLease(deps: {
       // best-effort lease release
     }
   }
+}
+
+// --- Production Dexie Search Source Resolver (spec §2.4) -----------------------
+
+function getFieldString(obj: unknown, key: string, fallback = ""): string {
+  if (obj && typeof obj === "object" && key in obj) {
+    const val = (obj as Record<string, unknown>)[key];
+    if (typeof val === "string") return val;
+  }
+  return fallback;
+}
+
+function getFieldOptionalString(obj: unknown, key: string): string | undefined {
+  if (obj && typeof obj === "object" && key in obj) {
+    const val = (obj as Record<string, unknown>)[key];
+    if (typeof val === "string") return val;
+  }
+  return undefined;
+}
+
+function getFieldOptionalNumber(obj: unknown, key: string): number | undefined {
+  if (obj && typeof obj === "object" && key in obj) {
+    const val = (obj as Record<string, unknown>)[key];
+    if (typeof val === "number" && Number.isFinite(val)) return val;
+  }
+  return undefined;
+}
+
+export function createDexieSearchSourceResolver(
+  db: RSembleEvaluationDB,
+): SearchSourceResolver {
+  async function resolveDocument(ref: {
+    type: SearchDocumentType;
+    id: string;
+  }): Promise<SearchDocument | null> {
+    switch (ref.type) {
+      case "task": {
+        const task = await db.tasks.get(ref.id);
+        if (!task) return null;
+        const version = await db.taskVersions.get([ref.id, task.latestVersion]);
+        const name = getFieldString(task.record, "name");
+        const description = getFieldString(task.record, "description");
+        const versionTitle = getFieldString(version?.version_, "title");
+        return taskToSearchDocument(
+          {
+            id: task.id,
+            revision: task.revision,
+            name,
+            description,
+            updatedAt: task.updatedAt,
+            archivedAt: task.archivedAt,
+            origin: task.origin,
+          },
+          version
+            ? {
+                taskId: ref.id,
+                version: version.version,
+                title: versionTitle,
+                rubricId: getFieldOptionalString(version.version_, "rubricId"),
+                rubricVersion: getFieldOptionalNumber(version.version_, "rubricVersion"),
+                createdAt: version.createdAt,
+              }
+            : null,
+        );
+      }
+
+      case "task_set": {
+        const set = await db.taskSets.get(ref.id);
+        if (!set) return null;
+        const version = await db.taskSetVersions.get([ref.id, set.latestVersion]);
+        const name = getFieldString(set.record, "name");
+        const description = getFieldString(set.record, "description");
+        const versionName = getFieldString(version?.version_, "name");
+        return taskSetToSearchDocument(
+          {
+            id: set.id,
+            revision: set.revision,
+            name,
+            description,
+            updatedAt: set.updatedAt,
+            archivedAt: set.archivedAt,
+            origin: set.origin,
+          },
+          version
+            ? {
+                taskSetId: ref.id,
+                version: version.version,
+                name: versionName,
+                createdAt: version.createdAt,
+              }
+            : null,
+        );
+      }
+
+      case "rubric": {
+        const profile = await db.profiles.get(ref.id);
+        if (!profile) return null;
+        const name = getFieldString(profile.record, "name", getFieldString(profile.record, "title"));
+        return rubricToSearchDocument({
+          id: profile.id,
+          revision: profile.revision,
+          name,
+          updatedAt: profile.updatedAt,
+          archivedAt: profile.archivedAt,
+        });
+      }
+
+      case "comparison": {
+        const comp = await db.comparisonResults.get(ref.id);
+        if (comp) {
+          const compName = getFieldString(comp, "name", comp.title);
+          return comparisonToSearchDocument({
+            id: comp.id,
+            runId: comp.runId,
+            status: comp.status,
+            mode: comp.mode,
+            createdAt: comp.createdAt,
+            updatedAt: comp.updatedAt,
+            revision: comp.revision ?? 1,
+            name: compName,
+          });
+        }
+        const run = await db.runSummaries.get(ref.id);
+        if (run && (run.mode === "compare" || run.mode === "rank" || run.kind === "legacy")) {
+          const runName = getFieldOptionalString(run.summary, "name");
+          return comparisonToSearchDocument({
+            id: run.id,
+            runId: run.id,
+            status: run.status ?? "completed",
+            mode: run.mode ?? "compare",
+            createdAt: run.createdAt,
+            updatedAt: run.completedAt ?? run.createdAt,
+            revision: run.revision,
+            name: runName,
+          });
+        }
+        return null;
+      }
+
+      case "evaluation": {
+        const exp = await db.experiments.get(ref.id);
+        if (exp) {
+          return evaluationToSearchDocument({
+            id: exp.id,
+            revision: exp.revision,
+            suiteId: exp.suiteId,
+            suiteVersion: exp.suiteVersion,
+            protocolFingerprint: exp.protocolFingerprint,
+            createdAt: exp.createdAt,
+            status: exp.status,
+            name: getFieldOptionalString(exp.experiment, "name"),
+          });
+        }
+        const suite = await db.suites.get(ref.id);
+        if (suite) {
+          return evaluationToSearchDocument({
+            id: suite.id,
+            revision: suite.revision,
+            suiteId: suite.id,
+            suiteVersion: suite.version,
+            createdAt: suite.updatedAt,
+            status: "ready",
+            name: getFieldOptionalString(suite.suite, "name"),
+          });
+        }
+        return null;
+      }
+
+      case "fusion_study": {
+        const study = await db.studies.get(ref.id);
+        if (!study) return null;
+        const studyName = getFieldOptionalString(study, "name");
+        const claimLevel = getFieldString(study, "claimLevel", "exploratory");
+        const confirmationOf = getFieldOptionalString(study, "confirmationOf") ?? null;
+        return fusionStudyToSearchDocument({
+          id: study.id,
+          kind: study.kind ?? "fusion",
+          status: study.status ?? "draft",
+          claimLevel,
+          confirmationOf,
+          updatedAt: study.updatedAt,
+          archivedAt: study.archivedAt ?? null,
+          name: studyName,
+          revision: study.revision ?? 1,
+        });
+      }
+
+      case "model_configuration": {
+        const config = await db.modelConfigurations.get(ref.id);
+        if (!config) return null;
+        return modelConfigurationToSearchDocument({
+          id: config.id,
+          providerId: config.providerId,
+          requestedModel: config.requestedModel,
+          resolvedVersion: config.resolvedVersion ?? undefined,
+          observedTo: config.observedTo,
+        });
+      }
+
+      case "model_rollup": {
+        const rollup = await db.modelRollups.get(ref.id);
+        if (!rollup) return null;
+        return modelRollupToSearchDocument({
+          id: rollup.id,
+          name: rollup.name ?? rollup.id,
+          latestVersion: rollup.latestVersion,
+          revision: rollup.revision,
+          updatedAt: rollup.updatedAt,
+          archivedAt: rollup.archivedAt ?? null,
+        });
+      }
+
+      case "observation": {
+        const obs = await db.observations.get(ref.id);
+        if (!obs) return null;
+        return observationToSearchDocument({
+          id: obs.id,
+          sourceKind: obs.sourceKind,
+          sourceResultId: obs.sourceResultId,
+          taskId: obs.taskId,
+          taskInstanceId: obs.taskInstanceId,
+          modelConfigurationId: obs.modelConfigurationId,
+          observedAt: obs.observedAt,
+        });
+      }
+
+      case "record": {
+        const run = await db.runSummaries.get(ref.id);
+        if (!run) return null;
+        return recordToSearchDocument({
+          id: run.id,
+          kind: run.kind,
+          revision: run.revision,
+          createdAt: run.createdAt,
+          completedAt: run.completedAt,
+          status: run.status ?? "completed",
+          mode: run.mode ?? "eval",
+          modelKeys: run.modelKeys,
+          name: getFieldOptionalString(run.summary, "name"),
+        });
+      }
+
+      default:
+        return null;
+    }
+  }
+
+  async function listAllSources(): Promise<SearchDocument[]> {
+    const results: SearchDocument[] = [];
+
+    try {
+      const tasks = await db.tasks.toArray();
+      for (const task of tasks) {
+        try {
+          const doc = await resolveDocument({ type: "task", id: task.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const taskSets = await db.taskSets.toArray();
+      for (const set of taskSets) {
+        try {
+          const doc = await resolveDocument({ type: "task_set", id: set.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const profiles = await db.profiles.toArray();
+      for (const profile of profiles) {
+        try {
+          const doc = await resolveDocument({ type: "rubric", id: profile.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const comparisons = await db.comparisonResults.toArray();
+      for (const comp of comparisons) {
+        try {
+          const doc = await resolveDocument({ type: "comparison", id: comp.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const experiments = await db.experiments.toArray();
+      for (const exp of experiments) {
+        try {
+          const doc = await resolveDocument({ type: "evaluation", id: exp.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const studies = await db.studies.toArray();
+      for (const study of studies) {
+        try {
+          const doc = await resolveDocument({ type: "fusion_study", id: study.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const configs = await db.modelConfigurations.toArray();
+      for (const cfg of configs) {
+        try {
+          const doc = await resolveDocument({ type: "model_configuration", id: cfg.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const rollups = await db.modelRollups.toArray();
+      for (const r of rollups) {
+        try {
+          const doc = await resolveDocument({ type: "model_rollup", id: r.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const observations = await db.observations.toArray();
+      for (const obs of observations) {
+        try {
+          const doc = await resolveDocument({ type: "observation", id: obs.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    try {
+      const runs = await db.runSummaries.toArray();
+      for (const run of runs) {
+        try {
+          const doc = await resolveDocument({ type: "record", id: run.id });
+          if (doc) results.push(doc);
+        } catch {}
+      }
+    } catch {}
+
+    return results;
+  }
+
+  return {
+    resolveDocument,
+    listAllSources,
+  };
 }

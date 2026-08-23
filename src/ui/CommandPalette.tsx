@@ -30,9 +30,13 @@ import {
   createSearchIndexRepository,
   type SearchIndexRepository,
 } from "../lib/persistence/search-index-repository";
+import {
+  createDexieSearchSourceResolver,
+  verifyAndRepairHit,
+  type SearchSourceResolver,
+} from "../lib/search/search-reindex";
 import type { SearchHit, SearchPage } from "../lib/search/search-query";
 import type { SearchDocumentType } from "../lib/search/search-types";
-
 export const SEARCH_TYPE_LABELS: Record<SearchDocumentType, string> = {
   task: "Tasks",
   task_set: "Task Sets",
@@ -90,6 +94,8 @@ interface CommandPaletteProps {
   onFindRecord?: () => void;
   /** Optional Search repository override for tests or custom providers. */
   searchRepo?: SearchIndexRepository | null;
+  /** Optional Search resolver override for tests or custom providers. */
+  resolver?: SearchSourceResolver | null;
 }
 
 interface Command {
@@ -123,6 +129,7 @@ export function CommandPalette({
   onViewExperiment,
   onAbortExperiment,
   searchRepo,
+  resolver,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
@@ -137,6 +144,14 @@ export function CommandPalette({
     }
     return null;
   }, [searchRepo, db]);
+  const effectiveResolver = useMemo(() => {
+    if (resolver !== undefined) return resolver;
+    if (db) {
+      return createDexieSearchSourceResolver(db);
+    }
+    return null;
+  }, [resolver, db]);
+
 
   useEffect(() => {
     if (open) setQuery("");
@@ -457,8 +472,34 @@ export function CommandPalette({
                     query,
                     groupTitle,
                   ]}
-                  onSelect={() => {
+                  onSelect={async () => {
                     onClose();
+                    if (effectiveSearchRepo && effectiveResolver) {
+                      try {
+                        const result = await verifyAndRepairHit(
+                          {
+                            type: hit.document.type,
+                            id: hit.document.id,
+                            revision: hit.document.revision,
+                          },
+                          {
+                            searchRepo: effectiveSearchRepo,
+                            resolver: effectiveResolver,
+                          },
+                        );
+                        if (result.status === "removed") {
+                          return;
+                        }
+                        const targetHref =
+                          result.status === "repaired"
+                            ? result.document.ownerHref
+                            : hit.document.ownerHref;
+                        onNavigate?.(targetHref);
+                        return;
+                      } catch {
+                        // Fallback
+                      }
+                    }
                     onNavigate?.(hit.document.ownerHref);
                   }}
                   className="flex min-h-[44px] w-full items-center gap-3 rounded-md px-2.5 py-2 text-left data-[selected=true]:bg-card-hover"

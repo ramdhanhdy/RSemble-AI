@@ -5,9 +5,14 @@
 // SearchIndexRepository from the database context.
 // =============================================================================
 
-import { useContext, useMemo } from "react";
+import { useContext, useEffect, useMemo } from "react";
 import { RepositoryContext } from "../../lib/persistence/repository-context";
 import { createSearchIndexRepository } from "../../lib/persistence/search-index-repository";
+import {
+  createDexieSearchSourceResolver,
+  createDexieSearchReindexMetaStore,
+  rebuildSearchIndexWithLease,
+} from "../../lib/search/search-reindex";
 import { SearchWorkspace } from "./SearchWorkspace";
 
 export function SearchRoute() {
@@ -17,5 +22,28 @@ export function SearchRoute() {
     return db ? createSearchIndexRepository(db) : null;
   }, [db]);
 
-  return <SearchWorkspace searchRepo={searchRepo} />;
+  const resolver = useMemo(() => {
+    return db ? createDexieSearchSourceResolver(db) : null;
+  }, [db]);
+
+  useEffect(() => {
+    if (db && searchRepo && resolver) {
+      searchRepo
+        .countDocuments()
+        .then((count) => {
+          if (count === 0) {
+            rebuildSearchIndexWithLease({
+              searchRepo,
+              resolver,
+              meta: createDexieSearchReindexMetaStore(db),
+            }).catch(() => {
+              // Non-blocking background rebuild
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [db, searchRepo, resolver]);
+
+  return <SearchWorkspace searchRepo={searchRepo} resolver={resolver} />;
 }

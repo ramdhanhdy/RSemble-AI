@@ -11,6 +11,7 @@ import {
   createInMemorySearchIndexRepository,
   type SearchIndexRepository,
 } from "../../lib/persistence/search-index-repository";
+import type { SearchSourceResolver } from "../../lib/search/search-reindex";
 import { SearchWorkspace } from "./SearchWorkspace";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -53,6 +54,7 @@ interface Harness {
 
 function renderWorkspace(props: {
   repo?: SearchIndexRepository | null;
+  resolver?: SearchSourceResolver | null;
   initialEntries?: string[];
   onNavigate?: (path: string) => void;
 } = {}): Harness {
@@ -73,7 +75,16 @@ function renderWorkspace(props: {
       <MemoryRouter initialEntries={props.initialEntries ?? ["/search"]}>
         <LocationTracker />
         <Routes>
-          <Route path="/search" element={<SearchWorkspace searchRepo={repo} />} />
+          <Route
+            path="/search"
+            element={
+              <SearchWorkspace
+                searchRepo={repo}
+                resolver={props.resolver}
+                onNavigate={props.onNavigate}
+              />
+            }
+          />
           <Route path="*" element={<div data-mock-route>Other Route</div>} />
         </Routes>
       </MemoryRouter>,
@@ -283,6 +294,91 @@ describe("SearchWorkspace", () => {
       expect(cls).not.toContain("zinc-");
       expect(cls).not.toMatch(/\btext-text-muted\b/);
     }
+
+    act(() => h.root.unmount());
+  });
+  it("reproduction C3: verifies and drops deleted stale hit on select without navigating", async () => {
+    const repo = createInMemorySearchIndexRepository([
+      makeDoc("deleted-task", "task", "Deleted Task", "Sub", "/tasks/deleted-task", ["deleted", "task"]),
+    ]);
+
+    const resolver: SearchSourceResolver = {
+      async resolveDocument(ref) {
+        if (ref.id === "deleted-task") return null;
+        return null;
+      },
+    };
+
+    const onNavigateSpy = vi.fn();
+    const h = renderWorkspace({
+      repo,
+      resolver,
+      initialEntries: ["/search?q=deleted"],
+      onNavigate: onNavigateSpy,
+    });
+    await settle();
+
+    const hitLink = h.$('[data-search-hit] a');
+    expect(hitLink).toBeTruthy();
+
+    await act(async () => {
+      hitLink!.click();
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    });
+    await settle();
+
+    expect(onNavigateSpy).not.toHaveBeenCalled();
+    expect(await repo.getDocument("task", "deleted-task")).toBeNull();
+    expect(h.$$("[data-search-hit]")).toHaveLength(0);
+
+    act(() => h.root.unmount());
+  });
+
+  it("reproduction C3: verifies and navigates to repaired hit on select", async () => {
+    const repo = createInMemorySearchIndexRepository([
+      makeDoc("stale-task", "task", "Stale Task", "Sub", "/tasks/old-path", ["stale", "task"]),
+    ]);
+
+    const resolver: SearchSourceResolver = {
+      async resolveDocument(ref) {
+        if (ref.id === "stale-task") {
+          return {
+            type: "task",
+            id: "stale-task",
+            revision: 2,
+            title: "Repaired Task",
+            subtitle: "Repaired Sub",
+            ownerHref: "/tasks/repaired-path",
+            tokens: ["repaired", "task"],
+            updatedAt: 2000,
+            indexSchemaVersion: 1,
+          };
+        }
+        return null;
+      },
+    };
+
+    const onNavigateSpy = vi.fn();
+    const h = renderWorkspace({
+      repo,
+      resolver,
+      initialEntries: ["/search?q=stale"],
+      onNavigate: onNavigateSpy,
+    });
+    await settle();
+
+    const hitLink = h.$('[data-search-hit] a');
+    expect(hitLink).toBeTruthy();
+
+    await act(async () => {
+      hitLink!.click();
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    });
+    await settle();
+
+    expect(onNavigateSpy).toHaveBeenCalledWith("/tasks/repaired-path");
+    const repairedDoc = await repo.getDocument("task", "stale-task");
+    expect(repairedDoc?.revision).toBe(2);
 
     act(() => h.root.unmount());
   });

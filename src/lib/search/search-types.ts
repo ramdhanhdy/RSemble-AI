@@ -27,7 +27,7 @@ export interface SearchDocument {
   indexSchemaVersion: number;
 }
 
-const CREDENTIAL_LIKE = /sk-[A-Za-z0-9_-]{6,}|AIza[A-Za-z0-9_-]{10,}|Bearer\s+\S+/i;
+export const CREDENTIAL_LIKE = /\bsk-[A-Za-z0-9_-]{6,}|\bAIza[A-Za-z0-9_-]{10,}|\bBearer\s+\S+/i;
 const ALLOWED = new Set([
   "type",
   "id",
@@ -63,7 +63,7 @@ function isType(v: unknown): v is SearchDocumentType {
   return typeof v === "string" && (SEARCH_DOCUMENT_TYPES as readonly string[]).includes(v);
 }
 
-function assertSafeString(label: string, value: string): void {
+export function assertSafeString(label: string, value: string): void {
   if (CREDENTIAL_LIKE.test(value)) {
     throw new Error(`Search ${label} must not contain secret text`);
   }

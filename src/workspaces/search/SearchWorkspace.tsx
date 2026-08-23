@@ -15,7 +15,7 @@
 // =============================================================================
 
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   BarChart3,
   Cpu,
@@ -37,7 +37,10 @@ import {
 } from "../../lib/search/search-types";
 import type { SearchHit, SearchPage } from "../../lib/search/search-query";
 import type { SearchIndexRepository } from "../../lib/persistence/search-index-repository";
-
+import {
+  verifyAndRepairHit,
+  type SearchSourceResolver,
+} from "../../lib/search/search-reindex";
 const PAGE_SIZE = 100;
 
 export const SEARCH_TYPE_LABELS: Record<SearchDocumentType, string> = {
@@ -91,9 +94,16 @@ function isValidSearchType(v: string | null): v is SearchDocumentType {
 
 export interface SearchWorkspaceProps {
   searchRepo?: SearchIndexRepository | null;
+  resolver?: SearchSourceResolver | null;
+  onNavigate?: (href: string) => void;
 }
 
-export function SearchWorkspace({ searchRepo }: SearchWorkspaceProps) {
+export function SearchWorkspace({
+  searchRepo,
+  resolver,
+  onNavigate,
+}: SearchWorkspaceProps) {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const urlQuery = searchParams.get("q") ?? "";
@@ -222,6 +232,63 @@ export function SearchWorkspace({ searchRepo }: SearchWorkspaceProps) {
   const currentTotal = page ? page.total : 0;
   const totalPages = Math.ceil(currentTotal / PAGE_SIZE) || 1;
   const currentPage = Math.floor(pageOffset / PAGE_SIZE) + 1;
+
+  const handleSelectHit = async (
+    e: React.MouseEvent,
+    doc: SearchHit["document"],
+  ) => {
+    e.preventDefault();
+    if (searchRepo && resolver) {
+      try {
+        const result = await verifyAndRepairHit(
+          { type: doc.type, id: doc.id, revision: doc.revision },
+          { searchRepo, resolver },
+        );
+        if (result.status === "removed") {
+          setPage((prev) => {
+            if (!prev) return null;
+            const items = prev.items.filter(
+              (i) => !(i.document.type === doc.type && i.document.id === doc.id),
+            );
+            return {
+              ...prev,
+              items,
+              total: Math.max(0, prev.total - 1),
+            };
+          });
+          setAllTypesPage((prev) => {
+            if (!prev) return null;
+            const items = prev.items.filter(
+              (i) => !(i.document.type === doc.type && i.document.id === doc.id),
+            );
+            return {
+              ...prev,
+              items,
+              total: Math.max(0, prev.total - 1),
+            };
+          });
+          return;
+        }
+        const targetHref =
+          result.status === "repaired"
+            ? result.document.ownerHref
+            : doc.ownerHref;
+        if (onNavigate) {
+          onNavigate(targetHref);
+        } else {
+          navigate(targetHref);
+        }
+        return;
+      } catch {
+        // Fallback
+      }
+    }
+    if (onNavigate) {
+      onNavigate(doc.ownerHref);
+    } else {
+      navigate(doc.ownerHref);
+    }
+  };
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
@@ -383,6 +450,7 @@ export function SearchWorkspace({ searchRepo }: SearchWorkspaceProps) {
                 >
                   <Link
                     to={doc.ownerHref}
+                    onClick={(e) => handleSelectHit(e, doc)}
                     className="group flex min-h-[48px] flex-col justify-between gap-2.5 rounded-lg border border-edge bg-raised p-3.5 transition-colors hover:border-edge-bright hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex-row sm:items-center"
                   >
                     <div className="flex min-w-0 items-start gap-3">

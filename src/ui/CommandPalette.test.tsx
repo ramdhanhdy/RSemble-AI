@@ -9,6 +9,7 @@ import {
   createInMemorySearchIndexRepository,
   type SearchIndexRepository,
 } from "../lib/persistence/search-index-repository";
+import type { SearchSourceResolver } from "../lib/search/search-reindex";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -57,6 +58,7 @@ interface PaletteProps {
   activeExperimentId?: string | null;
   canRun?: boolean;
   searchRepo?: SearchIndexRepository | null;
+  resolver?: SearchSourceResolver | null;
 }
 
 interface Spies {
@@ -109,6 +111,7 @@ function renderPalette(overrides: PaletteProps = {}): { h: Harness; spies: Spies
       onViewExperiment={spies.onViewExperiment}
       onAbortExperiment={spies.onAbortExperiment}
       searchRepo={overrides.searchRepo}
+      resolver={overrides.resolver}
     />,
   );
   return { h, spies };
@@ -567,6 +570,36 @@ describe("CommandPalette cross-entity local search integration", () => {
     // Both Tasks and Evaluations groups should be present if both match
     expect(headers).toContain("Tasks");
     expect(headers).toContain("Evaluations");
+    cleanup(h);
+  });
+  it("reproduction C3: verifies and does not navigate when selecting deleted stale hit in CommandPalette", async () => {
+    const searchRepo = createInMemorySearchIndexRepository([
+      makeDoc("deleted-item", "task", "Deleted Item", "Sub", "/tasks/deleted-item", ["deleted", "item"]),
+    ]);
+    const resolver: SearchSourceResolver = {
+      async resolveDocument(ref) {
+        if (ref.id === "deleted-item") return null;
+        return null;
+      },
+    };
+
+    const { h, spies } = renderPalette({ searchRepo, resolver });
+    await settle();
+
+    typeQuery(h, "deleted");
+    await settle();
+
+    const option = findOption(h, "Deleted Item");
+    expect(option).toBeTruthy();
+
+    await act(async () => {
+      option!.click();
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(spies.onClose).toHaveBeenCalledTimes(1);
+    expect(spies.onNavigate).not.toHaveBeenCalled();
+    expect(await searchRepo.getDocument("task", "deleted-item")).toBeNull();
     cleanup(h);
   });
 });
