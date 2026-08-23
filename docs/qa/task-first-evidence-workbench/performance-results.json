@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-08-23T21:21:14.790Z",
+  "generatedAt": "2026-08-23T21:47:34.128Z",
   "environment": {
     "os": "Windows_NT 10.0.26200 (win32)",
     "arch": "x64",
     "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
     "cpuCount": 16,
     "totalMemoryMb": 16005,
-    "freeMemoryMb": 1822,
+    "freeMemoryMb": 2363,
     "node": "v25.9.0",
-    "pid": 13776
+    "pid": 16656
   },
   "spec": "docs/specs/pending/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §7",
   "summary": {
@@ -22,7 +22,7 @@
       "name": "command-palette search (10,000 entities, first 20 grouped hits)",
       "corpusSize": 10000,
       "declaredBudgetMs": 150,
-      "measuredP95Ms": 28.76,
+      "measuredP95Ms": 28.72,
       "hitsReturned": 20,
       "groupsReturned": 10,
       "pass": true
@@ -40,7 +40,7 @@
       "name": "Records first page query over 10,000 summaries (p95)",
       "corpusSize": 10000,
       "declaredBudgetMs": 200,
-      "measuredP95Ms": 0.79,
+      "measuredP95Ms": 0.82,
       "pageRows": 50,
       "totalRecords": 10000,
       "pass": true
@@ -49,7 +49,7 @@
       "name": "Attention recompute over 10,000 items (p95)",
       "corpusSize": 10000,
       "declaredBudgetMs": 150,
-      "measuredP95Ms": 0.78,
+      "measuredP95Ms": 0.77,
       "visibleItemsCount": 5,
       "deduplicatedTotal": 1500,
       "overflowLabel": "9+",
@@ -60,16 +60,16 @@
       "name": "model evidence query over 50,000 Observations (uncached <= 1s, cached <= 100ms)",
       "corpusSize": 50000,
       "declaredUncachedBudgetMs": 1000,
-      "measuredUncachedP95Ms": 17.39,
+      "measuredUncachedP95Ms": 17.85,
       "declaredCachedBudgetMs": 100,
-      "measuredCachedP95Ms": 0.0024,
+      "measuredCachedP95Ms": 14.3619,
       "workerOffloadSupported": true,
       "pass": true
     },
     "startupMigrationInspection": {
       "name": "startup lightweight migration inspection on verified current database (p95)",
       "declaredBudgetMs": 100,
-      "measuredP95Ms": 0.47,
+      "measuredP95Ms": 0.49,
       "inspectedStepsCount": 7,
       "allStepsVerified": true,
       "pass": true
@@ -79,7 +79,7 @@
       "corpusSize": 1000,
       "chunkCount": 10,
       "declaredMaxChunkBudgetMs": 50,
-      "measuredMaxChunkMs": 10.78,
+      "measuredMaxChunkMs": 9.61,
       "totalIndexed": 1000,
       "pass": true
     },

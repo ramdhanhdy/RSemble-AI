@@ -46,10 +46,19 @@ import {
   runMigrationRegistry,
   verifyMigrationState,
 } from "../src/lib/persistence/migration-registry";
-import { migrateEmbeddedLegacyTasks } from "../src/lib/persistence/canonical-task-migration";
-import { migrateSuitesToTaskSets } from "../src/lib/persistence/task-set-migration";
+import {
+  canonicalTaskMigrationMarkerKey,
+  migrateEmbeddedLegacyTasks,
+} from "../src/lib/persistence/canonical-task-migration";
+import {
+  migrateSuitesToTaskSets,
+  taskSetMigrationMarkerKey,
+} from "../src/lib/persistence/task-set-migration";
 import { migrateComparisonResults } from "../src/lib/persistence/comparison-result-migration";
-import { ensureFusionToResearchLabMigration } from "../src/lib/migrations/fusion-to-research-lab";
+import {
+  ensureFusionToResearchLabMigration,
+  fusionToResearchLabReceiptKey,
+} from "../src/lib/migrations/fusion-to-research-lab";
 import { countEvidence } from "../src/lib/evidence/evidence-counting";
 import { computePairedEvidence } from "../src/lib/model-profiles/paired-comparison";
 import {
@@ -81,7 +90,10 @@ import { buildValidArchiveV3Fixture } from "../src/lib/persistence/archive-v3-fi
 import { EVIDENCE_PROHIBITED_KEYS } from "../src/lib/evidence/evidence-validation";
 import { selectProfileObservations } from "../src/lib/model-profiles/profile-observation-selection";
 import { canonicalizeModelEvidenceQuery } from "../src/lib/model-profiles/model-evidence-query";
-
+import { queryEvaluationAttention } from "../src/lib/attention/evaluation-attention";
+import { queryComparisonAttention } from "../src/lib/attention/comparison-attention";
+import { mergeDeduplicateAndSortAttention } from "../src/lib/attention/attention-query";
+import { isAttentionItem, isAttentionKind } from "../src/lib/attention/attention-types";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("Cross-child invariant harness (spec §6)", () => {
@@ -170,6 +182,55 @@ describe("Cross-child invariant harness (spec §6)", () => {
       const studyChildren = await recordsRepo.getPolicyStudyChildren("study-exploratory");
       expect(studyChildren.trialCount).toBe(2);
       expect(studyChildren.observationCount).toBe(1);
+    });
+
+    it("persists and retrieves exact Task Sets, versions, materializations, and repaired evaluation records", async () => {
+      const taskSet = await db.taskSets.get("taskset-1");
+      expect(taskSet).toBeDefined();
+      expect(taskSet?.record.name).toBe("Frontend Reliability Set");
+      expect(taskSet?.latestVersion).toBe(2);
+
+      const v1 = await db.taskSetVersions.get(["taskset-1", 1]);
+      expect(v1).toBeDefined();
+      expect(v1?.version_.members).toHaveLength(1);
+
+      const v2 = await db.taskSetVersions.get(["taskset-1", 2]);
+      expect(v2).toBeDefined();
+      expect(v2?.version_.members).toHaveLength(2);
+
+      const mat = await db.taskSetMaterializations.get("mat-1");
+      expect(mat).toBeDefined();
+      expect(mat?.taskSetId).toBe("taskset-1");
+      expect(mat?.taskSetVersion).toBe(1);
+
+      const evalRepo = createEvaluationRepository(db);
+      const repaired = await evalRepo.getExperiment("exp-repaired");
+      expect(repaired).toBeDefined();
+      expect(repaired?.status).toBe("completed");
+      expect(repaired?.tasks[0].selectedAttemptId).toBe("att-repair-2");
+      expect(repaired?.tasks[0].attempts[1].repair).toMatchObject({
+        kind: "missing-cells",
+        baseRunId: "run-1",
+      });
+
+      const refuseRun = await createRunRepository(db).get("run-refuse");
+      expect(refuseRun).toBeDefined();
+      expect(refuseRun?.fusion?.acceptedAttemptId).toBe("fusion-att-2");
+      expect(refuseRun?.fusion?.attempts).toHaveLength(2);
+
+      // ID collision across collections: distinct tables preserve same ID without conflict
+      const colTask = await db.tasks.get("collision-entity-1");
+      const colTaskSet = await db.taskSets.get("collision-entity-1");
+      expect(colTask).toBeDefined();
+      expect(colTaskSet).toBeDefined();
+      expect(colTask?.record.name).toBe("ID Collision Task Entity");
+      expect(colTaskSet?.record.name).toBe("ID Collision TaskSet Entity");
+
+      // Partial migration state: research lab receipt stored while task set migration pending
+      const receipt = await db.storageMeta.get(fusionToResearchLabReceiptKey);
+      expect(receipt).toBeDefined();
+      const taskSetMarker = await db.storageMeta.get(taskSetMigrationMarkerKey);
+      expect(taskSetMarker).toBeUndefined();
     });
   });
 
@@ -480,6 +541,31 @@ describe("Cross-child invariant harness (spec §6)", () => {
         expect(["exact", "crosswalk", "unresolved"]).toContain(owner.confidence);
       }
     });
+
+    it("attention query preserves exact AttentionKind, ownerHref, and non-execution handoff", () => {
+      const evalItems = queryEvaluationAttention({ experiment: corpus.experiments.expIncomplete });
+      expect(evalItems.length).toBeGreaterThan(0);
+
+      for (const item of evalItems) {
+        expect(isAttentionItem(item)).toBe(true);
+        expect(isAttentionKind(item.kind)).toBe(true);
+        expect(item.kind).toBe("evaluation_recovery");
+        expect(item.ownerHref).toBe(`/evaluations/results/${corpus.experiments.expIncomplete.id}`);
+        // Non-execution handoff: purely navigational, no lifecycle/execution properties
+        expect((item as Record<string, unknown>).execute).toBeUndefined();
+        expect((item as Record<string, unknown>).onRecover).toBeUndefined();
+        expect((item as Record<string, unknown>).retry).toBeUndefined();
+        expect((item as Record<string, unknown>).status).toBeUndefined();
+        expect((item as Record<string, unknown>).dismissed).toBeUndefined();
+      }
+
+      const compItems = queryComparisonAttention({ index: corpus.comparisons.canonical });
+      expect(compItems).toEqual([]);
+
+      const merged = mergeDeduplicateAndSortAttention(evalItems);
+      expect(merged.total).toBe(evalItems.length);
+      expect(merged.items[0].ownerHref).toBe(`/evaluations/results/${corpus.experiments.expIncomplete.id}`);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -585,6 +671,13 @@ describe("Cross-child invariant harness (spec §6)", () => {
       expect(xwalkConfirmed).toBeDefined();
       expect(xwalkConfirmed?.taskSetId).toBe("taskset-1");
       expect(xwalkConfirmed?.version).toBe(2);
+
+      const xwalkExp = await db.taskSetOwnershipCrosswalk.get(
+        "ts-xwalk:exp:exp-complete",
+      );
+      expect(xwalkExp).toBeDefined();
+      expect(xwalkExp?.status).toBe("unresolved");
+      expect(xwalkExp?.version).toBeNull();
     });
   });
 

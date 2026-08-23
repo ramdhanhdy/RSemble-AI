@@ -327,15 +327,11 @@ async function run() {
     uncachedLatencies.sort((a, b) => a - b);
     const uncachedP95 = uncachedLatencies[Math.floor(uncachedLatencies.length * 0.95)];
 
-    // Cached query
-    const cache = new Map();
-    const cacheKey = JSON.stringify(query);
-    cache.set(cacheKey, selectProfileObservations(query, corpus));
-
+    // Warm / repeated query execution on the real selector (no synthetic Map)
     const cachedLatencies = [];
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 20; i++) {
       const tc0 = performance.now();
-      cache.get(cacheKey);
+      selectProfileObservations(query, corpus);
       cachedLatencies.push(performance.now() - tc0);
     }
     cachedLatencies.sort((a, b) => a - b);
