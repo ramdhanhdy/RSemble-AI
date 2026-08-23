@@ -67,10 +67,11 @@ async function waitForServer(url, attempts = 80) {
   throw new Error(`Application server did not become ready at ${url}.`);
 }
 
-let previewProcess = null;
-if (explicitBaseUrl) {
-  await waitForServer(baseUrl);
-} else {
+async function startApplicationServer() {
+  if (explicitBaseUrl) {
+    await waitForServer(baseUrl);
+    return null;
+  }
   if (await serverResponds(baseUrl)) {
     throw new Error(
       `Port ${new URL(baseUrl).port || "5176"} is already serving another process. ` +
@@ -79,7 +80,7 @@ if (explicitBaseUrl) {
   }
   await runVite(["build"], "Vite production build");
   const previewUrl = new URL(baseUrl);
-  previewProcess = spawn(
+  const managedPreview = spawn(
     process.execPath,
     [
       viteBin,
@@ -96,13 +97,19 @@ if (explicitBaseUrl) {
       stdio: "inherit",
     },
   );
-  const previewFailure = new Promise((_, reject) => {
-    previewProcess.once("error", reject);
-    previewProcess.once("exit", (code) => {
-      reject(new Error(`Vite production preview exited with code ${code ?? "unknown"}.`));
+  try {
+    const previewFailure = new Promise((_, reject) => {
+      managedPreview.once("error", reject);
+      managedPreview.once("exit", (code) => {
+        reject(new Error(`Vite production preview exited with code ${code ?? "unknown"}.`));
+      });
     });
-  });
-  await Promise.race([waitForServer(baseUrl), previewFailure]);
+    await Promise.race([waitForServer(baseUrl), previewFailure]);
+    return managedPreview;
+  } catch (error) {
+    managedPreview.kill();
+    throw error;
+  }
 }
 
 const runId = Date.now();
@@ -110,21 +117,23 @@ const userDataDir = path.join(browserDir, `profile-${runId}`);
 const diskCacheDir = path.join(browserDir, `cache-${runId}`);
 const crashDumpsDir = path.join(browserDir, `crashes-${runId}`);
 
-const chrome = spawn(
-  chromePath,
-  [
-    "--headless=new",
-    "--disable-gpu",
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${userDataDir}`,
-    `--disk-cache-dir=${diskCacheDir}`,
-    `--crash-dumps-dir=${crashDumpsDir}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "about:blank",
-  ],
-  { stdio: "ignore" },
-);
+function startChrome() {
+  return spawn(
+    chromePath,
+    [
+      "--headless=new",
+      "--disable-gpu",
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${userDataDir}`,
+      `--disk-cache-dir=${diskCacheDir}`,
+      `--crash-dumps-dir=${crashDumpsDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "about:blank",
+    ],
+    { stdio: "ignore" },
+  );
+}
 
 async function getPageWebSocketUrl() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -150,22 +159,18 @@ async function getPageWebSocketUrl() {
   throw new Error("Chrome did not expose a CDP page target.");
 }
 
-const socket = new WebSocket(await getPageWebSocketUrl());
+let previewProcess = null;
+let chrome = null;
+let socket = null;
 let nextMessageId = 0;
 const pending = new Map();
-socket.onmessage = (event) => {
-  const message = JSON.parse(event.data);
-  const resolve = pending.get(message.id);
-  if (!resolve) return;
-  pending.delete(message.id);
-  resolve(message);
-};
-await new Promise((resolve) => {
-  socket.onopen = resolve;
-});
 
 function send(method, params = {}) {
   return new Promise((resolve, reject) => {
+    if (!socket) {
+      reject(new Error(`Cannot send ${method} before the CDP socket is open.`));
+      return;
+    }
     const id = ++nextMessageId;
     pending.set(id, (message) => {
       if (message.error) {
@@ -343,6 +348,37 @@ async function verifyPipelineMotionCss(name, expectedAnimations) {
 }
 
 try {
+  previewProcess = await startApplicationServer();
+  chrome = startChrome();
+  const chromeFailure = new Promise((_, reject) => {
+    chrome.once("error", reject);
+    chrome.once("exit", (code) => {
+      reject(new Error(`Chrome exited before CDP connected with code ${code ?? "unknown"}.`));
+    });
+  });
+  const pageWebSocketUrl = await Promise.race([getPageWebSocketUrl(), chromeFailure]);
+  socket = new WebSocket(pageWebSocketUrl);
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    const resolve = pending.get(message.id);
+    if (!resolve) return;
+    pending.delete(message.id);
+    resolve(message);
+  };
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out opening the CDP WebSocket.")),
+      5000,
+    );
+    socket.onopen = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    socket.onerror = () => {
+      clearTimeout(timeout);
+      reject(new Error("Failed to open the CDP WebSocket."));
+    };
+  });
   await send("Page.enable");
   await send("Runtime.enable");
   await send("Page.addScriptToEvaluateOnNewDocument", {
@@ -522,7 +558,7 @@ try {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  socket.close();
-  chrome.kill();
+  socket?.close();
+  chrome?.kill();
   previewProcess?.kill();
 }
