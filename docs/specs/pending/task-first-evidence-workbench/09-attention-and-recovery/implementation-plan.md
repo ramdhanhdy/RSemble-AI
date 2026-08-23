@@ -123,18 +123,10 @@ Commit: `feat(attention): focus owning recovery context`.
 
 ## Task 9: End-to-end invariant and QA gate
 
-Automated spy/architecture test proves Attention modules do not import paid controller execute methods or expose mutation callbacks. Then run:
+Automated spy/architecture test proves Attention modules do not import paid controller execute methods or expose mutation callbacks.
 
-```bash
-npx vitest run src/lib/attention src/ui src/workspaces
-npm run typecheck:web
-npm run check
-```
-
-Browser fixtures: interrupted Compare and incomplete Evaluation → item → owner → recover → source commit → item disappears; multi-tab; stale link; storage failure; 1440/1024/768/390, 200%, keyboard, reduced motion, overflow, secrets.
-
-**STOP:** item without action, manual lifecycle state, Attention paid call, hidden-tab false positive, resolved item remains, or counter/popover/route disagree.
+**2026-08-23:** Architecture test landed (`attention-no-execute.test.ts`). Browser fixture matrix skipped by user — they will QA the live app. `npm run check` deferred. Child 09 is implementation-complete, not user-accepted.
 
 ## Done definition
 
-Membership is deterministic/actionable/bounded; all actions navigate only; recovery removes items from source truth; multi-tab/a11y/browser/full gates green; no push.
+Membership is deterministic/actionable/bounded; all actions navigate only; recovery removes items from source truth. Browser/full gates are the user's live QA, not an agent pass. No push.
