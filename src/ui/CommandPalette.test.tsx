@@ -4,6 +4,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { CommandPalette } from "./CommandPalette";
 import type { WorkspaceKind } from "./useActionShortcuts";
+import type { SearchDocument, SearchDocumentType } from "../lib/search/search-types";
+import {
+  createInMemorySearchIndexRepository,
+  type SearchIndexRepository,
+} from "../lib/persistence/search-index-repository";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -51,6 +56,7 @@ interface PaletteProps {
   workspace?: WorkspaceKind;
   activeExperimentId?: string | null;
   canRun?: boolean;
+  searchRepo?: SearchIndexRepository | null;
 }
 
 interface Spies {
@@ -102,6 +108,7 @@ function renderPalette(overrides: PaletteProps = {}): { h: Harness; spies: Spies
       activeExperimentId={overrides.activeExperimentId}
       onViewExperiment={spies.onViewExperiment}
       onAbortExperiment={spies.onAbortExperiment}
+      searchRepo={overrides.searchRepo}
     />,
   );
   return { h, spies };
@@ -396,6 +403,170 @@ describe("CommandPalette cmdk interaction contract", () => {
 
     expect(spies.onRun).not.toHaveBeenCalled();
     expect(spies.onClose).not.toHaveBeenCalled();
+    cleanup(h);
+  });
+});
+
+describe("CommandPalette cross-entity local search integration", () => {
+  function makeDoc(
+    id: string,
+    type: SearchDocumentType,
+    title: string,
+    subtitle = "",
+    ownerHref = `/${type}/${id}`,
+    tokens: string[] = [],
+  ): SearchDocument {
+    return {
+      type,
+      id,
+      revision: 1,
+      title,
+      subtitle,
+      ownerHref,
+      tokens: tokens.length > 0 ? tokens : title.toLowerCase().split(/\s+/),
+      updatedAt: 1000,
+      indexSchemaVersion: 1,
+    };
+  }
+  const SEARCH_CORPUS: SearchDocument[] = [
+    makeDoc("t_eval_1", "task", "Evaluation benchmark task", "Core task for eval", "/tasks/t_eval_1", ["evaluation", "benchmark", "task"]),
+    makeDoc("rubric_score_1", "rubric", "Quality scoring rubric", "Rubric with grading criteria", "/evaluations/rubrics/rubric_score_1", ["quality", "scoring", "rubric"]),
+    makeDoc("model_sonnet_1", "model_configuration", "Claude 3.5 Sonnet config", "Temperature 0.7", "/models/profiles/model_sonnet_1", ["claude", "sonnet", "config"]),
+    makeDoc("eval_nightly_1", "evaluation", "Nightly eval run", "Automated execution", "/evaluations/results/eval_nightly_1", ["nightly", "eval", "run"]),
+    makeDoc("rec_1042", "record", "Record #1042", "Historical run", "/records/run/rec_1042", ["record", "1042"]),
+  ];
+
+  it("renders grouped search hits from searchRepo when query is typed", async () => {
+    const searchRepo = createInMemorySearchIndexRepository(SEARCH_CORPUS);
+    const { h } = renderPalette({ searchRepo });
+    await settle();
+
+    typeQuery(h, "sonnet");
+    await settle();
+
+    const optionText = optionLabels(h);
+    expect(optionText).toContain("Claude 3.5 Sonnet config");
+
+    const headers = h.$$("[cmdk-group-heading]").map((el) => el.textContent?.trim() ?? "");
+    expect(headers).toContain("Model Configurations");
+    cleanup(h);
+  });
+
+  it("caps rendered search hits at 20", async () => {
+    const hugeCorpus: SearchDocument[] = Array.from({ length: 30 }, (_, i) =>
+      makeDoc(`item-${i}`, "task", `Search item task ${i}`, `Subtitle ${i}`, `/tasks/item-${i}`, ["search", "item"]),
+    );
+    const searchRepo = createInMemorySearchIndexRepository(hugeCorpus);
+    const { h } = renderPalette({ searchRepo });
+    await settle();
+
+    typeQuery(h, "search item");
+    await settle();
+
+    const searchHitOptions = h
+      .$$('[role="option"]')
+      .filter((el) => el.textContent?.includes("Search item task"));
+    expect(searchHitOptions.length).toBeLessThanOrEqual(20);
+    expect(searchHitOptions.length).toBe(20);
+    cleanup(h);
+  });
+
+  it("selecting a search hit calls onNavigate with ownerHref and closes the palette", async () => {
+    const searchRepo = createInMemorySearchIndexRepository(SEARCH_CORPUS);
+    const { h, spies } = renderPalette({ searchRepo });
+    await settle();
+
+    typeQuery(h, "scoring");
+    await settle();
+
+    const rubricOption = findOption(h, "Quality scoring rubric");
+    expect(rubricOption).toBeTruthy();
+    act(() => {
+      rubricOption!.click();
+    });
+
+    expect(spies.onClose).toHaveBeenCalledTimes(1);
+    expect(spies.onNavigate).toHaveBeenCalledWith("/evaluations/rubrics/rubric_score_1");
+    cleanup(h);
+  });
+
+  it("renders 'View all results' option and routes to /search?q=...", async () => {
+    const searchRepo = createInMemorySearchIndexRepository(SEARCH_CORPUS);
+    const { h, spies } = renderPalette({ searchRepo });
+    await settle();
+
+    typeQuery(h, "benchmark");
+    await settle();
+
+    const viewAll = h
+      .$$('[role="option"]')
+      .find((el) => el.textContent?.includes("View all results"));
+    expect(viewAll).toBeTruthy();
+
+    act(() => {
+      viewAll!.click();
+    });
+
+    expect(spies.onClose).toHaveBeenCalledTimes(1);
+    expect(spies.onNavigate).toHaveBeenCalledWith("/search?q=benchmark");
+    cleanup(h);
+  });
+
+  it("never renders secrets or credential patterns in search hit rows", async () => {
+    const searchRepo = createInMemorySearchIndexRepository(SEARCH_CORPUS);
+    const { h } = renderPalette({ searchRepo });
+    await settle();
+
+    typeQuery(h, "eval");
+    await settle();
+
+    const html = h.container.innerHTML;
+    expect(html).not.toMatch(/sk-[A-Za-z0-9_-]{6,}|AIza[A-Za-z0-9_-]{10,}|Bearer\s+\S+/i);
+    cleanup(h);
+  });
+
+  it("handles search repository errors gracefully without crashing the palette", async () => {
+    const failingRepo: SearchIndexRepository = {
+      ...createInMemorySearchIndexRepository(),
+      search: vi.fn().mockRejectedValue(new Error("Index access failed")),
+    };
+    const { h } = renderPalette({ searchRepo: failingRepo });
+    await settle();
+
+    typeQuery(h, "benchmark");
+    await settle();
+
+    // Palette dialog must still be mounted and responsive
+    expect(h.$("[cmdk-dialog]")).toBeTruthy();
+    cleanup(h);
+  });
+
+  it("preserves existing static commands when query matches both commands and entities", async () => {
+    const searchRepo = createInMemorySearchIndexRepository(SEARCH_CORPUS);
+    const { h } = renderPalette({ searchRepo });
+    await settle();
+
+    typeQuery(h, "records");
+    await settle();
+
+    const labels = optionLabels(h);
+    expect(labels).toContain("Go to Records");
+    expect(labels).toContain("Record #1042");
+    cleanup(h);
+  });
+
+  it("keeps type groups visible and does not coerce entity types", async () => {
+    const searchRepo = createInMemorySearchIndexRepository(SEARCH_CORPUS);
+    const { h } = renderPalette({ searchRepo });
+    await settle();
+
+    typeQuery(h, "eval");
+    await settle();
+
+    const headers = h.$$("[cmdk-group-heading]").map((el) => el.textContent?.trim() ?? "");
+    // Both Tasks and Evaluations groups should be present if both match
+    expect(headers).toContain("Tasks");
+    expect(headers).toContain("Evaluations");
     cleanup(h);
   });
 });
