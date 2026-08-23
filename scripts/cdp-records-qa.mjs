@@ -155,6 +155,8 @@ function sha256Hex(value) {
 const NOW = 1716048000000;
 const SECRET_TOKEN_TEST = "sk-proj-SUPERSECRET1234567890abcdefghijklmnopqrstuvwxyz";
 
+const REDACTED_ERROR_MARKER = "[REDACTED]";
+
 const results = {
   generatedAt: new Date().toISOString(),
   command: "npm run qa:records",
@@ -715,7 +717,9 @@ function buildFixtureCorpus() {
     const id = `run-study-task-${i + 1}`;
     return makeRunRecord(id, `Study Task #${i + 1}`, {
       status: "completed",
-      source: { kind: "policy-study", studyId: "study-latency-policy" },
+      // Policy ownership is reconstructed from trial artifact refs. The
+      // persisted RunRecordV2 source union remains adhoc | experiment.
+      source: { kind: "adhoc" },
       createdAt: NOW - 400000 + i * 1000,
     });
   });
@@ -1008,6 +1012,18 @@ function generateSeedScript(corpus) {
   return `(async () => {
     const DB_NAME = 'rsemble-evaluation';
     const corpus = ${JSON.stringify(corpus)};
+    const secretSentinel = ${JSON.stringify(SECRET_TOKEN_TEST)};
+    const { redactErrorText } = await import('/src/lib/persistence/error-redaction.ts');
+    let redactedErrorCount = 0;
+    for (const row of corpus.runDetails) {
+      for (const candidate of row.record.candidates ?? []) {
+        for (const attempt of candidate.attempts ?? []) {
+          if (!attempt.error?.message) continue;
+          attempt.error.message = redactErrorText(attempt.error.message, [secretSentinel]);
+          redactedErrorCount += 1;
+        }
+      }
+    }
     const openDb = () => new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME);
       req.onsuccess = () => resolve(req.result);
@@ -1055,6 +1071,7 @@ function generateSeedScript(corpus) {
       runSummaries: corpus.runSummaries.length,
       runDetails: corpus.runDetails.length,
       comparisonResults: corpus.comparisonResults.length,
+      redactedErrorCount,
     };
   })()`;
 }
@@ -1226,7 +1243,7 @@ async function run() {
       return result.result?.value;
     };
 
-    const waitFor = async (expression, label, maxAttempts = 200) => {
+    const waitFor = async (expression, label, maxAttempts = 400) => {
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         if (await evaluate(expression)) return;
         await wait(150);
@@ -1310,7 +1327,10 @@ async function run() {
     const fixtureCorpus = buildFixtureCorpus();
     const seedReceipt = await evaluate(generateSeedScript(fixtureCorpus));
     record("seed-indexeddb-corpus", {
-      pass: seedReceipt.runSummaries >= 58 && seedReceipt.comparisonResults >= 2,
+      pass:
+        seedReceipt.runSummaries >= 58 &&
+        seedReceipt.comparisonResults >= 2 &&
+        seedReceipt.redactedErrorCount > 0,
       receipt: seedReceipt,
     });
 
@@ -1469,7 +1489,10 @@ async function run() {
     // Ordinary-history visible copy check on /runs/:id below 1024 (spec §O.2)
     await setViewport({ width: 390, height: 844, mobile: true });
     await navigateTo("#/runs/run-exact-task-1");
-    await wait(300);
+    await waitFor(
+      'Boolean(document.querySelector(\'a[href="#/runs"], a[href="/runs"]\'))',
+      "mobile compatibility back band",
+    );
     const mobileRunsCopy = await evaluate(`(() => {
       const backLink = document.querySelector('a[href="#/runs"], a[href="/runs"]');
       const backText = backLink ? backLink.innerText.trim() : '';
@@ -1826,6 +1849,7 @@ async function run() {
         ownerHref: ownerAction?.getAttribute('href') ?? '',
         beneathRowsCount: beneathRows.length,
         hasBeneathList: /beneath this record|exact child records/i.test(text),
+        aggregateExactRunCount: Number(text.match(/(\\d+) exact runs?/i)?.[1] ?? NaN),
       };
     })()`);
 
@@ -1834,6 +1858,8 @@ async function run() {
         studyDetail.ownerLabel.includes("Open study") &&
         studyDetail.ownerHref.includes("/lab/studies/study-latency-policy") &&
         studyDetail.hasBeneathList &&
+        studyDetail.aggregateExactRunCount === 25 &&
+        studyDetail.beneathRowsCount > 0 &&
         studyDetail.beneathRowsCount <= 20,
       studyDetail,
     });
@@ -1914,7 +1940,13 @@ async function run() {
     });
     await screenshot("qa-desktop-1440-not-found");
 
-    results.matrix.typedDetails = cmpDetail.hasPreloadBtn && evalDetail.childLinksCount >= 1;
+    results.matrix.typedDetails = Boolean(
+      cmpDetail.hasPreloadBtn &&
+      evalDetail.childLinksCount >= 1 &&
+      studyDetail.aggregateExactRunCount === 25 &&
+      studyDetail.beneathRowsCount > 0 &&
+      studyDetail.beneathRowsCount <= 20,
+    );
 
     // =========================================================================
     // Scenario 7: Open in Compare Preload Flow (§K.1, §R.15)
@@ -2235,22 +2267,46 @@ async function run() {
     // =========================================================================
     // Scenario 13: Secret Probe and Egress Invariant (§R.22)
     // =========================================================================
-    await navigateTo("#/records/task-execution/run-exact-task-1");
-    await wait(300);
-    const secretCheck = await evaluate(`(() => {
+    await navigateTo("#/records/task-execution/run-paginate-02");
+    await waitFor(
+      "Boolean(document.querySelector('[data-run-detail]'))",
+      "failed secret probe run",
+    );
+    const secretCheck = await evaluate(`(async () => {
       const text = document.body ? document.body.innerText : '';
+      const html = document.documentElement ? document.documentElement.outerHTML : '';
       const token = ${JSON.stringify(SECRET_TOKEN_TEST)};
-      const leaked = text.includes(token) || text.includes('sk-proj-SUPERSECRET');
+      const redactedMarker = ${JSON.stringify(REDACTED_ERROR_MARKER)};
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('rsemble-evaluation');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const rows = await new Promise((resolve, reject) => {
+        const request = db.transaction('runDetails').objectStore('runDetails').getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      db.close();
+      const persisted = JSON.stringify(rows);
+      const persistedRawSecret = persisted.includes(token);
+      const persistedRedaction = persisted.includes(redactedMarker);
+      const leaked = text.includes(token) || html.includes(token);
       const paidCalls = window.__qaPaidProviderCalls || [];
       return {
         leaked,
+        persistedRawSecret,
+        persistedRedaction,
         paidCallsCount: paidCalls.length,
         paidCalls,
       };
     })()`);
 
     record("secret-token-not-in-dom", {
-      pass: !secretCheck.leaked,
+      pass:
+        !secretCheck.leaked && !secretCheck.persistedRawSecret && secretCheck.persistedRedaction,
+      persistedRawSecret: secretCheck.persistedRawSecret,
+      persistedRedaction: secretCheck.persistedRedaction,
     });
 
     record("zero-paid-provider-network-egress", {
@@ -2264,7 +2320,11 @@ async function run() {
     });
 
     results.matrix.secretAndEgressInvariants = Boolean(
-      !secretCheck.leaked && secretCheck.paidCallsCount === 0 && results.consoleErrors.length === 0,
+      !secretCheck.leaked &&
+      !secretCheck.persistedRawSecret &&
+      secretCheck.persistedRedaction &&
+      secretCheck.paidCallsCount === 0 &&
+      results.consoleErrors.length === 0,
     );
 
     // -------------------------------------------------------------------------

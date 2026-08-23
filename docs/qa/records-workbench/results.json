@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-22T20:39:44.138Z",
+  "generatedAt": "2026-08-23T05:44:52.372Z",
   "command": "npm run qa:records",
   "baseUrl": "http://127.0.0.1:5198/",
   "runtimeContainment": {
     "root": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30",
-    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787431184137",
-    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787431184137",
-    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787431184137",
+    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787463892362",
+    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787463892363",
+    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787463892363",
     "tempDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\temp",
     "retainedEvidenceDir": "E:\\2026\\RSemble-AI\\docs\\qa\\records-workbench",
     "verifiedDrive": "E:"
@@ -18,7 +18,8 @@
       "receipt": {
         "runSummaries": 83,
         "runDetails": 82,
-        "comparisonResults": 2
+        "comparisonResults": 2,
+        "redactedErrorCount": 18
       }
     },
     {
@@ -123,7 +124,7 @@
           "OBSERVATIONS",
           "LEGACY & IMPORTED"
         ],
-        "rowsCount": 10,
+        "rowsCount": 14,
         "hasSearch": true
       }
     },
@@ -229,8 +230,9 @@
       "studyDetail": {
         "ownerLabel": "Open study",
         "ownerHref": "#/lab/studies/study-latency-policy",
-        "beneathRowsCount": 0,
-        "hasBeneathList": true
+        "beneathRowsCount": 20,
+        "hasBeneathList": true,
+        "aggregateExactRunCount": 25
       }
     },
     {
@@ -431,8 +433,8 @@
         },
         {
           "tag": "BUTTON",
-          "ariaLabel": "Connection status: Checking. Manage connections.",
-          "text": "Checking",
+          "ariaLabel": "Connection status: Live. Manage connections.",
+          "text": "Live",
           "href": ""
         },
         {
@@ -474,7 +476,9 @@
     },
     {
       "name": "secret-token-not-in-dom",
-      "pass": true
+      "pass": true,
+      "persistedRawSecret": false,
+      "persistedRedaction": true
     },
     {
       "name": "zero-paid-provider-network-egress",
