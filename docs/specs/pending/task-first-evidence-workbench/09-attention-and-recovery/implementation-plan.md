@@ -24,9 +24,11 @@
 
 ## Task 0: Dependency/drift and recovery action audit
 
-Verify children 03/05/07 complete. Record state/hashes. Inventory exact current Compare/Evaluation recoverability helpers, controller action gates, storage status, summaries, execution owner/lease events, multi-tab messaging. Run all recovery/lease tests.
+Verify children 03/05/06/08 complete enough for Attention. Record state/hashes. Inventory exact current Compare/Evaluation recoverability helpers, controller action gates, storage status, summaries, execution owner/lease events, multi-tab messaging. Run all recovery/lease tests.
 
 Produce a state→concrete-owner-action table. **STOP** if a proposed item lacks a reliable current action predicate/route.
+
+**Task 0 result (2026-08-23):** READY. Audit: `.omp/batch-briefs/child-09-readiness-audit.md`. Machine result: `.omp/rlm/state/tasks/child09-task0-readiness.result.json`. Five Evaluation INCLUDE rows; Compare/Storage excluded until an owner-route action exists. Milestone A only; Task 1 needs separate approval.
 
 ## Task 1: Define controlled Attention domain
 

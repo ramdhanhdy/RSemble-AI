@@ -2,8 +2,8 @@
 
 **Status:** Pending
 **Parent:** [`../task-first-evidence-workbench-spec.md`](../task-first-evidence-workbench-spec.md)
-**Order:** 08
-**Dependencies:** 03 Task Sets and Evaluations; 05 Contextual Compare Results; 07 Workbench Shell and Records
+**Order:** 09
+**Dependencies:** 03 Task Sets and Evaluations; 05 Contextual Compare Results; 06 Research Lab / Policy Studies; 08 Workbench Shell and Records
 
 ---
 

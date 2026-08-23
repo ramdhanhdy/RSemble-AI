@@ -10,7 +10,7 @@
 
 **Specification:** [`model-evidence-profiles-spec.md`](./model-evidence-profiles-spec.md)
 **Execution authorization:** Explicit approval required; local commits only; no push.
-**Current candidate status:** Implemented — pending independent closure review. Models remains a direct-route candidate until Child 08 owns primary navigation; exact profiles and versioned `stratified_only` Rollups are implemented without a pooled respondent or universal score.
+**Current candidate status:** Implemented — pending independent closure review. Models is a primary destination after Child 08; exact profiles and versioned `stratified_only` Rollups are implemented without a pooled respondent or universal score.
 
 ---
 
