@@ -212,6 +212,29 @@ function taskNeedsRetry(task: ExperimentTaskState): boolean {
   return !task.attempts.some((a) => a.status === "completed");
 }
 
+/** True when `retryIncomplete` would queue at least one attempt. Pure. */
+export function isRetryIncompleteEligible(record: ExperimentRecord): boolean {
+  if (
+    record.status !== "completed" &&
+    record.status !== "completed_with_failures" &&
+    record.status !== "aborted" &&
+    record.status !== "interrupted"
+  ) {
+    return false;
+  }
+  for (const task of record.tasks) {
+    if (taskNeedsRetry(task)) return true;
+    const newest = task.attempts[task.attempts.length - 1];
+    if (
+      newest?.repair &&
+      (newest.status === "failed" || newest.status === "aborted" || newest.status === "interrupted")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** A task counts toward clean completion when it produced any accepted
  *  evidence (completed or partial attempt). */
 function taskHasAcceptedEvidence(task: ExperimentTaskState): boolean {
