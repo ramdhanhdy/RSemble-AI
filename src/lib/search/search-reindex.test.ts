@@ -3,7 +3,7 @@
 // =============================================================================
 
 import "fake-indexeddb/auto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   SEARCH_REINDEX_LEASE_KEY,
   createSearchReindexQueue,
@@ -24,12 +24,7 @@ import {
   type SearchSourceResolver,
   type SearchReindexMetaStore,
 } from "./search-reindex";
-import {
-  createInMemorySearchIndexRepository,
-  createSearchIndexRepository,
-  type SearchIndexRepository,
-} from "../persistence/search-index-repository";
-import { RSembleEvaluationDB } from "../persistence/database";
+import { createInMemorySearchIndexRepository } from "../persistence/search-index-repository";
 import type { SearchDocument, SearchDocumentType } from "./search-types";
 
 describe("Search entity extractors", () => {

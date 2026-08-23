@@ -50,7 +50,9 @@
 //         writing destination Lab stores and the discard/convert receipt.
 //   v14 — additive immutable Model Rollup stores (2 tables):
 //         modelRollups, modelRollupVersions. Definitions only; derived evidence
-//         products and caches never enter persistence authority.
+//   v15 — additive rebuildable local Search index store (1 table):
+//         searchDocuments (Child 10, spec §2). Disposable SearchDocument rows
+//         keyed by compound [type+id].
 // =============================================================================
 
 import Dexie, { type Table } from "dexie";
@@ -63,6 +65,7 @@ import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { ObservationSourceKind } from "../evidence/evidence-types";
 import type { VerificationKind } from "../evaluations/evaluation-types";
 import type { VersionRef } from "../tasks/task-types";
+import type { SearchDocument, SearchDocumentType } from "../search/search-types";
 
 // Indexed row shapes — a search/summary row is the stored summary plus the
 // indexes Dexie needs to filter and paginate without loading detail records.
@@ -667,6 +670,8 @@ export class RSembleEvaluationDB extends Dexie {
   // Immutable execution materializations (schema v7, child 03 Task 7)
   taskSetMaterializations!: Table<TaskSetMaterializationRow, string>;
 
+  // Rebuildable local Search index table (schema v15, Child 10)
+  searchDocuments!: Table<SearchDocument, [SearchDocumentType, string]>;
   /** Current storage lifecycle state. */
   private _storageState: StorageState = "ready";
   private stateListeners = new Set<StateListener>();
@@ -829,6 +834,14 @@ export class RSembleEvaluationDB extends Dexie {
     this.version(14).stores({
       modelRollups: "id, name, latestVersion, revision, updatedAt, archivedAt",
       modelRollupVersions: "[rollupId+version], rollupId, version, memberManifestDigest, createdAt",
+    });
+
+    // v15: additive rebuildable local Search index store (Child 10, spec §2).
+    // Holds disposable SearchDocument rows keyed by compound [type+id].
+    // No credentials, raw candidate outputs, judge rationale, or attachments
+    // are persisted here.
+    this.version(15).stores({
+      searchDocuments: "[type+id], type, id, revision, updatedAt, indexSchemaVersion",
     });
 
     this.on("blocked", () => {
