@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-23T05:44:52.372Z",
+  "generatedAt": "2026-08-23T06:42:11.376Z",
   "command": "npm run qa:records",
   "baseUrl": "http://127.0.0.1:5198/",
   "runtimeContainment": {
     "root": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30",
-    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787463892362",
-    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787463892363",
-    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787463892363",
+    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787467331372",
+    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787467331373",
+    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787467331373",
     "tempDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\temp",
     "retainedEvidenceDir": "E:\\2026\\RSemble-AI\\docs\\qa\\records-workbench",
     "verifiedDrive": "E:"
@@ -433,8 +433,8 @@
         },
         {
           "tag": "BUTTON",
-          "ariaLabel": "Connection status: Live. Manage connections.",
-          "text": "Live",
+          "ariaLabel": "Connection status: Checking. Manage connections.",
+          "text": "Checking",
           "href": ""
         },
         {
@@ -477,6 +477,10 @@
     {
       "name": "secret-token-not-in-dom",
       "pass": true,
+      "renderedFailedRecord": true,
+      "hashMatchesTarget": true,
+      "titleMatchesTarget": true,
+      "failedStatusVisible": true,
       "persistedRawSecret": false,
       "persistedRedaction": true
     },

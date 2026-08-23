@@ -2267,7 +2267,9 @@ async function run() {
     // =========================================================================
     // Scenario 13: Secret Probe and Egress Invariant (§R.22)
     // =========================================================================
-    await navigateTo("#/records/task-execution/run-paginate-02");
+    const secretProbeRunId = "run-paginate-01";
+    const secretProbeTitle = "Paginated Benchmark Task #1";
+    await navigateTo(`#/records/task-execution/${secretProbeRunId}`);
     await waitFor(
       "Boolean(document.querySelector('[data-run-detail]'))",
       "failed secret probe run",
@@ -2277,6 +2279,8 @@ async function run() {
       const html = document.documentElement ? document.documentElement.outerHTML : '';
       const token = ${JSON.stringify(SECRET_TOKEN_TEST)};
       const redactedMarker = ${JSON.stringify(REDACTED_ERROR_MARKER)};
+      const targetRunId = ${JSON.stringify(secretProbeRunId)};
+      const targetTitle = ${JSON.stringify(secretProbeTitle)};
       const db = await new Promise((resolve, reject) => {
         const request = indexedDB.open('rsemble-evaluation');
         request.onsuccess = () => resolve(request.result);
@@ -2288,13 +2292,22 @@ async function run() {
         request.onerror = () => reject(request.error);
       });
       db.close();
-      const persisted = JSON.stringify(rows);
-      const persistedRawSecret = persisted.includes(token);
-      const persistedRedaction = persisted.includes(redactedMarker);
+      const targetRow = rows.find((row) => row.id === targetRunId);
+      const persistedTarget = JSON.stringify(targetRow ?? null);
+      const persistedRawSecret = persistedTarget.includes(token);
+      const persistedRedaction = persistedTarget.includes(redactedMarker);
+      const hashMatchesTarget = location.hash.endsWith(targetRunId);
+      const titleMatchesTarget = text.includes(targetTitle);
+      const failedStatusVisible = /\\bFailed\\b/i.test(text);
+      const renderedFailedRecord = hashMatchesTarget && titleMatchesTarget && failedStatusVisible;
       const leaked = text.includes(token) || html.includes(token);
       const paidCalls = window.__qaPaidProviderCalls || [];
       return {
         leaked,
+        renderedFailedRecord,
+        hashMatchesTarget,
+        titleMatchesTarget,
+        failedStatusVisible,
         persistedRawSecret,
         persistedRedaction,
         paidCallsCount: paidCalls.length,
@@ -2304,7 +2317,14 @@ async function run() {
 
     record("secret-token-not-in-dom", {
       pass:
-        !secretCheck.leaked && !secretCheck.persistedRawSecret && secretCheck.persistedRedaction,
+        secretCheck.renderedFailedRecord &&
+        !secretCheck.leaked &&
+        !secretCheck.persistedRawSecret &&
+        secretCheck.persistedRedaction,
+      renderedFailedRecord: secretCheck.renderedFailedRecord,
+      hashMatchesTarget: secretCheck.hashMatchesTarget,
+      titleMatchesTarget: secretCheck.titleMatchesTarget,
+      failedStatusVisible: secretCheck.failedStatusVisible,
       persistedRawSecret: secretCheck.persistedRawSecret,
       persistedRedaction: secretCheck.persistedRedaction,
     });
@@ -2320,6 +2340,7 @@ async function run() {
     });
 
     results.matrix.secretAndEgressInvariants = Boolean(
+      secretCheck.renderedFailedRecord &&
       !secretCheck.leaked &&
       !secretCheck.persistedRawSecret &&
       secretCheck.persistedRedaction &&
