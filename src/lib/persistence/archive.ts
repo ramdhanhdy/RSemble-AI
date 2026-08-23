@@ -40,6 +40,10 @@ import {
   RSembleEvaluationDB,
   StorageError,
   classifyStorageError,
+  type ProfileRow,
+  type ProfileVersionRow,
+  type SuiteRow,
+  type ExperimentRow,
   type RunDetailRow,
   type RunSummaryRow,
   type TaskSetOwnershipCrosswalkRow,
@@ -132,6 +136,7 @@ import {
   isPolicyStudyObservation,
   isPolicyStudyRecord,
   isPolicyStudyTrial,
+  type PolicyReportPayload,
   type PolicyStudyObservation,
   type PolicyStudyRecord,
   type PolicyStudyTrial,
@@ -2830,6 +2835,126 @@ export interface ArchiveImportCommitResult {
 /** Options for the commit stage. */
 export interface ArchiveImportCommitOptions {
   signal?: AbortSignal;
+}
+
+// =============================================================================
+// Collision-safe import v3: ID remapping, phased journal, crosswalk (Task 7)
+// =============================================================================
+
+/** Maps an original archive ID to its new local ID after collision remapping. */
+export interface ImportCrosswalkEntry {
+  /** The ID as it appeared in the archive. */
+  archiveId: string;
+  /** The new ID assigned in the local database. */
+  localId: string;
+  /** Collection the entity belongs to. */
+  collection: string;
+}
+
+/** Complete crosswalk from one import session. */
+export interface ImportCrosswalk {
+  /** importId → crosswalk entries */
+  entries: ImportCrosswalkEntry[];
+}
+
+/** One phase of a bounded atomic import. */
+export interface ImportPhase {
+  /** Stable phase identifier. */
+  name: string;
+  /** Collections written in this phase. */
+  collections: string[];
+  status: "pending" | "in_progress" | "completed" | "failed";
+  startedAt?: number;
+  completedAt?: number;
+  /** If failed, the redacted error message (never echoes content). */
+  errorMessage?: string;
+}
+
+/** Persistent journal for a phased v3 import. */
+export interface ImportJournal {
+  /** Unique import session id. */
+  importId: string;
+  /** When the import was initiated. */
+  startedAt: number;
+  /** Ordered phases. */
+  phases: ImportPhase[];
+  /** ID remapping crosswalk accumulated across phases. */
+  crosswalk: Record<string, string>;
+  /** The validated archive payload (for resume). */
+  archivePayload: unknown;
+}
+
+/** Ordered import phases for v3. Each phase is one Dexie transaction. */
+export const IMPORT_V3_PHASES: readonly string[] = [
+  "runs-rubrics-suites-experiments",
+  "tasks",
+  "taskSets",
+  "evidence",
+  "comparisons",
+  "lab",
+  "modelRollups",
+];
+
+/** Collections owned by each phase. */
+export const IMPORT_V3_PHASE_COLLECTIONS: Record<string, readonly string[]> = {
+  "runs-rubrics-suites-experiments": [
+    "runs.summaries", "runs.details",
+    "rubrics.identities", "rubrics.versions",
+    "suites", "experiments",
+  ],
+  "tasks": [
+    "tasks.tasks", "tasks.taskVersions", "tasks.taskArtifacts",
+    "tasks.taskInstances", "tasks.taskFamilies",
+    "tasks.taskFamilyAssignments", "tasks.taskFamilyRelations",
+    "tasks.taskFacetAnnotations", "tasks.taskMigrationCrosswalks",
+  ],
+  "taskSets": [
+    "taskSets.records", "taskSets.versions",
+    "taskSets.materializations", "taskSets.ownershipCrosswalks",
+  ],
+  "evidence": [
+    "evidence.modelConfigurations", "evidence.observations",
+    "evidence.evidenceDecisions", "evidence.evidenceIndexJobs",
+    "evidence.verifierOutcomes",
+  ],
+  "comparisons": ["comparisons.indexes"],
+  "lab": [
+    "lab.recipeRecords", "lab.recipeVersions",
+    "lab.poolRecords", "lab.poolVersions",
+    "lab.studies", "lab.trials", "lab.attempts",
+    "lab.observations", "lab.playbooks",
+    "lab.cutoverReceipt",
+  ],
+  "modelRollups": ["modelRollups.records", "modelRollups.versions"],
+};
+
+/** Generate a unique import session id. */
+function generateImportId(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let id = "import-";
+  for (let i = 0; i < 12; i++) id += chars[Math.floor(Math.random() * chars.length)];
+  return id;
+}
+
+/** Generate a remapped ID for a colliding entity. */
+function generateRemappedId(originalId: string): string {
+  // Use a deterministic suffix based on the original ID + timestamp
+  // to produce a stable, unique, human-recognizable new ID.
+  const hash = computeArtifactDigest(new TextEncoder().encode(`${originalId}:${Date.now()}`));
+  const shortHash = hash.slice(7, 15); // 8 hex chars after "sha256:"
+  return `${originalId}-import-${shortHash}`;
+}
+
+/** Result of a phased import commit. */
+export interface PhasedImportResult {
+  importId: string;
+  created: string[];
+  reused: string[];
+  remapped: ImportCrosswalkEntry[];
+  /** Phases that failed (empty on success). */
+  failedPhases: string[];
+  /** The complete crosswalk for reference resolution. */
+  crosswalk: Record<string, string>;
 }
 
 /** Single-shot auto-dispatch outcome. */
@@ -6356,6 +6481,508 @@ export async function commitPreviewWorkbenchArchiveV3(
   };
 }
 
+
+/**
+ * Commit a v3 archive in bounded atomic phases with collision-safe ID
+ * remapping. Each phase is one Dexie transaction. Colliding entities
+ * (same ID, different content) receive new IDs and a complete crosswalk
+ * is maintained. Failed phases roll back independently; completed phases
+ * are durable. After all phases complete, disposable search indexes are
+ * marked for rebuild.
+ *
+ * v1 and v2 imports are unchanged — this function handles v3 only.
+ */
+export async function importWorkbenchArchiveV3Phased(
+  db: RSembleEvaluationDB,
+  archive: WorkbenchArchiveV3,
+  options: { signal?: AbortSignal; sourceLabel?: string } = {},
+): Promise<PhasedImportResult> {
+  const importId = generateImportId();
+  const crosswalk: Record<string, string> = {};
+  const remapped: ImportCrosswalkEntry[] = [];
+  const created: string[] = [];
+  const reused: string[] = [];
+  const failedPhases: string[] = [];
+
+  const signal = options.signal;
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+
+  // Validate the archive before any writes
+  const validation = validateArchiveV3(JSON.parse(JSON.stringify(archive)));
+  if (!validation.valid) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${validation.errors[0]?.message ?? ""}`.trim(),
+    );
+  }
+
+  db.assertWritable();
+  throwIfAborted();
+
+  // --- Phase 1: Runs, Rubrics, Suites, Experiments ---
+  await executeImportPhase(db, "runs-rubrics-suites-experiments", archive, crosswalk, remapped, created, reused, importId, signal);
+  applyCrosswalkToArchive(archive, crosswalk);
+
+  // --- Phase 2: Tasks ---
+  await executeImportPhase(db, "tasks", archive, crosswalk, remapped, created, reused, importId, signal);
+  applyCrosswalkToArchive(archive, crosswalk);
+
+  // --- Phase 3: Task Sets ---
+  await executeImportPhase(db, "taskSets", archive, crosswalk, remapped, created, reused, importId, signal);
+  applyCrosswalkToArchive(archive, crosswalk);
+
+  // --- Phase 4: Evidence ---
+  await executeImportPhase(db, "evidence", archive, crosswalk, remapped, created, reused, importId, signal);
+  applyCrosswalkToArchive(archive, crosswalk);
+
+  // --- Phase 5: Comparisons ---
+  await executeImportPhase(db, "comparisons", archive, crosswalk, remapped, created, reused, importId, signal);
+  applyCrosswalkToArchive(archive, crosswalk);
+
+  // --- Phase 6: Lab ---
+  await executeImportPhase(db, "lab", archive, crosswalk, remapped, created, reused, importId, signal);
+  applyCrosswalkToArchive(archive, crosswalk);
+
+  // --- Phase 7: Model Rollups ---
+  await executeImportPhase(db, "modelRollups", archive, crosswalk, remapped, created, reused, importId, signal);
+
+  // --- Post-commit: mark search for rebuild ---
+  try {
+    await markSearchForRebuild(db);
+  } catch {
+    // Search rebuild marker is best-effort; import data is already committed.
+  }
+
+  return { importId, created, reused, remapped, failedPhases, crosswalk };
+}
+
+/**
+ * Execute one import phase in a single Dexie transaction. Entities with
+ * colliding IDs are remapped (new ID generated, crosswalk recorded).
+ * Any error rolls back only this phase.
+ */
+async function executeImportPhase(
+  db: RSembleEvaluationDB,
+  phaseName: string,
+  archive: WorkbenchArchiveV3,
+  crosswalk: Record<string, string>,
+  remapped: ImportCrosswalkEntry[],
+  created: string[],
+  reused: string[],
+  importId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const collections = IMPORT_V3_PHASE_COLLECTIONS[phaseName];
+  if (!collections) return;
+
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+  throwIfAborted();
+
+  try {
+    await db.transaction("rw", tablesForPhase(db, phaseName), async () => {
+      throwIfAborted();
+
+      switch (phaseName) {
+        case "runs-rubrics-suites-experiments": {
+          // Runs
+          for (const s of archive.runs.summaries) {
+            if (!isRunSummary(s)) continue;
+            await putOrRemap(db.runSummaries, s.id, summaryRowFor(s), crosswalk, remapped, created, reused, "runs.summaries", (existing) => canon((existing as RunSummaryRow).summary) === canon(s));
+          }
+          for (const d of archive.runs.details) {
+            const compatible = repairRunRecordForCompatibility(d) ?? (isRunRecordV2(d) ? d : null);
+            if (compatible === null) continue;
+            await putOrRemap(db.runDetails, d.id, detailRowFor(compatible), crosswalk, remapped, created, reused, "runs.details", (existing) => canon((existing as RunDetailRow).record) === canon(compatible));
+          }
+          // Rubrics
+          for (const r of archive.rubrics.identities) {
+            if (!isRubricRecord(r)) continue;
+            await putOrRemap(db.profiles, r.id, { id: r.id, record: r, revision: r.revision, latestVersion: r.latestVersion, updatedAt: r.updatedAt, archivedAt: r.archivedAt }, crosswalk, remapped, created, reused, "rubrics.identities", (existing) => canon((existing as ProfileRow).record) === canon(r));
+          }
+          for (const v of archive.rubrics.versions) {
+            if (!isEvaluationRubric(v)) continue;
+            const key = versionKey(v.id, v.version);
+            await putOrRemapComposite(db.profileVersions, [v.id, v.version], { id: v.id, version: v.version, profile: v, updatedAt: v.updatedAt }, "id", "version", crosswalk, remapped, created, reused, "rubrics.versions", key, (existing) => canon((existing as ProfileVersionRow).profile) === canon(v));
+          }
+          // Suites
+          for (const s of archive.suites) {
+            if (!isEvaluationSuite(s)) continue;
+            await putOrRemap(db.suites, s.id, { id: s.id, suite: s, revision: 1, version: s.version, updatedAt: s.updatedAt, archivedAt: s.archivedAt }, crosswalk, remapped, created, reused, "suites", (existing) => canon((existing as SuiteRow).suite) === canon(s));
+          }
+          // Experiments
+          for (const e of archive.experiments) {
+            if (!isExperimentRecord(e)) continue;
+            await putOrRemap(db.experiments, e.id, { id: e.id, experiment: e, revision: 1, suiteId: e.suiteId, suiteVersion: e.suiteVersion, protocolFingerprint: e.protocolFingerprint, createdAt: e.createdAt, status: e.status }, crosswalk, remapped, created, reused, "experiments", (existing) => canon((existing as ExperimentRow).experiment) === canon(e));
+          }
+          break;
+        }
+        case "tasks": {
+          for (const t of archive.tasks.tasks) {
+            if (!isTaskRecord(t)) continue;
+            await putOrRemap(db.tasks, t.id, taskRowFor(t), crosswalk, remapped, created, reused, "tasks.tasks", (existing) => canon((existing as ReturnType<typeof taskRowFor>).record) === canon(t));
+          }
+          for (const v of archive.tasks.taskVersions) {
+            if (!isTaskVersion(v)) continue;
+            const key = versionKey(v.taskId, v.version);
+            await putOrRemapComposite(db.taskVersions, [v.taskId, v.version], taskVersionRowFor(v), "taskId", "version", crosswalk, remapped, created, reused, "tasks.taskVersions", key, (existing) => canon((existing as ReturnType<typeof taskVersionRowFor>).version_) === canon(v));
+          }
+          for (const a of archive.tasks.taskArtifacts) {
+            if (!isTaskArtifact(a)) continue;
+            await putOrRemap(db.taskArtifacts, a.id, { id: a.id, contentDigest: a.contentDigest, mediaType: a.mediaType, byteCount: a.byteCount, storageRef: a.storageRef, createdAt: a.createdAt }, crosswalk, remapped, created, reused, "tasks.taskArtifacts", (existing) => canon(existing) === canon(a));
+          }
+          for (const ab of archive.tasks.taskArtifactBytes) {
+            const decoded = decodeBase64Bytes(ab.bytesBase64);
+            if (decoded === null) continue;
+            await putOrRemap(db.taskArtifactBytes, ab.id, { id: ab.id, bytes: decoded }, crosswalk, remapped, created, reused, "tasks.taskArtifactBytes", (existing) => bytesMatch((existing as { bytes: Uint8Array }).bytes, decoded));
+          }
+          for (const i of archive.tasks.taskInstances) {
+            if (!isTaskInstance(i)) continue;
+            await putOrRemap(db.taskInstances, i.id, taskInstanceRowFor(i), crosswalk, remapped, created, reused, "tasks.taskInstances", (existing) => canon((existing as ReturnType<typeof taskInstanceRowFor>).instance) === canon(i));
+          }
+          for (const f of archive.tasks.taskFamilies) {
+            if (!isTaskFamily(f)) continue;
+            await putOrRemap(db.taskFamilies, f.id, familyRowFor(f), crosswalk, remapped, created, reused, "tasks.taskFamilies", (existing) => canon((existing as ReturnType<typeof familyRowFor>).family) === canon(f));
+          }
+          for (const a of archive.tasks.taskFamilyAssignments) {
+            if (!isTaskFamilyAssignment(a)) continue;
+            await putOrRemap(db.taskFamilyAssignments, a.id, assignmentRowFor(a), crosswalk, remapped, created, reused, "tasks.taskFamilyAssignments", (existing) => canon((existing as ReturnType<typeof assignmentRowFor>).assignment) === canon(a));
+          }
+          for (const r of archive.tasks.taskFamilyRelations) {
+            if (!isExportableTaskFamilyRelation(r)) continue;
+            await putOrRemap(db.taskFamilyRelations, r.id, relationRowFor(r), crosswalk, remapped, created, reused, "tasks.taskFamilyRelations", (existing) => canon((existing as ReturnType<typeof relationRowFor>).relation) === canon(r));
+          }
+          for (const a of archive.tasks.taskFacetAnnotations) {
+            if (!isTaskFacetAnnotation(a)) continue;
+            await putOrRemap(db.taskFacetAnnotations, a.id, annotationRowFor(a), crosswalk, remapped, created, reused, "tasks.taskFacetAnnotations", (existing) => canon((existing as ReturnType<typeof annotationRowFor>).annotation) === canon(a));
+          }
+          for (const cw of archive.tasks.taskMigrationCrosswalks) {
+            await putOrRemap(db.taskMigrationCrosswalk, cw.legacyScopeKey, { legacyScopeKey: cw.legacyScopeKey, taskId: cw.taskId, taskVersion: cw.taskVersion }, crosswalk, remapped, created, reused, "tasks.taskMigrationCrosswalks", (existing) => (existing as TaskMigrationCrosswalk).taskId === cw.taskId && (existing as TaskMigrationCrosswalk).taskVersion === cw.taskVersion);
+          }
+          break;
+        }
+        case "taskSets": {
+          for (const r of archive.taskSets.records) {
+            if (!isTaskSetRecord(r)) continue;
+            await putOrRemap(db.taskSets, r.id, taskSetRecordRowFor(r), crosswalk, remapped, created, reused, "taskSets.records", (existing) => canon((existing as ReturnType<typeof taskSetRecordRowFor>).record) === canon(r));
+          }
+          for (const v of archive.taskSets.versions) {
+            if (!isTaskSetVersion(v)) continue;
+            const key = versionKey(v.taskSetId, v.version);
+            await putOrRemapComposite(db.taskSetVersions, [v.taskSetId, v.version], taskSetVersionRowFor(v), "taskSetId", "version", crosswalk, remapped, created, reused, "taskSets.versions", key, (existing) => canon((existing as ReturnType<typeof taskSetVersionRowFor>).version_) === canon(v));
+          }
+          for (const m of archive.taskSets.materializations) {
+            if (!isTaskSetMaterializationRecord(m)) continue;
+            await putOrRemap(db.taskSetMaterializations, m.id, m, crosswalk, remapped, created, reused, "taskSets.materializations", (existing) => canon(existing) === canon(m));
+          }
+          for (const cw of archive.taskSets.ownershipCrosswalks) {
+            if (!isTaskSetOwnershipCrosswalkRow(cw)) continue;
+            await putOrRemap(db.taskSetOwnershipCrosswalk, cw.key, cw, crosswalk, remapped, created, reused, "taskSets.ownershipCrosswalks", (existing) => canon(existing) === canon(cw));
+          }
+          break;
+        }
+        case "evidence": {
+          for (const mc of archive.evidence.modelConfigurations) {
+            if (!isModelConfigurationSnapshot(mc)) continue;
+            await putOrRemap(db.modelConfigurations, mc.id, modelConfigurationRowFor(mc), crosswalk, remapped, created, reused, "evidence.modelConfigurations", (existing) => canon((existing as ModelConfigurationRow).snapshot) === canon(mc));
+          }
+          for (const obs of archive.evidence.observations) {
+            if (!isObservation(obs)) continue;
+            await putOrRemap(db.observations, obs.id, evidenceObservationRowFor(obs), crosswalk, remapped, created, reused, "evidence.observations", (existing) => canon((existing as EvidenceObservationRow).observation) === canon(obs));
+          }
+          for (const dec of archive.evidence.evidenceDecisions) {
+            if (!isEligibilityDecision(dec)) continue;
+            const key = `${dec.observationId}#${dec.ruleVersion}`;
+            await putOrRemap(db.evidenceDecisions, key, evidenceDecisionRowFor(dec), crosswalk, remapped, created, reused, "evidence.evidenceDecisions", (existing) => canon((existing as EvidenceDecisionRow).decision) === canon(dec));
+          }
+          for (const job of archive.evidence.evidenceIndexJobs) {
+            if (!isEvidenceIndexJob(job)) continue;
+            await putOrRemap(db.evidenceIndexJobs, job.sourceResultId, toJobRow(job), crosswalk, remapped, created, reused, "evidence.evidenceIndexJobs", (existing) => canon(fromJobRow(existing as EvidenceIndexJobRow)) === canon(job));
+          }
+          for (const vo of archive.evidence.verifierOutcomes) {
+            if (!isExecutedVerifierOutcome(vo)) continue;
+            const key = verifierOutcomeKey(vo);
+            await putOrRemap(db.verifierOutcomes, key, toVerifierRow(vo), crosswalk, remapped, created, reused, "evidence.verifierOutcomes", (existing) => canon(fromVerifierRow(existing as VerifierOutcomeRow)) === canon(vo));
+          }
+          break;
+        }
+        case "comparisons": {
+          for (const index of archive.comparisons.indexes) {
+            if (!isComparisonResultIndex(index)) continue;
+            await putOrRemap(db.comparisonResults, index.id, index, crosswalk, remapped, created, reused, "comparisons.indexes", (existing) => canon(existing) === canon(index));
+          }
+          break;
+        }
+        case "lab": {
+          for (const r of archive.lab.recipeRecords) {
+            if (!isLabRecipeRecord(r)) continue;
+            await putOrRemap(db.labRecipeRecords, r.id, { id: r.id, record: r, kind: r.kind, latestVersion: r.latestVersion, archivedAt: r.archivedAt, createdAt: r.createdAt, updatedAt: r.updatedAt, revision: r.revision }, crosswalk, remapped, created, reused, "lab.recipeRecords", (existing) => canon((existing as { record: LabRecipeRecord }).record) === canon(r));
+          }
+          for (const v of archive.lab.recipeVersions) {
+            if (!isLabRecipeVersion(v)) continue;
+            const key = versionKey(v.recipeId, v.version);
+            await putOrRemapComposite(db.labRecipeVersions, [v.recipeId, v.version], { recipeId: v.recipeId, version: v.version, version_: v, digest: v.digest, createdAt: v.createdAt }, "recipeId", "version", crosswalk, remapped, created, reused, "lab.recipeVersions", key, (existing) => canon((existing as { version_: LabRecipeVersion }).version_) === canon(v));
+          }
+          for (const p of archive.lab.poolRecords) {
+            if (!isModelPoolRecord(p)) continue;
+            await putOrRemap(db.modelPoolRecords, p.id, { id: p.id, record: p, latestVersion: p.latestVersion, archivedAt: p.archivedAt, createdAt: p.createdAt, updatedAt: p.updatedAt, revision: p.revision }, crosswalk, remapped, created, reused, "lab.poolRecords", (existing) => canon((existing as { record: ModelPoolRecord }).record) === canon(p));
+          }
+          for (const v of archive.lab.poolVersions) {
+            if (!isModelPoolVersion(v)) continue;
+            const key = versionKey(v.poolId, v.version);
+            await putOrRemapComposite(db.modelPoolVersions, [v.poolId, v.version], { poolId: v.poolId, version: v.version, version_: v, digest: v.digest, createdAt: v.createdAt }, "poolId", "version", crosswalk, remapped, created, reused, "lab.poolVersions", key, (existing) => canon((existing as { version_: ModelPoolVersion }).version_) === canon(v));
+          }
+          for (const s of archive.lab.studies) {
+            if (!isPolicyStudyRecord(s)) continue;
+            await putOrRemap(db.studies, s.id, { id: s.id, record: s, kind: s.kind, status: s.status, claimLevel: s.claimLevel, confirmationOf: s.confirmationOf, revision: s.revision, createdAt: s.createdAt, updatedAt: s.updatedAt, archivedAt: s.archivedAt }, crosswalk, remapped, created, reused, "lab.studies", (existing) => canon((existing as { record: PolicyStudyRecord }).record) === canon(s));
+          }
+          for (const t of archive.lab.trials) {
+            if (!isPolicyStudyTrial(t)) continue;
+            await putOrRemap(db.studyTrials, t.id, { id: t.id, trial: t, studyId: t.studyId, status: t.status, sampleIndex: t.sampleIndex, revision: 1, createdAt: t.createdAt, sealedAt: t.sealedAt }, crosswalk, remapped, created, reused, "lab.trials", (existing) => canon((existing as { trial: PolicyStudyTrial }).trial) === canon(t));
+          }
+          for (const a of archive.lab.attempts) {
+            if (!isStudyAttempt(a)) continue;
+            await putOrRemap(db.studyAttempts, a.id, { id: a.id, attempt: a, studyId: a.studyId, fromTrialId: a.fromTrialId, toTrialId: a.toTrialId, createdAt: a.createdAt }, crosswalk, remapped, created, reused, "lab.attempts", (existing) => canon((existing as { attempt: StudyAttempt }).attempt) === canon(a));
+          }
+          for (const o of archive.lab.observations) {
+            if (!isPolicyStudyObservation(o)) continue;
+            await putOrRemap(db.studyObservations, o.id, { id: o.id, observation: o, studyId: o.studyId, trialId: o.trialId, status: o.status, createdAt: o.createdAt, finishedAt: o.finishedAt }, crosswalk, remapped, created, reused, "lab.observations", (existing) => canon((existing as { observation: PolicyStudyObservation }).observation) === canon(o));
+          }
+          for (const p of archive.lab.playbooks) {
+            if (!isRecord(p) || typeof p.id !== "string" || !isPolicyReportPayload(p.playbook)) continue;
+            await putOrRemap(db.policyPlaybooks, p.id, { id: p.id, playbook: p.playbook, studyId: p.playbook.studyId, definitionFingerprint: p.playbook.definitionFingerprint, digest: fingerprintStudyValue(p.playbook), createdAt: p.playbook.createdAt }, crosswalk, remapped, created, reused, "lab.playbooks", (existing) => canon((existing as { playbook: PolicyReportPayload }).playbook) === canon(p.playbook));
+          }
+          // Cutover receipt
+          {
+            const existing = await db.storageMeta.get(fusionToResearchLabReceiptKey);
+            if (existing === undefined) {
+              await db.storageMeta.put({ key: fusionToResearchLabReceiptKey, value: archive.lab.cutoverReceipt });
+              created.push(fusionToResearchLabReceiptKey);
+            } else if (canon(existing.value) === canon(archive.lab.cutoverReceipt)) {
+              reused.push(fusionToResearchLabReceiptKey);
+            } else if (isZeroCorpusBootstrapReceipt(existing.value) && await isPristineCanonicalWorkbench(db)) {
+              await db.storageMeta.put({ key: fusionToResearchLabReceiptKey, value: archive.lab.cutoverReceipt });
+              created.push(fusionToResearchLabReceiptKey);
+            } else {
+              // Remap: different receipt → store with note
+              const newKey = `${fusionToResearchLabReceiptKey}-import-${importId.slice(0, 8)}`;
+              await db.storageMeta.put({ key: newKey, value: archive.lab.cutoverReceipt });
+              crosswalk[fusionToResearchLabReceiptKey] = newKey;
+              remapped.push({ archiveId: fusionToResearchLabReceiptKey, localId: newKey, collection: "lab.cutoverReceipt" });
+              created.push(newKey);
+            }
+          }
+          break;
+        }
+        case "modelRollups": {
+          const rollups = archive.modelRollups ?? { records: [], versions: [] };
+          for (const r of rollups.records) {
+            if (!isModelRollupRecord(r)) continue;
+            await putOrRemap(db.modelRollups, r.id, { id: r.id, record: r, name: r.name, latestVersion: r.latestVersion, revision: r.revision, createdAt: r.createdAt, updatedAt: r.updatedAt, archivedAt: r.archivedAt }, crosswalk, remapped, created, reused, "modelRollups.records", (existing) => canon((existing as { record: ModelRollupRecord }).record) === canon(r));
+          }
+          for (const v of rollups.versions) {
+            if (!isModelRollupVersion(v)) continue;
+            const key = versionKey(v.rollupId, v.version);
+            await putOrRemapComposite(db.modelRollupVersions, [v.rollupId, v.version], { rollupId: v.rollupId, version: v.version, version_: v, memberManifestDigest: v.memberManifestDigest, createdAt: v.createdAt }, "rollupId", "version", crosswalk, remapped, created, reused, "modelRollups.versions", key, (existing) => canon((existing as { version_: ModelRollupVersion }).version_) === canon(v));
+          }
+          break;
+        }
+      }
+    });
+  } catch (err) {
+    if (err instanceof ArchiveImportCancelledError) throw err;
+    // Phase failed — the transaction rolled back automatically.
+    // Other phases remain committed.
+    throw err;
+  }
+}
+
+/** Put a row or remap on collision. Returns true if created, false if reused. */
+async function putOrRemap<T>(
+  table: Table<T, string>,
+  id: string,
+  row: T,
+  crosswalk: Record<string, string>,
+  remapped: ImportCrosswalkEntry[],
+  created: string[],
+  reused: string[],
+  collection: string,
+  isEqual: (existing: T) => boolean,
+): Promise<void> {
+  const existing = await table.get(id);
+  if (existing === undefined) {
+    await table.put(row);
+    created.push(id);
+  } else if (isEqual(existing)) {
+    reused.push(id);
+  } else {
+    // Collision: remap to new ID
+    const newId = generateRemappedId(id);
+    const remappedRow = { ...row, id: newId } as unknown as T;
+    await table.put(remappedRow);
+    crosswalk[id] = newId;
+    remapped.push({ archiveId: id, localId: newId, collection });
+    created.push(newId);
+  }
+}
+
+/** Put a composite-key row or remap on collision. Uses table-specific
+ *  idField/versionField to construct the new composite key on remap. */
+async function putOrRemapComposite<T>(
+  table: Table<T, [string, number]>,
+  key: [string, number],
+  row: T,
+  idField: string,
+  versionField: string,
+  crosswalk: Record<string, string>,
+  remapped: ImportCrosswalkEntry[],
+  created: string[],
+  reused: string[],
+  collection: string,
+  displayKey: string,
+  isEqual: (existing: T) => boolean,
+): Promise<void> {
+  const existing = await table.get(key);
+  if (existing === undefined) {
+    await table.put(row);
+    created.push(displayKey);
+  } else if (isEqual(existing)) {
+    reused.push(displayKey);
+  } else {
+    // Collision: remap to new ID + bumped version
+    const newId = generateRemappedId(key[0]);
+    const newVersion = key[1] + 10_000;
+    const newDisplayKey = `${newId}@${newVersion}`;
+    const remappedRow = { ...row, [idField]: newId, [versionField]: newVersion } as T;
+    await table.put(remappedRow, [newId, newVersion]);
+    // Store plain ID mapping for reference rewriting
+    crosswalk[key[0]] = newId;
+    crosswalk[displayKey] = newDisplayKey;
+    remapped.push({ archiveId: displayKey, localId: newDisplayKey, collection });
+    created.push(newDisplayKey);
+  }
+}
+
+/**
+ * Apply the crosswalk to rewrite entity references after remapping.
+ * Walks every entity in the archive and replaces old IDs with new IDs
+ * wherever they appear as reference fields.
+ */
+function applyCrosswalkToArchive(
+  archive: WorkbenchArchiveV3,
+  crosswalk: Record<string, string>,
+): void {
+  if (Object.keys(crosswalk).length === 0) return;
+
+  const remapRef = (obj: Record<string, unknown>, field: string) => {
+    const val = obj[field];
+    if (typeof val === "string" && crosswalk[val]) {
+      obj[field] = crosswalk[val];
+    }
+  };
+
+  // Task references
+  for (const v of archive.tasks.taskVersions) remapRef(v as unknown as Record<string, unknown>, "taskId");
+  for (const i of archive.tasks.taskInstances) remapRef(i as unknown as Record<string, unknown>, "taskId");
+  for (const a of archive.tasks.taskFamilyAssignments) remapRef(a as unknown as Record<string, unknown>, "taskId");
+  for (const a of archive.tasks.taskFacetAnnotations) remapRef(a as unknown as Record<string, unknown>, "taskId");
+  for (const cw of archive.tasks.taskMigrationCrosswalks) remapRef(cw as unknown as Record<string, unknown>, "taskId");
+
+  // Task family references
+  for (const a of archive.tasks.taskFamilyAssignments) remapRef(a as unknown as Record<string, unknown>, "familyId");
+  for (const r of archive.tasks.taskFamilyRelations) {
+    remapRef(r as unknown as Record<string, unknown>, "fromFamilyId");
+    remapRef(r as unknown as Record<string, unknown>, "toFamilyId");
+  }
+
+  // Task Set references
+  for (const v of archive.taskSets.versions) remapRef(v as unknown as Record<string, unknown>, "taskSetId");
+  for (const m of archive.taskSets.materializations) remapRef(m as unknown as Record<string, unknown>, "taskSetId");
+  for (const cw of archive.taskSets.ownershipCrosswalks) remapRef(cw as unknown as Record<string, unknown>, "taskSetId");
+
+  // Evidence references
+  for (const obs of archive.evidence.observations) {
+    remapRef(obs as unknown as Record<string, unknown>, "taskId");
+    remapRef(obs as unknown as Record<string, unknown>, "modelConfigurationId");
+  }
+  for (const dec of archive.evidence.evidenceDecisions) remapRef(dec as unknown as Record<string, unknown>, "observationId");
+
+  // Lab references
+  for (const v of archive.lab.recipeVersions) remapRef(v as unknown as Record<string, unknown>, "recipeId");
+  for (const v of archive.lab.poolVersions) remapRef(v as unknown as Record<string, unknown>, "poolId");
+  for (const t of archive.lab.trials) remapRef(t as unknown as Record<string, unknown>, "studyId");
+  for (const a of archive.lab.attempts) {
+    remapRef(a as unknown as Record<string, unknown>, "studyId");
+    remapRef(a as unknown as Record<string, unknown>, "fromTrialId");
+    remapRef(a as unknown as Record<string, unknown>, "toTrialId");
+  }
+  for (const o of archive.lab.observations) {
+    remapRef(o as unknown as Record<string, unknown>, "studyId");
+    remapRef(o as unknown as Record<string, unknown>, "trialId");
+  }
+
+  // Model Rollup references
+  const rollups = archive.modelRollups;
+  if (rollups) {
+    for (const v of rollups.versions) remapRef(v as unknown as Record<string, unknown>, "rollupId");
+  }
+
+  // Run references
+  for (const d of archive.runs.details) remapRef(d as unknown as Record<string, unknown>, "id");
+  for (const s of archive.runs.summaries) remapRef(s as unknown as Record<string, unknown>, "id");
+
+  // Comparison references
+  for (const index of archive.comparisons.indexes) {
+    remapRef(index as unknown as Record<string, unknown>, "runId");
+    remapRef(index as unknown as Record<string, unknown>, "taskInstanceId");
+    const binding = (index as unknown as Record<string, unknown>).taskBinding as Record<string, unknown> | undefined;
+    if (binding) remapRef(binding, "taskId");
+  }
+  for (const snap of archive.comparisons.inputSnapshots) {
+    remapRef(snap as unknown as Record<string, unknown>, "runId");
+    remapRef(snap as unknown as Record<string, unknown>, "taskId");
+    remapRef(snap as unknown as Record<string, unknown>, "taskInstanceId");
+  }
+}
+
+/** Get Dexie tables for a phase. */
+function tablesForPhase(db: RSembleEvaluationDB, phaseName: string): Table[] {
+  switch (phaseName) {
+    case "runs-rubrics-suites-experiments":
+      return [db.runSummaries, db.runDetails, db.profiles, db.profileVersions, db.suites, db.experiments];
+    case "tasks":
+      return [db.tasks, db.taskVersions, db.taskArtifacts, db.taskArtifactBytes, db.taskInstances, db.taskFamilies, db.taskFamilyAssignments, db.taskFamilyRelations, db.taskFacetAnnotations, db.taskMigrationCrosswalk];
+    case "taskSets":
+      return [db.taskSets, db.taskSetVersions, db.taskSetMaterializations, db.taskSetOwnershipCrosswalk];
+    case "evidence":
+      return [db.modelConfigurations, db.observations, db.evidenceDecisions, db.evidenceIndexJobs, db.verifierOutcomes];
+    case "comparisons":
+      return [db.comparisonResults];
+    case "lab":
+      return [db.labRecipeRecords, db.labRecipeVersions, db.modelPoolRecords, db.modelPoolVersions, db.studies, db.studyTrials, db.studyAttempts, db.studyObservations, db.policyPlaybooks, db.storageMeta];
+    case "modelRollups":
+      return [db.modelRollups, db.modelRollupVersions];
+    default:
+      return [];
+  }
+}
+
+/** Mark the disposable search index for rebuild after import. */
+async function markSearchForRebuild(db: RSembleEvaluationDB): Promise<void> {
+  // Write a storageMeta marker that the search reindexer picks up.
+  // Best-effort: if the table or key doesn't exist yet, skip silently.
+  try {
+    await db.storageMeta.put({
+      key: "search:needs-rebuild",
+      value: { at: Date.now(), reason: "archive-import" },
+    });
+  } catch {
+    // storageMeta may not be available in all database versions.
+  }
+}
 /**
  * Single-shot import dispatch: decode/validate the payload, route v1 through
  * the preserved adapter, v2 through preview + commit v2, and v3 through

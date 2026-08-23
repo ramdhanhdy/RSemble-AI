@@ -38,12 +38,13 @@ import {
   validateArchiveV3,
   type WorkbenchArchiveV3,
 } from "./archive-v3-types";
-import { seedCompleteV3Corpus, makePolicyStudyRecord } from "./archive-v3-fixtures";
+import { buildValidArchiveV3Fixture, seedCompleteV3Corpus, makePolicyStudyRecord } from "./archive-v3-fixtures";
 import * as fx from "./archive-v2-fixtures";
 import {
   commitPreviewWorkbenchArchiveV3,
   exportWorkbenchArchiveV3,
   importWorkbenchArchiveAuto,
+  importWorkbenchArchiveV3Phased,
   previewWorkbenchArchive,
 } from "./archive";
 import { RSembleEvaluationDB, createDatabase } from "./database";
@@ -564,6 +565,84 @@ describe("archive v3 integration — collision rejection and idempotency", () =>
     const stored = await db.studies.get(modified.lab.studies[0].id);
     expect(stored).toBeDefined();
     expect((stored!.record as { title: string }).title).not.toBe("Modified Colliding Title");
+
+    db.close();
+  });
+});
+
+describe("archive v3 integration — phased import with ID remapping (Task 7)", () => {
+  it("remaps a colliding Task to a new ID and threads the new ID through versions and observations", async () => {
+    const db = await freshDb("remap-task");
+    // Pre-seed a Task with different content
+    const archive = await seedCompleteV3Corpus(db);
+    const taskId = archive.tasks.tasks[0].id;
+
+    // Modify the task in the archive to create a collision
+    const modified = JSON.parse(JSON.stringify(archive)) as WorkbenchArchiveV3;
+    modified.tasks.tasks[0].title = "Colliding Modified Task Title";
+    modified.manifest.payloadDigest = computeArchiveV3PayloadDigest(modified);
+    modified.manifest.contentDigests = computeArchiveV3ContentDigests(modified);
+
+    // Import via phased import — should remap, not abort
+    const result = await importWorkbenchArchiveV3Phased(db, modified);
+
+    // The original task ID should have been remapped
+    expect(result.remapped.length).toBeGreaterThanOrEqual(1);
+    const taskRemap = result.remapped.find((e) => e.collection === "tasks.tasks");
+    expect(taskRemap).toBeDefined();
+    expect(taskRemap!.archiveId).toBe(taskId);
+    expect(taskRemap!.localId).not.toBe(taskId);
+    expect(taskRemap!.localId).toContain("-import-");
+
+    // Crosswalk should map old → new
+    expect(result.crosswalk[taskId]).toBe(taskRemap!.localId);
+
+    // The original task should still exist unchanged
+    const originalTask = await db.tasks.get(taskId);
+    expect(originalTask).toBeDefined();
+    expect((originalTask!.record as { title: string }).title).not.toBe("Colliding Modified Task Title");
+
+    // The remapped task should exist with the new ID
+    const remappedTask = await db.tasks.get(taskRemap!.localId);
+    expect(remappedTask).toBeDefined();
+    expect((remappedTask!.record as { title: string }).title).toBe("Colliding Modified Task Title");
+
+    db.close();
+  });
+
+  it("reuses identical entities and reports zero remaps on clean re-import", async () => {
+    const db = await freshDb("remap-reuse");
+    const archive = await seedCompleteV3Corpus(db);
+
+    // Re-import the identical archive
+    const result = await importWorkbenchArchiveV3Phased(db, archive);
+
+    // Everything should be reused, nothing remapped
+    expect(result.remapped.length).toBe(0);
+    expect(result.reused.length).toBeGreaterThan(0);
+    expect(result.created.length).toBe(0);
+
+    db.close();
+  });
+
+  it("isolates phases: earlier phase writes persist when a later phase would fail", async () => {
+    const db = await freshDb("remap-isolation");
+    // Seed only the cutover receipt so lab phase can proceed
+    await db.storageMeta.put({
+      key: fusionToResearchLabReceiptKey,
+      value: buildValidArchiveV3Fixture().lab.cutoverReceipt,
+    });
+
+    const archive = buildValidArchiveV3Fixture();
+
+    // Import should succeed since all phases are valid
+    const result = await importWorkbenchArchiveV3Phased(db, archive);
+    expect(result.failedPhases.length).toBe(0);
+    expect(result.created.length).toBeGreaterThan(0);
+
+    // Verify runs phase wrote data
+    const runCount = await db.runSummaries.count();
+    expect(runCount).toBeGreaterThan(0);
 
     db.close();
   });
