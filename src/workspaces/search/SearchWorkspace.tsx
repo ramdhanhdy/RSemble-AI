@@ -31,16 +31,10 @@ import {
   TestTubes,
   X,
 } from "lucide-react";
-import {
-  SEARCH_DOCUMENT_TYPES,
-  type SearchDocumentType,
-} from "../../lib/search/search-types";
+import { SEARCH_DOCUMENT_TYPES, type SearchDocumentType } from "../../lib/search/search-types";
 import type { SearchHit, SearchPage } from "../../lib/search/search-query";
 import type { SearchIndexRepository } from "../../lib/persistence/search-index-repository";
-import {
-  verifyAndRepairHit,
-  type SearchSourceResolver,
-} from "../../lib/search/search-reindex";
+import { verifyAndRepairHit, type SearchSourceResolver } from "../../lib/search/search-reindex";
 const PAGE_SIZE = 100;
 
 export const SEARCH_TYPE_LABELS: Record<SearchDocumentType, string> = {
@@ -69,10 +63,7 @@ export const SEARCH_TYPE_SINGULAR_LABELS: Record<SearchDocumentType, string> = {
   record: "Record",
 };
 
-export const SEARCH_TYPE_ICONS: Record<
-  SearchDocumentType,
-  typeof ListChecks
-> = {
+export const SEARCH_TYPE_ICONS: Record<SearchDocumentType, typeof ListChecks> = {
   task: ListChecks,
   task_set: Layers,
   rubric: FileText,
@@ -86,10 +77,7 @@ export const SEARCH_TYPE_ICONS: Record<
 };
 
 function isValidSearchType(v: string | null): v is SearchDocumentType {
-  return (
-    v !== null &&
-    (SEARCH_DOCUMENT_TYPES as readonly string[]).includes(v)
-  );
+  return v !== null && (SEARCH_DOCUMENT_TYPES as readonly string[]).includes(v);
 }
 
 export interface SearchWorkspaceProps {
@@ -98,24 +86,16 @@ export interface SearchWorkspaceProps {
   onNavigate?: (href: string) => void;
 }
 
-export function SearchWorkspace({
-  searchRepo,
-  resolver,
-  onNavigate,
-}: SearchWorkspaceProps) {
+export function SearchWorkspace({ searchRepo, resolver, onNavigate }: SearchWorkspaceProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const urlQuery = searchParams.get("q") ?? "";
   const rawType = searchParams.get("type");
-  const urlType: SearchDocumentType | "" = isValidSearchType(rawType)
-    ? rawType
-    : "";
+  const urlType: SearchDocumentType | "" = isValidSearchType(rawType) ? rawType : "";
 
   const [queryInput, setQueryInput] = useState(urlQuery);
-  const [activeType, setActiveType] = useState<SearchDocumentType | "">(
-    urlType,
-  );
+  const [activeType, setActiveType] = useState<SearchDocumentType | "">(urlType);
   const [pageOffset, setPageOffset] = useState(0);
 
   const [page, setPage] = useState<SearchPage | null>(null);
@@ -187,9 +167,7 @@ export function SearchWorkspace({
         setPage(null);
         setAllTypesPage(null);
         setLoading(false);
-        setError(
-          err instanceof Error ? err.message : "Search query failed.",
-        );
+        setError(err instanceof Error ? err.message : "Search query failed.");
       });
 
     return () => {
@@ -233,10 +211,7 @@ export function SearchWorkspace({
   const totalPages = Math.ceil(currentTotal / PAGE_SIZE) || 1;
   const currentPage = Math.floor(pageOffset / PAGE_SIZE) + 1;
 
-  const handleSelectHit = async (
-    e: React.MouseEvent,
-    doc: SearchHit["document"],
-  ) => {
+  const handleSelectHit = async (e: React.MouseEvent, doc: SearchHit["document"]) => {
     e.preventDefault();
     if (searchRepo && resolver) {
       try {
@@ -269,14 +244,11 @@ export function SearchWorkspace({
           });
           return;
         }
-        const targetHref =
-          result.status === "repaired"
-            ? result.document.ownerHref
-            : doc.ownerHref;
+        const targetHref = result.status === "repaired" ? result.document.ownerHref : doc.ownerHref;
         if (onNavigate) {
           onNavigate(targetHref);
         } else {
-          navigate(targetHref);
+          await navigate(targetHref);
         }
         return;
       } catch {
@@ -286,7 +258,7 @@ export function SearchWorkspace({
     if (onNavigate) {
       onNavigate(doc.ownerHref);
     } else {
-      navigate(doc.ownerHref);
+      await navigate(doc.ownerHref);
     }
   };
 
@@ -296,25 +268,20 @@ export function SearchWorkspace({
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold tracking-tight text-text">Search</h1>
         <p className="text-sm text-text-secondary">
-          Fast local cross-entity search across tasks, task sets, rubrics,
-          comparisons, evaluations, fusion studies, models, observations, and
-          records.
+          Fast local cross-entity search across tasks, task sets, rubrics, comparisons, evaluations,
+          fusion studies, models, observations, and records.
         </p>
       </header>
 
       {/* Search Input Bar */}
       <div role="search" className="relative flex items-center">
-        <Search
-          size={18}
-          className="pointer-events-none absolute left-4 text-text-secondary"
-        />
+        <Search size={18} className="pointer-events-none absolute left-4 text-text-secondary" />
         <input
           type="search"
           value={queryInput}
           onChange={handleInputChange}
           placeholder="Search by exact ID, title prefix, or tokens…"
           aria-label="Search"
-          autoFocus
           className="min-h-[48px] w-full rounded-lg border border-edge bg-raised pl-11 pr-12 text-sm text-text placeholder-text-secondary shadow-sm transition-colors focus:border-edge-bright focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         {queryInput && (
@@ -331,10 +298,7 @@ export function SearchWorkspace({
 
       {/* Type Filter Pills */}
       {queryInput.trim().length > 0 && (
-        <nav
-          aria-label="Entity type filters"
-          className="flex flex-wrap items-center gap-1.5"
-        >
+        <nav aria-label="Entity type filters" className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             data-type-filter="all"
@@ -405,9 +369,8 @@ export function SearchWorkspace({
             Search across workbench entities
           </h2>
           <p className="mx-auto mt-1.5 max-w-md text-xs text-text-secondary">
-            Enter a query to find tasks, task sets, rubrics, comparisons,
-            evaluations, fusion studies, model configs, rollups, observations, and
-            records.
+            Enter a query to find tasks, task sets, rubrics, comparisons, evaluations, fusion
+            studies, model configs, rollups, observations, and records.
           </p>
         </section>
       ) : filteredHits.length === 0 ? (
@@ -440,14 +403,9 @@ export function SearchWorkspace({
             {filteredHits.map((hit: SearchHit) => {
               const doc = hit.document;
               const Icon = SEARCH_TYPE_ICONS[doc.type] ?? Search;
-              const singularLabel =
-                SEARCH_TYPE_SINGULAR_LABELS[doc.type] ?? doc.type;
+              const singularLabel = SEARCH_TYPE_SINGULAR_LABELS[doc.type] ?? doc.type;
               return (
-                <li
-                  key={`${doc.type}-${doc.id}`}
-                  data-search-hit
-                  data-hit-type={doc.type}
-                >
+                <li key={`${doc.type}-${doc.id}`} data-search-hit data-hit-type={doc.type}>
                   <Link
                     to={doc.ownerHref}
                     onClick={(e) => handleSelectHit(e, doc)}
@@ -491,9 +449,7 @@ export function SearchWorkspace({
               <button
                 type="button"
                 disabled={pageOffset === 0}
-                onClick={() =>
-                  setPageOffset((prev) => Math.max(0, prev - PAGE_SIZE))
-                }
+                onClick={() => setPageOffset((prev) => Math.max(0, prev - PAGE_SIZE))}
                 className="flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-3.5 py-1.5 text-xs font-medium text-text transition-colors hover:border-edge-bright disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Previous
@@ -504,9 +460,7 @@ export function SearchWorkspace({
               <button
                 type="button"
                 disabled={currentPage >= totalPages}
-                onClick={() =>
-                  setPageOffset((prev) => prev + PAGE_SIZE)
-                }
+                onClick={() => setPageOffset((prev) => prev + PAGE_SIZE)}
                 className="flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-3.5 py-1.5 text-xs font-medium text-text transition-colors hover:border-edge-bright disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
                 Next

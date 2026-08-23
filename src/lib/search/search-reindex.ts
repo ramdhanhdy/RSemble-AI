@@ -170,7 +170,13 @@ export interface ComparisonRecordInput {
 export function comparisonToSearchDocument(comparison: ComparisonRecordInput): SearchDocument {
   const title = comparison.name || `Comparison ${comparison.id}`;
   const subtitle = `${comparison.mode} • ${comparison.status}`;
-  const tokens = extractTokens(comparison.id, comparison.runId, title, comparison.mode, comparison.status);
+  const tokens = extractTokens(
+    comparison.id,
+    comparison.runId,
+    title,
+    comparison.mode,
+    comparison.status,
+  );
 
   return parseSearchDocument({
     type: "comparison" as const,
@@ -200,12 +206,7 @@ export interface EvaluationRecordInput {
 export function evaluationToSearchDocument(evaluation: EvaluationRecordInput): SearchDocument {
   const title = evaluation.name || `Evaluation ${evaluation.id}`;
   const subtitle = `Evaluation • ${evaluation.status}`;
-  const tokens = extractTokens(
-    evaluation.id,
-    evaluation.suiteId,
-    title,
-    evaluation.status,
-  );
+  const tokens = extractTokens(evaluation.id, evaluation.suiteId, title, evaluation.status);
 
   return parseSearchDocument({
     type: "evaluation" as const,
@@ -258,10 +259,20 @@ export interface ModelConfigurationRecordInput {
   observedTo: number;
 }
 
-export function modelConfigurationToSearchDocument(config: ModelConfigurationRecordInput): SearchDocument {
+export function modelConfigurationToSearchDocument(
+  config: ModelConfigurationRecordInput,
+): SearchDocument {
   const title = `${config.providerId}/${config.requestedModel}`;
-  const subtitle = config.resolvedVersion ? `Resolved: ${config.resolvedVersion}` : "Model Configuration";
-  const tokens = extractTokens(config.id, config.providerId, config.requestedModel, config.resolvedVersion, title);
+  const subtitle = config.resolvedVersion
+    ? `Resolved: ${config.resolvedVersion}`
+    : "Model Configuration";
+  const tokens = extractTokens(
+    config.id,
+    config.providerId,
+    config.requestedModel,
+    config.resolvedVersion,
+    title,
+  );
 
   return parseSearchDocument({
     type: "model_configuration" as const,
@@ -353,7 +364,14 @@ export interface RunRecordSummaryInput {
 export function recordToSearchDocument(run: RunRecordSummaryInput): SearchDocument {
   const title = run.name || `Run ${run.id}`;
   const subtitle = `${run.mode} • ${run.status}`;
-  const tokens = extractTokens(run.id, run.kind, run.mode, run.status, title, ...(run.modelKeys ?? []));
+  const tokens = extractTokens(
+    run.id,
+    run.kind,
+    run.mode,
+    run.status,
+    title,
+    ...(run.modelKeys ?? []),
+  );
 
   return parseSearchDocument({
     type: "record" as const,
@@ -536,7 +554,13 @@ export async function rebuildSearchIndex(deps: SearchRebuildDeps): Promise<Searc
     try {
       sources = await deps.resolver.listAllSources();
     } catch (err) {
-      errors.push(`Failed to list sources: ${err instanceof Error ? err.message : String(err)}`);
+      // Source enumeration failed: surface the failure and leave the existing
+      // index untouched. A partial rebuild must never be reported as success.
+      const message = `Failed to list sources: ${err instanceof Error ? err.message : String(err)}`;
+      return {
+        indexedCount: 0,
+        errors: [message],
+      };
     }
   }
 
@@ -545,7 +569,9 @@ export async function rebuildSearchIndex(deps: SearchRebuildDeps): Promise<Searc
     try {
       validated.push(parseSearchDocument(source));
     } catch (err) {
-      errors.push(`Invalid source ${source.type}:${source.id}: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(
+        `Invalid source ${source.type}:${source.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -631,11 +657,7 @@ export interface SearchReindexMetaStore {
     expiresAt: number,
     now: number,
   ): Promise<"acquired" | "foreign-held">;
-  renewLease(
-    key: string,
-    ownerId: string,
-    expiresAt: number,
-  ): Promise<"renewed" | "lost">;
+  renewLease(key: string, ownerId: string, expiresAt: number): Promise<"renewed" | "lost">;
   releaseLease(key: string, ownerId: string): Promise<boolean>;
 }
 
@@ -663,7 +685,11 @@ export function createDexieSearchReindexMetaStore(db: RSembleEvaluationDB): Sear
     async renewLease(key, ownerId, expiresAt): Promise<"renewed" | "lost"> {
       return await db.transaction("rw", db.storageMeta, async () => {
         const existing = await db.storageMeta.get(key);
-        if (!existing || !isSearchLeaseRecord(existing.value) || existing.value.ownerId !== ownerId) {
+        if (
+          !existing ||
+          !isSearchLeaseRecord(existing.value) ||
+          existing.value.ownerId !== ownerId
+        ) {
           return "lost";
         }
         await db.storageMeta.put({
@@ -701,7 +727,8 @@ export async function rebuildSearchIndexWithLease(deps: {
   const getNow = deps.now ?? (() => Date.now());
   const ttlMs = deps.leaseTtlMs ?? 30_000;
   const ownerId =
-    deps.ownerId ?? `search-reindex-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    deps.ownerId ??
+    `search-reindex-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const acquired = await deps.meta.tryAcquireLease(
     SEARCH_REINDEX_LEASE_KEY,
@@ -715,11 +742,7 @@ export async function rebuildSearchIndexWithLease(deps: {
   }
 
   try {
-    const renewed = await deps.meta.renewLease(
-      SEARCH_REINDEX_LEASE_KEY,
-      ownerId,
-      getNow() + ttlMs,
-    );
+    const renewed = await deps.meta.renewLease(SEARCH_REINDEX_LEASE_KEY, ownerId, getNow() + ttlMs);
     if (renewed === "lost") {
       return { skipped: true, reason: "lease-lost" };
     }
@@ -768,9 +791,7 @@ function getFieldOptionalNumber(obj: unknown, key: string): number | undefined {
   return undefined;
 }
 
-export function createDexieSearchSourceResolver(
-  db: RSembleEvaluationDB,
-): SearchSourceResolver {
+export function createDexieSearchSourceResolver(db: RSembleEvaluationDB): SearchSourceResolver {
   async function resolveDocument(ref: {
     type: SearchDocumentType;
     id: string;
@@ -835,15 +856,19 @@ export function createDexieSearchSourceResolver(
       }
 
       case "rubric": {
-        const profile = await db.profiles.get(ref.id);
-        if (!profile) return null;
-        const name = getFieldString(profile.record, "name", getFieldString(profile.record, "title"));
+        const rubricRow = await db.profiles.get(ref.id);
+        if (!rubricRow) return null;
+        const name = getFieldString(
+          rubricRow.record,
+          "name",
+          getFieldString(rubricRow.record, "title"),
+        );
         return rubricToSearchDocument({
-          id: profile.id,
-          revision: profile.revision,
+          id: rubricRow.id,
+          revision: rubricRow.revision,
           name,
-          updatedAt: profile.updatedAt,
-          archivedAt: profile.archivedAt,
+          updatedAt: rubricRow.updatedAt,
+          archivedAt: rubricRow.archivedAt,
         });
       }
 
@@ -989,106 +1014,70 @@ export function createDexieSearchSourceResolver(
 
   async function listAllSources(): Promise<SearchDocument[]> {
     const results: SearchDocument[] = [];
+    const failures: string[] = [];
 
-    try {
-      const tasks = await db.tasks.toArray();
-      for (const task of tasks) {
-        try {
-          const doc = await resolveDocument({ type: "task", id: task.id });
-          if (doc) results.push(doc);
-        } catch {}
-      }
-    } catch {}
+    // Each searchable source table is enumerated independently so a single
+    // table-read failure is reported with context rather than aborting the
+    // remaining tables. Per-row extraction failures are likewise recorded
+    // with their entity type and id. Any failure is fatal to the rebuild:
+    // listAllSources rejects so the caller can leave the existing index
+    // untouched instead of committing a partial rebuild as success.
+    const tables: ReadonlyArray<{
+      label: string;
+      type: SearchDocumentType;
+      read: () => Promise<ReadonlyArray<{ id: string }>>;
+    }> = [
+      { label: "tasks", type: "task", read: () => db.tasks.toArray() },
+      { label: "taskSets", type: "task_set", read: () => db.taskSets.toArray() },
+      // Durable Dexie table `db.profiles` is preserved (storage contract);
+      // the searchable entity is the Rubric, so the failure label uses the
+      // Rubric term rather than the storage table name.
+      { label: "rubrics", type: "rubric", read: () => db.profiles.toArray() },
+      {
+        label: "comparisonResults",
+        type: "comparison",
+        read: () => db.comparisonResults.toArray(),
+      },
+      { label: "experiments", type: "evaluation", read: () => db.experiments.toArray() },
+      { label: "studies", type: "fusion_study", read: () => db.studies.toArray() },
+      {
+        label: "modelConfigurations",
+        type: "model_configuration",
+        read: () => db.modelConfigurations.toArray(),
+      },
+      { label: "modelRollups", type: "model_rollup", read: () => db.modelRollups.toArray() },
+      { label: "observations", type: "observation", read: () => db.observations.toArray() },
+      { label: "runSummaries", type: "record", read: () => db.runSummaries.toArray() },
+    ];
 
-    try {
-      const taskSets = await db.taskSets.toArray();
-      for (const set of taskSets) {
-        try {
-          const doc = await resolveDocument({ type: "task_set", id: set.id });
-          if (doc) results.push(doc);
-        } catch {}
+    for (const { label, type, read } of tables) {
+      let rows: ReadonlyArray<{ id: string }>;
+      try {
+        rows = await read();
+      } catch (err) {
+        failures.push(
+          `Failed to read ${label}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        continue;
       }
-    } catch {}
 
-    try {
-      const profiles = await db.profiles.toArray();
-      for (const profile of profiles) {
+      for (const row of rows) {
         try {
-          const doc = await resolveDocument({ type: "rubric", id: profile.id });
+          const doc = await resolveDocument({ type, id: row.id });
           if (doc) results.push(doc);
-        } catch {}
+        } catch (err) {
+          failures.push(
+            `Failed to extract ${type}:${row.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
-    } catch {}
+    }
 
-    try {
-      const comparisons = await db.comparisonResults.toArray();
-      for (const comp of comparisons) {
-        try {
-          const doc = await resolveDocument({ type: "comparison", id: comp.id });
-          if (doc) results.push(doc);
-        } catch {}
-      }
-    } catch {}
-
-    try {
-      const experiments = await db.experiments.toArray();
-      for (const exp of experiments) {
-        try {
-          const doc = await resolveDocument({ type: "evaluation", id: exp.id });
-          if (doc) results.push(doc);
-        } catch {}
-      }
-    } catch {}
-
-    try {
-      const studies = await db.studies.toArray();
-      for (const study of studies) {
-        try {
-          const doc = await resolveDocument({ type: "fusion_study", id: study.id });
-          if (doc) results.push(doc);
-        } catch {}
-      }
-    } catch {}
-
-    try {
-      const configs = await db.modelConfigurations.toArray();
-      for (const cfg of configs) {
-        try {
-          const doc = await resolveDocument({ type: "model_configuration", id: cfg.id });
-          if (doc) results.push(doc);
-        } catch {}
-      }
-    } catch {}
-
-    try {
-      const rollups = await db.modelRollups.toArray();
-      for (const r of rollups) {
-        try {
-          const doc = await resolveDocument({ type: "model_rollup", id: r.id });
-          if (doc) results.push(doc);
-        } catch {}
-      }
-    } catch {}
-
-    try {
-      const observations = await db.observations.toArray();
-      for (const obs of observations) {
-        try {
-          const doc = await resolveDocument({ type: "observation", id: obs.id });
-          if (doc) results.push(doc);
-        } catch {}
-      }
-    } catch {}
-
-    try {
-      const runs = await db.runSummaries.toArray();
-      for (const run of runs) {
-        try {
-          const doc = await resolveDocument({ type: "record", id: run.id });
-          if (doc) results.push(doc);
-        } catch {}
-      }
-    } catch {}
+    if (failures.length > 0) {
+      throw new Error(
+        `Search source enumeration failed (${failures.length} error${failures.length === 1 ? "" : "s"}): ${failures.join("; ")}`,
+      );
+    }
 
     return results;
   }

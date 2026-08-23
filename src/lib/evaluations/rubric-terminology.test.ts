@@ -43,6 +43,11 @@
 //       vocabulary (ProfileRespondent, ProfileCoverageSummary,
 //       ModelEvidenceProfile, etc.), path-scoped. These are model-evidence
 //       terms, not scoring-Rubric terms.
+//     • the standalone `profiles` token where it is a Model Profile route
+//       literal segment `/models/profiles/...` — legitimate Model Profile
+//       vocabulary (the /models route surface), context-scoped: preceded by
+//       `/models/` and followed by `/` or end-of-string-quote. Scoring
+//       `profiles` uses (variables, nav labels, API fields) stay flagged.
 //   Anything else carrying the Profile word — type names, repository methods,
 //   component names, route segments, user-facing strings, comments, test
 //   helpers — is a scoring-Profile term and must become Rubric.
@@ -246,6 +251,18 @@ function isAllowed(token: string, relFile: string, line: string, idx: number): b
   if (token === "profiles") {
     // `db.profiles` — physical Dexie store access (frozen, any file).
     if (/\bdb\.\s*$/.test(line.slice(0, idx))) return true;
+    // `/models/profiles/...` — Model Profile route literal (legitimate
+    // Model Profile vocabulary, not scoring Profile). The `profiles` segment
+    // sits inside a route path string preceded by `/models/` and followed by
+    // `/` or end-of-string-quote. Narrow: a bare `profiles` variable, nav
+    // label, or API field does not match.
+    {
+      const before = line.slice(0, idx);
+      const after = line.slice(idx + token.length);
+      if (/\/models\/\s*$/.test(before) && (/^\s*\//.test(after) || /^\s*["']/.test(after))) {
+        return true;
+      }
+    }
     // `.profiles` — frozen serialized field access (e.g. snapshot.profiles).
     if (line[idx - 1] === ".") return true;
     // `profiles:` — frozen serialized property key in object literal (not a
@@ -516,6 +533,98 @@ describe("rubric terminology boundary (Child 01, Task 1)", () => {
       for (const relFile of relFiles) {
         expect(scanFile(join(SRC_ROOT, relFile), SRC_ROOT), relFile).toEqual([]);
       }
+    });
+  });
+
+  describe("Search resolver + Model Profile route exemptions", () => {
+    it("allows db.profiles durable Dexie store access in the Search resolver", () => {
+      const relFile = "lib/search/search-reindex.ts";
+      // `db.profiles.get(...)` — physical Dexie store access, frozen schema.
+      const getLine = "        const profile = await db.profiles.get(ref.id);";
+      const getIdx = getLine.indexOf("profiles");
+      expect(isAllowed("profiles", relFile, getLine, getIdx)).toBe(true);
+      // `db.profiles.toArray()` — same frozen store access.
+      const toArrayLine = "      const profiles = await db.profiles.toArray();";
+      const toArrayIdx = toArrayLine.indexOf("profiles", toArrayLine.indexOf("db.") + 3);
+      expect(isAllowed("profiles", relFile, toArrayLine, toArrayIdx)).toBe(true);
+    });
+
+    it("allows /models/profiles/ Model Profile route literals in test fixtures", () => {
+      // CommandPalette test fixture — Model Profile route literal.
+      const cpLine =
+        '    makeDoc("model_sonnet_1", "model_configuration", "Claude 3.5 Sonnet config", "Temperature 0.7", "/models/profiles/model_sonnet_1", ["claude", "sonnet", "config"]),';
+      expect(
+        isAllowed("profiles", "ui/CommandPalette.test.tsx", cpLine, cpLine.indexOf("profiles")),
+      ).toBe(true);
+      // SearchWorkspace test fixture — same Model Profile route literal.
+      const swLine =
+        '  makeDoc("model1", "model_configuration", "Claude 3.5 Sonnet config", "Temperature 0.7 max tokens 4096", "/models/profiles/model1", ["claude", "sonnet", "config"]),';
+      expect(
+        isAllowed(
+          "profiles",
+          "workspaces/search/SearchWorkspace.test.tsx",
+          swLine,
+          swLine.indexOf("profiles"),
+        ),
+      ).toBe(true);
+      // Route literal at end-of-string (no trailing slash) also passes.
+      const endRoute = '  href: "/models/profiles",';
+      expect(
+        isAllowed("profiles", "ui/CommandPalette.test.tsx", endRoute, endRoute.indexOf("profiles")),
+      ).toBe(true);
+    });
+
+    it("keeps flagging scoring profile/profiles uses near the exempted contexts", () => {
+      const relFile = "lib/search/search-reindex.ts";
+      // Local `profile` variable from db.profiles.get() — scoring term, must rename.
+      const localVar = "        const profile = await db.profiles.get(ref.id);";
+      expect(isAllowed("profile", relFile, localVar, localVar.indexOf("profile"))).toBe(false);
+      // Local `profiles` variable from db.profiles.toArray() — scoring term.
+      const localProfiles = "      const profiles = await db.profiles.toArray();";
+      expect(isAllowed("profiles", relFile, localProfiles, localProfiles.indexOf("profiles"))).toBe(
+        false,
+      );
+      // `profile` local variable reference — scoring term.
+      const ref = "        if (!profile) return null;";
+      expect(isAllowed("profile", relFile, ref, ref.indexOf("profile"))).toBe(false);
+    });
+
+    it("keeps flagging generic scoring profiles uses outside the narrow contexts", () => {
+      // Generic scoring `profiles` variable — not a Dexie store, not a Model Profile route.
+      const generic = "  const profiles = items.filter((i) => i.active);";
+      expect(
+        isAllowed(
+          "profiles",
+          "lib/evaluations/suite-validation.ts",
+          generic,
+          generic.indexOf("profiles"),
+        ),
+      ).toBe(false);
+      // Capital `Profiles` nav label — user-facing, still flagged.
+      const navLabel = '  label: "Profiles",';
+      expect(isAllowed("Profiles", "ui/Nav.tsx", navLabel, navLabel.indexOf("Profiles"))).toBe(
+        false,
+      );
+      // `/evaluations/profiles/` route — scoring Profile route, NOT Model Profile.
+      const scoringRoute = '  href: "/evaluations/profiles/rubric-1",';
+      expect(
+        isAllowed(
+          "profiles",
+          "ui/CommandPalette.test.tsx",
+          scoringRoute,
+          scoringRoute.indexOf("profiles"),
+        ),
+      ).toBe(false);
+      // `/models/profiles` without the /models/ prefix — e.g. typo /models2/profiles — flagged.
+      const wrongPrefix = '  href: "/models2/profiles/x",';
+      expect(
+        isAllowed(
+          "profiles",
+          "ui/CommandPalette.test.tsx",
+          wrongPrefix,
+          wrongPrefix.indexOf("profiles"),
+        ),
+      ).toBe(false);
     });
   });
 });

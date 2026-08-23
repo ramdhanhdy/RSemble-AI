@@ -3,10 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import {
-  type SearchDocument,
-  type SearchDocumentType,
-} from "../../lib/search/search-types";
+import { type SearchDocument, type SearchDocumentType } from "../../lib/search/search-types";
 import {
   createInMemorySearchIndexRepository,
   type SearchIndexRepository,
@@ -16,7 +13,14 @@ import { SearchWorkspace } from "./SearchWorkspace";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
-function makeDoc(id: string, type: SearchDocumentType, title: string, subtitle = "", ownerHref = `/${type}/${id}`, tokens: string[] = []): SearchDocument {
+function makeDoc(
+  id: string,
+  type: SearchDocumentType,
+  title: string,
+  subtitle = "",
+  ownerHref = `/${type}/${id}`,
+  tokens: string[] = [],
+): SearchDocument {
   return {
     type,
     id,
@@ -31,17 +35,84 @@ function makeDoc(id: string, type: SearchDocumentType, title: string, subtitle =
 }
 
 const SAMPLE_CORPUS: SearchDocument[] = [
-  makeDoc("t1", "task", "Evaluation task summary", "A quick benchmark task", "/tasks/t1", ["evaluation", "task", "benchmark"]),
-  makeDoc("t2", "task", "Classification brief", "Image classification prompt", "/tasks/t2", ["classification", "brief"]),
-  makeDoc("set1", "task_set", "Standard evaluation set", "Core task set containing 5 tasks", "/evaluations/sets/set1", ["standard", "evaluation", "set"]),
-  makeDoc("rubric1", "rubric", "Precision scoring rubric", "Rubric with accuracy criteria", "/evaluations/rubrics/rubric1", ["precision", "scoring", "rubric"]),
-  makeDoc("comp1", "comparison", "GPT vs Claude comparison", "Rank evaluation run on standard set", "/compare/results/comp1", ["gpt", "claude", "comparison"]),
-  makeDoc("eval1", "evaluation", "Nightly evaluation execution", "Full matrix run completed", "/evaluations/results/eval1", ["nightly", "evaluation", "execution"]),
-  makeDoc("study1", "fusion_study", "Prompt fusion experiment", "Exploration study for prompt refinement", "/lab/studies/study1", ["prompt", "fusion", "experiment"]),
-  makeDoc("model1", "model_configuration", "Claude 3.5 Sonnet config", "Temperature 0.7 max tokens 4096", "/models/profiles/model1", ["claude", "sonnet", "config"]),
-  makeDoc("rollup1", "model_rollup", "Sonnet rollup definition", "Aggregated claims for Sonnet", "/models/rollups/rollup1", ["sonnet", "rollup", "claims"]),
-  makeDoc("obs1", "observation", "Observation for task-1 on Sonnet", "Pass outcome with 0.95 confidence", "/models/observations/obs1", ["observation", "task", "sonnet"]),
-  makeDoc("run1", "record", "Run record #1042", "Completed comparison run", "/records/run/run1", ["run", "record", "1042"]),
+  makeDoc("t1", "task", "Evaluation task summary", "A quick benchmark task", "/tasks/t1", [
+    "evaluation",
+    "task",
+    "benchmark",
+  ]),
+  makeDoc("t2", "task", "Classification brief", "Image classification prompt", "/tasks/t2", [
+    "classification",
+    "brief",
+  ]),
+  makeDoc(
+    "set1",
+    "task_set",
+    "Standard evaluation set",
+    "Core task set containing 5 tasks",
+    "/evaluations/sets/set1",
+    ["standard", "evaluation", "set"],
+  ),
+  makeDoc(
+    "rubric1",
+    "rubric",
+    "Precision scoring rubric",
+    "Rubric with accuracy criteria",
+    "/evaluations/rubrics/rubric1",
+    ["precision", "scoring", "rubric"],
+  ),
+  makeDoc(
+    "comp1",
+    "comparison",
+    "GPT vs Claude comparison",
+    "Rank evaluation run on standard set",
+    "/compare/results/comp1",
+    ["gpt", "claude", "comparison"],
+  ),
+  makeDoc(
+    "eval1",
+    "evaluation",
+    "Nightly evaluation execution",
+    "Full matrix run completed",
+    "/evaluations/results/eval1",
+    ["nightly", "evaluation", "execution"],
+  ),
+  makeDoc(
+    "study1",
+    "fusion_study",
+    "Prompt fusion experiment",
+    "Exploration study for prompt refinement",
+    "/lab/studies/study1",
+    ["prompt", "fusion", "experiment"],
+  ),
+  makeDoc(
+    "model1",
+    "model_configuration",
+    "Claude 3.5 Sonnet config",
+    "Temperature 0.7 max tokens 4096",
+    "/models/profiles/model1",
+    ["claude", "sonnet", "config"],
+  ),
+  makeDoc(
+    "rollup1",
+    "model_rollup",
+    "Sonnet rollup definition",
+    "Aggregated claims for Sonnet",
+    "/models/rollups/rollup1",
+    ["sonnet", "rollup", "claims"],
+  ),
+  makeDoc(
+    "obs1",
+    "observation",
+    "Observation for task-1 on Sonnet",
+    "Pass outcome with 0.95 confidence",
+    "/models/observations/obs1",
+    ["observation", "task", "sonnet"],
+  ),
+  makeDoc("run1", "record", "Run record #1042", "Completed comparison run", "/records/run/run1", [
+    "run",
+    "record",
+    "1042",
+  ]),
 ];
 
 interface Harness {
@@ -52,16 +123,19 @@ interface Harness {
   getLocation?: () => { pathname: string; search: string };
 }
 
-function renderWorkspace(props: {
-  repo?: SearchIndexRepository | null;
-  resolver?: SearchSourceResolver | null;
-  initialEntries?: string[];
-  onNavigate?: (path: string) => void;
-} = {}): Harness {
+function renderWorkspace(
+  props: {
+    repo?: SearchIndexRepository | null;
+    resolver?: SearchSourceResolver | null;
+    initialEntries?: string[];
+    onNavigate?: (path: string) => void;
+  } = {},
+): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  const repo = props.repo !== undefined ? props.repo : createInMemorySearchIndexRepository(SAMPLE_CORPUS);
+  const repo =
+    props.repo !== undefined ? props.repo : createInMemorySearchIndexRepository(SAMPLE_CORPUS);
   let currentLocation = { pathname: "/search", search: "" };
 
   function LocationTracker() {
@@ -115,7 +189,9 @@ describe("SearchWorkspace", () => {
     const h = renderWorkspace();
     await settle();
 
-    const input = h.$('input[type="search"], input[aria-label="Search"], input[placeholder*="Search"]');
+    const input = h.$(
+      'input[type="search"], input[aria-label="Search"], input[placeholder*="Search"]',
+    );
     expect(input).toBeTruthy();
     expect(h.container.textContent).toMatch(/Search across|Enter a query|Find workbench/i);
     expect(h.$$("[data-search-hit]")).toHaveLength(0);
@@ -160,9 +236,22 @@ describe("SearchWorkspace", () => {
 
   it("ranks exact ID first above title prefix above token match", async () => {
     const repo = createInMemorySearchIndexRepository([
-      makeDoc("exact-needle", "task", "Something completely different", "sub", "/tasks/exact-needle", ["other"]),
-      makeDoc("prefix-match", "task", "needle in haystack", "sub", "/tasks/prefix-match", ["needle", "haystack"]),
-      makeDoc("token-match", "task", "Contains needle token", "sub", "/tasks/token-match", ["contains", "needle"]),
+      makeDoc(
+        "exact-needle",
+        "task",
+        "Something completely different",
+        "sub",
+        "/tasks/exact-needle",
+        ["other"],
+      ),
+      makeDoc("prefix-match", "task", "needle in haystack", "sub", "/tasks/prefix-match", [
+        "needle",
+        "haystack",
+      ]),
+      makeDoc("token-match", "task", "Contains needle token", "sub", "/tasks/token-match", [
+        "contains",
+        "needle",
+      ]),
     ]);
     const h = renderWorkspace({ repo, initialEntries: ["/search?q=exact-needle"] });
     await settle();
@@ -202,7 +291,7 @@ describe("SearchWorkspace", () => {
     const h = renderWorkspace({ initialEntries: ["/search?q=precision"] });
     await settle();
 
-    const hitLink = h.$('[data-search-hit] a, a[data-search-hit]') as HTMLAnchorElement;
+    const hitLink = h.$("[data-search-hit] a, a[data-search-hit]") as HTMLAnchorElement;
     expect(hitLink).toBeTruthy();
     expect(hitLink.getAttribute("href")).toBe("/evaluations/rubrics/rubric1");
 
@@ -218,7 +307,10 @@ describe("SearchWorkspace", () => {
 
   it("paginates / caps rendered rows at 100", async () => {
     const hugeCorpus: SearchDocument[] = Array.from({ length: 150 }, (_, i) =>
-      makeDoc(`item-${i}`, "task", `Bulk task item ${i}`, `Subtitle ${i}`, `/tasks/item-${i}`, ["bulk", "task"]),
+      makeDoc(`item-${i}`, "task", `Bulk task item ${i}`, `Subtitle ${i}`, `/tasks/item-${i}`, [
+        "bulk",
+        "task",
+      ]),
     );
     const repo = createInMemorySearchIndexRepository(hugeCorpus);
     const h = renderWorkspace({ repo, initialEntries: ["/search?q=bulk"] });
@@ -277,7 +369,9 @@ describe("SearchWorkspace", () => {
 
     const html = h.container.innerHTML;
     expect(html).not.toMatch(/\bsk-[A-Za-z0-9_-]{6,}|\bAIza[A-Za-z0-9_-]{10,}|Bearer\s+\S+/i);
-    expect(h.container.textContent).not.toMatch(/\bsk-[A-Za-z0-9_-]{6,}|\bAIza[A-Za-z0-9_-]{10,}|Bearer\s+\S+/i);
+    expect(h.container.textContent).not.toMatch(
+      /\bsk-[A-Za-z0-9_-]{6,}|\bAIza[A-Za-z0-9_-]{10,}|Bearer\s+\S+/i,
+    );
     act(() => h.root.unmount());
   });
 
@@ -299,7 +393,10 @@ describe("SearchWorkspace", () => {
   });
   it("reproduction C3: verifies and drops deleted stale hit on select without navigating", async () => {
     const repo = createInMemorySearchIndexRepository([
-      makeDoc("deleted-task", "task", "Deleted Task", "Sub", "/tasks/deleted-task", ["deleted", "task"]),
+      makeDoc("deleted-task", "task", "Deleted Task", "Sub", "/tasks/deleted-task", [
+        "deleted",
+        "task",
+      ]),
     ]);
 
     const resolver: SearchSourceResolver = {
@@ -318,7 +415,7 @@ describe("SearchWorkspace", () => {
     });
     await settle();
 
-    const hitLink = h.$('[data-search-hit] a');
+    const hitLink = h.$("[data-search-hit] a");
     expect(hitLink).toBeTruthy();
 
     await act(async () => {
@@ -367,7 +464,7 @@ describe("SearchWorkspace", () => {
     });
     await settle();
 
-    const hitLink = h.$('[data-search-hit] a');
+    const hitLink = h.$("[data-search-hit] a");
     expect(hitLink).toBeTruthy();
 
     await act(async () => {
@@ -379,6 +476,55 @@ describe("SearchWorkspace", () => {
     expect(onNavigateSpy).toHaveBeenCalledWith("/tasks/repaired-path");
     const repairedDoc = await repo.getDocument("task", "stale-task");
     expect(repairedDoc?.revision).toBe(2);
+
+    act(() => h.root.unmount());
+  });
+  it("falls back to original ownerHref when resolver throws (no unhandled rejection)", async () => {
+    const repo = createInMemorySearchIndexRepository([
+      makeDoc("fail-task", "task", "Failing Task", "Sub", "/tasks/fail-task", ["failing", "task"]),
+    ]);
+
+    const resolver: SearchSourceResolver = {
+      async resolveDocument() {
+        throw new Error("source list unavailable");
+      },
+    };
+
+    const onNavigateSpy = vi.fn();
+    const h = renderWorkspace({
+      repo,
+      resolver,
+      initialEntries: ["/search?q=failing"],
+      onNavigate: onNavigateSpy,
+    });
+    await settle();
+
+    const hitLink = h.$("[data-search-hit] a");
+    expect(hitLink).toBeTruthy();
+
+    await act(async () => {
+      hitLink!.click();
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    });
+    await settle();
+
+    // Resolver failure is caught; navigation falls back to the original ownerHref.
+    expect(onNavigateSpy).toHaveBeenCalledTimes(1);
+    expect(onNavigateSpy).toHaveBeenCalledWith("/tasks/fail-task");
+
+    act(() => h.root.unmount());
+  });
+
+  it("does not steal focus on mount (no autoFocus, no mobile keyboard)", async () => {
+    const h = renderWorkspace();
+    await settle();
+
+    const input = h.$('input[aria-label="Search"]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    // The input must not carry an autoFocus attribute.
+    expect(input.hasAttribute("autofocus")).toBe(false);
+    // Route entry must not move focus into the search input.
+    expect(document.activeElement).not.toBe(input);
 
     act(() => h.root.unmount());
   });

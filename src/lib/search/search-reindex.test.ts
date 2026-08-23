@@ -26,7 +26,7 @@ import {
   type SearchReindexMetaStore,
 } from "./search-reindex";
 import { createInMemorySearchIndexRepository } from "../persistence/search-index-repository";
-import { createDatabase } from "../persistence/database";
+import { createDatabase, type RSembleEvaluationDB } from "../persistence/database";
 import type { SearchDocument, SearchDocumentType } from "./search-types";
 
 describe("Search entity extractors", () => {
@@ -341,7 +341,10 @@ describe("Stale hit repair and removal (without source deletion)", () => {
       },
     };
 
-    const result = await verifyAndRepairHit({ type: "task", id: "t1", revision: 1 }, { searchRepo, resolver });
+    const result = await verifyAndRepairHit(
+      { type: "task", id: "t1", revision: 1 },
+      { searchRepo, resolver },
+    );
     expect(result.status).toBe("fresh");
     expect(result.document).toEqual(doc);
   });
@@ -384,7 +387,10 @@ describe("Stale hit repair and removal (without source deletion)", () => {
       },
     };
 
-    const result = await verifyAndRepairHit({ type: "task", id: "t1", revision: 1 }, { searchRepo, resolver });
+    const result = await verifyAndRepairHit(
+      { type: "task", id: "t1", revision: 1 },
+      { searchRepo, resolver },
+    );
     expect(sourceQueried).toBe(true);
     expect(result.status).toBe("repaired");
     expect(result.document).toEqual(updatedSourceDoc);
@@ -414,7 +420,10 @@ describe("Stale hit repair and removal (without source deletion)", () => {
       },
     };
 
-    const result = await verifyAndRepairHit({ type: "task", id: "t1", revision: 1 }, { searchRepo, resolver });
+    const result = await verifyAndRepairHit(
+      { type: "task", id: "t1", revision: 1 },
+      { searchRepo, resolver },
+    );
     expect(result.status).toBe("removed");
     expect(result.document).toBeNull();
 
@@ -697,7 +706,12 @@ describe("Multi-tab lease coordination", () => {
       },
       async tryAcquireLease(key, ownerId, expiresAt, now) {
         const entry = store.get(key);
-        if (entry && entry.expiresAt > now && isLeaseData(entry.value) && entry.value.ownerId !== ownerId) {
+        if (
+          entry &&
+          entry.expiresAt > now &&
+          isLeaseData(entry.value) &&
+          entry.value.ownerId !== ownerId
+        ) {
           return "foreign-held";
         }
         store.set(key, { value: { ownerId, expiresAt }, expiresAt });
@@ -785,5 +799,154 @@ describe("Multi-tab lease coordination", () => {
     // Lease should be released
     const afterLease = await meta.get(SEARCH_REINDEX_LEASE_KEY);
     expect(afterLease).toBeNull();
+  });
+});
+
+describe("Search rebuild reliability — source enumeration failure handling", () => {
+  function makeDoc(id: string, type: SearchDocumentType = "task"): SearchDocument {
+    return {
+      type,
+      id,
+      revision: 1,
+      title: `Entity ${id}`,
+      subtitle: `Subtitle ${id}`,
+      ownerHref: `/${type}s/${id}`,
+      tokens: [id, "shared"],
+      updatedAt: 1000,
+      indexSchemaVersion: 1,
+    };
+  }
+
+  it("surfaces a listAllSources rejection in errors with indexedCount 0", async () => {
+    const searchRepo = createInMemorySearchIndexRepository();
+    const listError = new Error("source enumeration unavailable");
+    const resolver: SearchSourceResolver = {
+      async resolveDocument() {
+        return null;
+      },
+      async listAllSources() {
+        throw listError;
+      },
+    };
+
+    const result = await rebuildSearchIndex({ searchRepo, resolver });
+
+    expect(result.indexedCount).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain("Failed to list sources");
+    expect(result.errors[0]).toContain("source enumeration unavailable");
+  });
+
+  it("leaves the existing index untouched when listAllSources rejects (no clear, no write)", async () => {
+    // Pre-seed the index with documents that must survive a failed rebuild.
+    const preExisting = [makeDoc("survive-a", "task"), makeDoc("survive-b", "evaluation")];
+    const searchRepo = createInMemorySearchIndexRepository(preExisting);
+    expect(await searchRepo.countDocuments()).toBe(2);
+
+    const wouldBeAdded = makeDoc("should-not-appear", "task");
+    const resolver: SearchSourceResolver = {
+      async resolveDocument() {
+        return wouldBeAdded;
+      },
+      async listAllSources() {
+        throw new Error("enumeration failed");
+      },
+    };
+
+    const result = await rebuildSearchIndex({ searchRepo, resolver });
+
+    // Failure reported, nothing indexed.
+    expect(result.indexedCount).toBe(0);
+    expect(result.errors).toHaveLength(1);
+
+    // Existing index is intact: same count, same documents, no additions.
+    expect(await searchRepo.countDocuments()).toBe(2);
+    const docs = await searchRepo.listDocuments();
+    const ids = docs.map((d) => d.id).sort();
+    expect(ids).toEqual(["survive-a", "survive-b"]);
+    expect(docs.map((d) => d.id)).not.toContain("should-not-appear");
+  });
+
+  it("preserves successful full-rebuild behavior: indexes all sources, no errors, idempotent", async () => {
+    const searchRepo = createInMemorySearchIndexRepository();
+    const sources = [makeDoc("s1", "task"), makeDoc("s2", "evaluation"), makeDoc("s3", "rubric")];
+
+    const resolver: SearchSourceResolver = {
+      async resolveDocument({ type, id }) {
+        return sources.find((s) => s.type === type && s.id === id) ?? null;
+      },
+      async listAllSources() {
+        return sources;
+      },
+    };
+
+    const result = await rebuildSearchIndex({ searchRepo, resolver });
+
+    expect(result.indexedCount).toBe(3);
+    expect(result.errors).toEqual([]);
+    expect(await searchRepo.countDocuments()).toBe(3);
+
+    // A second identical rebuild replaces the index with the same documents.
+    const result2 = await rebuildSearchIndex({ searchRepo, resolver });
+    expect(result2.indexedCount).toBe(3);
+    expect(result2.errors).toEqual([]);
+    expect(await searchRepo.countDocuments()).toBe(3);
+
+    const docs = await searchRepo.listDocuments();
+    const ids = docs.map((d) => d.id).sort();
+    expect(ids).toEqual(["s1", "s2", "s3"]);
+  });
+
+  it("createDexieSearchSourceResolver.listAllSources surfaces a table-read failure instead of silently omitting it", async () => {
+    const boom = new Error("table read boom");
+    const failingTable = { toArray: () => Promise.reject(boom) };
+    const emptyTable = { toArray: () => Promise.resolve([]) };
+    // Minimal stub: listAllSources only invokes .toArray() on each table.
+    const db = {
+      tasks: failingTable,
+      taskSets: emptyTable,
+      profiles: emptyTable,
+      comparisonResults: emptyTable,
+      experiments: emptyTable,
+      studies: emptyTable,
+      modelConfigurations: emptyTable,
+      modelRollups: emptyTable,
+      observations: emptyTable,
+      runSummaries: emptyTable,
+    } as unknown as RSembleEvaluationDB;
+
+    const resolver = createDexieSearchSourceResolver(db);
+
+    await expect(resolver.listAllSources!()).rejects.toThrow(/Search source enumeration failed/);
+    await expect(resolver.listAllSources!()).rejects.toThrow(/Failed to read tasks/);
+    await expect(resolver.listAllSources!()).rejects.toThrow(/table read boom/);
+  });
+
+  it("createDexieSearchSourceResolver.listAllSources surfaces a per-row extraction failure instead of silently omitting it", async () => {
+    // One row whose id triggers resolveDocument to throw, plus the rest empty.
+    // resolveDocument for "task" reads db.tasks.get then db.taskVersions.get;
+    // we make taskVersions.get reject to force an extraction failure.
+    const badTask = { id: "task-bad", latestVersion: 1 };
+    const tasksTable = { toArray: () => Promise.resolve([badTask]) };
+    const emptyTable = { toArray: () => Promise.resolve([]) };
+    const db = {
+      tasks: { ...tasksTable, get: () => Promise.resolve(badTask) },
+      taskVersions: { get: () => Promise.reject(new Error("version read boom")) },
+      taskSets: emptyTable,
+      profiles: emptyTable,
+      comparisonResults: emptyTable,
+      experiments: emptyTable,
+      studies: emptyTable,
+      modelConfigurations: emptyTable,
+      modelRollups: emptyTable,
+      observations: emptyTable,
+      runSummaries: emptyTable,
+    } as unknown as RSembleEvaluationDB;
+
+    const resolver = createDexieSearchSourceResolver(db);
+
+    await expect(resolver.listAllSources!()).rejects.toThrow(/Search source enumeration failed/);
+    await expect(resolver.listAllSources!()).rejects.toThrow(/Failed to extract task:task-bad/);
+    await expect(resolver.listAllSources!()).rejects.toThrow(/version read boom/);
   });
 });
