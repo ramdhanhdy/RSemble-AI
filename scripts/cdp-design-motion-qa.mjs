@@ -3,7 +3,8 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 
-const baseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? "http://localhost:5176/";
+const explicitBaseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? null;
+const baseUrl = explicitBaseUrl ?? "http://127.0.0.1:5176/";
 const outDir = path.resolve("docs/qa/design-motion-refinement");
 const runtimeRoot = path.resolve(
   process.env.QA_RUNTIME_ROOT ?? "E:/2026/.rsemble-qa-cache/design-motion",
@@ -25,6 +26,85 @@ process.env.TEMP = tempDir;
 process.env.TMP = tempDir;
 process.env.TMPDIR = tempDir;
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const viteBin = path.join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
+
+function runVite(args, label) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [viteBin, ...args], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: "inherit",
+    });
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${label} exited with code ${code ?? "unknown"}.`));
+    });
+  });
+}
+
+async function serverResponds(url) {
+  try {
+    const status = await new Promise((resolve, reject) => {
+      const request = http.get(url, (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      });
+      request.on("error", reject);
+    });
+    return status >= 200 && status < 500;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForServer(url, attempts = 80) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await serverResponds(url)) return;
+    await wait(250);
+  }
+  throw new Error(`Application server did not become ready at ${url}.`);
+}
+
+let previewProcess = null;
+if (explicitBaseUrl) {
+  await waitForServer(baseUrl);
+} else {
+  if (await serverResponds(baseUrl)) {
+    throw new Error(
+      `Port ${new URL(baseUrl).port || "5176"} is already serving another process. ` +
+        "Stop it or pass QA_BASE_URL explicitly.",
+    );
+  }
+  await runVite(["build"], "Vite production build");
+  const previewUrl = new URL(baseUrl);
+  previewProcess = spawn(
+    process.execPath,
+    [
+      viteBin,
+      "preview",
+      "--host",
+      previewUrl.hostname,
+      "--port",
+      previewUrl.port || "5176",
+      "--strictPort",
+    ],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: "inherit",
+    },
+  );
+  const previewFailure = new Promise((_, reject) => {
+    previewProcess.once("error", reject);
+    previewProcess.once("exit", (code) => {
+      reject(new Error(`Vite production preview exited with code ${code ?? "unknown"}.`));
+    });
+  });
+  await Promise.race([waitForServer(baseUrl), previewFailure]);
+}
+
 const runId = Date.now();
 const userDataDir = path.join(browserDir, `profile-${runId}`);
 const diskCacheDir = path.join(browserDir, `cache-${runId}`);
@@ -45,8 +125,6 @@ const chrome = spawn(
   ],
   { stdio: "ignore" },
 );
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function getPageWebSocketUrl() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -446,4 +524,5 @@ try {
 } finally {
   socket.close();
   chrome.kill();
+  previewProcess?.kill();
 }
