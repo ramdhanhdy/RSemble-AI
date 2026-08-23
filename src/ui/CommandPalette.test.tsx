@@ -432,11 +432,42 @@ describe("CommandPalette cross-entity local search integration", () => {
     };
   }
   const SEARCH_CORPUS: SearchDocument[] = [
-    makeDoc("t_eval_1", "task", "Evaluation benchmark task", "Core task for eval", "/tasks/t_eval_1", ["evaluation", "benchmark", "task"]),
-    makeDoc("rubric_score_1", "rubric", "Quality scoring rubric", "Rubric with grading criteria", "/evaluations/rubrics/rubric_score_1", ["quality", "scoring", "rubric"]),
-    makeDoc("model_sonnet_1", "model_configuration", "Claude 3.5 Sonnet config", "Temperature 0.7", "/models/profiles/model_sonnet_1", ["claude", "sonnet", "config"]),
-    makeDoc("eval_nightly_1", "evaluation", "Nightly eval run", "Automated execution", "/evaluations/results/eval_nightly_1", ["nightly", "eval", "run"]),
-    makeDoc("rec_1042", "record", "Record #1042", "Historical run", "/records/run/rec_1042", ["record", "1042"]),
+    makeDoc(
+      "t_eval_1",
+      "task",
+      "Evaluation benchmark task",
+      "Core task for eval",
+      "/tasks/t_eval_1",
+      ["evaluation", "benchmark", "task"],
+    ),
+    makeDoc(
+      "rubric_score_1",
+      "rubric",
+      "Quality scoring rubric",
+      "Rubric with grading criteria",
+      "/evaluations/rubrics/rubric_score_1",
+      ["quality", "scoring", "rubric"],
+    ),
+    makeDoc(
+      "model_sonnet_1",
+      "model_configuration",
+      "Claude 3.5 Sonnet config",
+      "Temperature 0.7",
+      "/models/profiles/model_sonnet_1",
+      ["claude", "sonnet", "config"],
+    ),
+    makeDoc(
+      "eval_nightly_1",
+      "evaluation",
+      "Nightly eval run",
+      "Automated execution",
+      "/evaluations/results/eval_nightly_1",
+      ["nightly", "eval", "run"],
+    ),
+    makeDoc("rec_1042", "record", "Record #1042", "Historical run", "/records/run/rec_1042", [
+      "record",
+      "1042",
+    ]),
   ];
 
   it("renders grouped search hits from searchRepo when query is typed", async () => {
@@ -457,7 +488,10 @@ describe("CommandPalette cross-entity local search integration", () => {
 
   it("caps rendered search hits at 20", async () => {
     const hugeCorpus: SearchDocument[] = Array.from({ length: 30 }, (_, i) =>
-      makeDoc(`item-${i}`, "task", `Search item task ${i}`, `Subtitle ${i}`, `/tasks/item-${i}`, ["search", "item"]),
+      makeDoc(`item-${i}`, "task", `Search item task ${i}`, `Subtitle ${i}`, `/tasks/item-${i}`, [
+        "search",
+        "item",
+      ]),
     );
     const searchRepo = createInMemorySearchIndexRepository(hugeCorpus);
     const { h } = renderPalette({ searchRepo });
@@ -574,7 +608,10 @@ describe("CommandPalette cross-entity local search integration", () => {
   });
   it("reproduction C3: verifies and does not navigate when selecting deleted stale hit in CommandPalette", async () => {
     const searchRepo = createInMemorySearchIndexRepository([
-      makeDoc("deleted-item", "task", "Deleted Item", "Sub", "/tasks/deleted-item", ["deleted", "item"]),
+      makeDoc("deleted-item", "task", "Deleted Item", "Sub", "/tasks/deleted-item", [
+        "deleted",
+        "item",
+      ]),
     ]);
     const resolver: SearchSourceResolver = {
       async resolveDocument(ref) {

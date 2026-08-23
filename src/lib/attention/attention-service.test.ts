@@ -45,7 +45,13 @@ function experiment(status: ExperimentRecord["status"], id = "exp-1"): Experimen
       protocolFingerprint: "sha256:abc",
       createdAt: 1000,
     },
-    tasks: [{ taskId: "t1", selectedAttemptId: "a1", attempts: [attempt(status === "completed" ? "completed" : "interrupted")] }],
+    tasks: [
+      {
+        taskId: "t1",
+        selectedAttemptId: "a1",
+        attempts: [attempt(status === "completed" ? "completed" : "interrupted")],
+      },
+    ],
     createdAt: 1000,
     updatedAt: 2000,
   };
@@ -155,7 +161,12 @@ describe("createAttentionService", () => {
     await service.start();
     h.emitComparison();
     h.emitRun();
-    h.emitController({ kind: "task-terminal", taskId: "t1", attemptId: "a1", status: "interrupted" });
+    h.emitController({
+      kind: "task-terminal",
+      taskId: "t1",
+      attemptId: "a1",
+      status: "interrupted",
+    });
     await vi.advanceTimersByTimeAsync(10);
     expect(h.listExperiments).toHaveBeenCalledTimes(2);
     service.dispose();
@@ -189,7 +200,12 @@ describe("createAttentionService", () => {
     await service.start();
     h.setHidden(true);
     h.setRecords([experiment("completed")]);
-    h.emitController({ kind: "task-terminal", taskId: "t1", attemptId: "a1", status: "interrupted" });
+    h.emitController({
+      kind: "task-terminal",
+      taskId: "t1",
+      attemptId: "a1",
+      status: "interrupted",
+    });
     h.emitBroadcast({ kind: "lease" });
     await vi.advanceTimersByTimeAsync(10);
     expect(h.listExperiments).toHaveBeenCalledTimes(1);

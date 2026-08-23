@@ -36,7 +36,9 @@ describe("Attention domain", () => {
   });
 
   it("rejects unknown kind or severity", () => {
-    expect(() => parseAttentionItem({ ...valid, kind: "inbox_item" })).toThrow(/unknown attention kind/i);
+    expect(() => parseAttentionItem({ ...valid, kind: "inbox_item" })).toThrow(
+      /unknown attention kind/i,
+    );
     expect(() => parseAttentionItem({ ...valid, severity: "urgent" })).toThrow(
       /unknown attention severity/i,
     );
@@ -46,7 +48,9 @@ describe("Attention domain", () => {
     expect(() => parseAttentionItem({ ...valid, summary: "retry with sk-abc123secret" })).toThrow(
       /secret/i,
     );
-    expect(() => parseAttentionItem({ ...valid, sourceId: "sk-live-not-an-id" })).toThrow(/secret/i);
+    expect(() => parseAttentionItem({ ...valid, sourceId: "sk-live-not-an-id" })).toThrow(
+      /secret/i,
+    );
   });
 
   it("rejects lifecycle or execution fields", () => {

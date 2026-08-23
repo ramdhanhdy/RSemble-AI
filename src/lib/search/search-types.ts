@@ -85,10 +85,14 @@ export function parseSearchDocument(input: unknown): SearchDocument {
   const title = input.title;
   const subtitle = input.subtitle;
   const ownerHref = input.ownerHref;
-  if (typeof id !== "string" || id.length === 0) throw new Error("Search id must be a non-empty string");
-  if (typeof title !== "string" || title.length === 0) throw new Error("Search title must be a non-empty string");
-  if (typeof subtitle !== "string" || subtitle.length === 0) throw new Error("Search subtitle must be a non-empty string");
-  if (typeof ownerHref !== "string" || ownerHref.length === 0) throw new Error("Search ownerHref must be a non-empty string");
+  if (typeof id !== "string" || id.length === 0)
+    throw new Error("Search id must be a non-empty string");
+  if (typeof title !== "string" || title.length === 0)
+    throw new Error("Search title must be a non-empty string");
+  if (typeof subtitle !== "string" || subtitle.length === 0)
+    throw new Error("Search subtitle must be a non-empty string");
+  if (typeof ownerHref !== "string" || ownerHref.length === 0)
+    throw new Error("Search ownerHref must be a non-empty string");
   assertSafeString("id", id);
   assertSafeString("title", title);
   assertSafeString("subtitle", subtitle);

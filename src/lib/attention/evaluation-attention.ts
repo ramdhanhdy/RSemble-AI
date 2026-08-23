@@ -42,10 +42,7 @@ function hasRepairableCell(source: EvaluationAttentionSource): boolean {
   return false;
 }
 
-function item(
-  experiment: ExperimentRecord,
-  reasonCode: AttentionReasonCode,
-): AttentionItem {
+function item(experiment: ExperimentRecord, reasonCode: AttentionReasonCode): AttentionItem {
   const copy = ATTENTION_REASON_COPY[reasonCode];
   return parseAttentionItem({
     key: `evaluation:${experiment.id}:${reasonCode}`,

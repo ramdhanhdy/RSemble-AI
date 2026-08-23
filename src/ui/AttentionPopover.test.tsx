@@ -4,7 +4,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { parseAttentionItem, type AttentionItem } from "../lib/attention/attention-types";
-import { mergeDeduplicateAndSortAttention, type AttentionQueryResult } from "../lib/attention/attention-query";
+import {
+  mergeDeduplicateAndSortAttention,
+  type AttentionQueryResult,
+} from "../lib/attention/attention-query";
 import { AttentionPopover } from "./AttentionPopover";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -113,7 +116,9 @@ describe("AttentionPopover", () => {
     await act(async () => {
       link?.click();
     });
-    expect(h.$("[data-location]")?.getAttribute("data-location")).toBe("/evaluations/results/exp-1");
+    expect(h.$("[data-location]")?.getAttribute("data-location")).toBe(
+      "/evaluations/results/exp-1",
+    );
     cleanup(h);
   });
 

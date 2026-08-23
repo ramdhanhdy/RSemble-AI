@@ -3,7 +3,9 @@ import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { RunStatus } from "../persistence/run-types";
 import { queryComparisonAttention } from "./comparison-attention";
 
-function index(overrides: Partial<ComparisonResultIndex> & { status: RunStatus }): ComparisonResultIndex {
+function index(
+  overrides: Partial<ComparisonResultIndex> & { status: RunStatus },
+): ComparisonResultIndex {
   return {
     id: "cmp-1",
     runId: "cmp-1",
@@ -21,7 +23,14 @@ function index(overrides: Partial<ComparisonResultIndex> & { status: RunStatus }
   };
 }
 
-const STATUSES: RunStatus[] = ["running", "completed", "partial", "failed", "aborted", "interrupted"];
+const STATUSES: RunStatus[] = [
+  "running",
+  "completed",
+  "partial",
+  "failed",
+  "aborted",
+  "interrupted",
+];
 
 describe("queryComparisonAttention", () => {
   it.each(STATUSES)("excludes persisted comparison status %s", (status) => {

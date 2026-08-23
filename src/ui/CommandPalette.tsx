@@ -50,10 +50,7 @@ export const SEARCH_TYPE_LABELS: Record<SearchDocumentType, string> = {
   record: "Records",
 };
 
-export const SEARCH_TYPE_ICONS: Record<
-  SearchDocumentType,
-  typeof ListChecks
-> = {
+export const SEARCH_TYPE_ICONS: Record<SearchDocumentType, typeof ListChecks> = {
   task: ListChecks,
   task_set: Layers,
   rubric: FileText,
@@ -152,7 +149,6 @@ export function CommandPalette({
     return null;
   }, [resolver, db]);
 
-
   useEffect(() => {
     if (open) setQuery("");
   }, [open]);
@@ -178,9 +174,7 @@ export function CommandPalette({
       .catch((err: unknown) => {
         if (cancelled) return;
         setSearchHits([]);
-        setSearchError(
-          err instanceof Error ? err.message : "Search query failed",
-        );
+        setSearchError(err instanceof Error ? err.message : "Search query failed");
       });
 
     return () => {
@@ -405,9 +399,7 @@ export function CommandPalette({
 
       <Command.List className="max-h-[50vh] overflow-y-auto p-2 scroll-thin">
         <Command.Empty className="px-3 py-8 text-center font-mono text-xs text-text-muted">
-          {searchError
-            ? `Search error: ${searchError}`
-            : "No matching commands or search results"}
+          {searchError ? `Search error: ${searchError}` : "No matching commands or search results"}
         </Command.Empty>
 
         {/* Static and context commands */}
@@ -429,9 +421,7 @@ export function CommandPalette({
                   className="flex min-h-[44px] w-full items-center gap-3 rounded-md px-2.5 py-2 text-left data-[selected=true]:bg-card-hover data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50"
                 >
                   <Icon size={16} className="shrink-0 text-text-secondary" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-text">
-                    {command.label}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-text">{command.label}</span>
                   {command.hint && (
                     <span className="flex shrink-0 items-center gap-1">
                       {command.hint.map((key) => (
@@ -553,18 +543,12 @@ export function CommandPalette({
 
       <div className="flex items-center justify-between border-t border-edge px-4 py-2 font-mono text-xs text-text-muted">
         <span className="flex items-center gap-1.5">
-          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">
-            ↑
-          </kbd>
-          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">
-            ↓
-          </kbd>
+          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">↑</kbd>
+          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">↓</kbd>
           navigate
         </span>
         <span className="flex items-center gap-1.5">
-          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">
-            ↵
-          </kbd>
+          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">↵</kbd>
           select
         </span>
       </div>

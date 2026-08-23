@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  SEARCH_DOCUMENT_TYPES,
-  parseSearchDocument,
-} from "./search-types";
+import { SEARCH_DOCUMENT_TYPES, parseSearchDocument } from "./search-types";
 
 const valid = {
   type: "task" as const,
@@ -33,11 +30,15 @@ describe("search documents", () => {
     expect(() => parseSearchDocument({ ...valid, output: "model said hello" })).toThrow(/unsafe/i);
     expect(() => parseSearchDocument({ ...valid, rationale: "because" })).toThrow(/unsafe/i);
     expect(() => parseSearchDocument({ ...valid, attachment: "file.bin" })).toThrow(/unsafe/i);
-    expect(() => parseSearchDocument({ ...valid, error: "QuotaExceeded sk-leak" })).toThrow(/unsafe/i);
+    expect(() => parseSearchDocument({ ...valid, error: "QuotaExceeded sk-leak" })).toThrow(
+      /unsafe/i,
+    );
   });
 
   it("rejects prototype-polluting keys", () => {
-    const polluted = JSON.parse('{"type":"task","id":"t","revision":1,"title":"T","subtitle":"s","ownerHref":"/tasks/t","tokens":["t"],"updatedAt":1,"indexSchemaVersion":1,"__proto__":{"admin":true}}');
+    const polluted = JSON.parse(
+      '{"type":"task","id":"t","revision":1,"title":"T","subtitle":"s","ownerHref":"/tasks/t","tokens":["t"],"updatedAt":1,"indexSchemaVersion":1,"__proto__":{"admin":true}}',
+    );
     expect(() => parseSearchDocument(polluted)).toThrow(/unsafe/i);
   });
 });

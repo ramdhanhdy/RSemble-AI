@@ -1,5 +1,9 @@
 import { Link } from "react-router-dom";
-import { ATTENTION_REASON_COPY, type AttentionItem, type AttentionKind } from "../../lib/attention/attention-types";
+import {
+  ATTENTION_REASON_COPY,
+  type AttentionItem,
+  type AttentionKind,
+} from "../../lib/attention/attention-types";
 import type { AttentionQueryResult } from "../../lib/attention/attention-query";
 
 const GROUP_ORDER: AttentionKind[] = [
@@ -74,7 +78,9 @@ export function AttentionWorkspace({
                       data-attention-item
                       className="block rounded-md border border-edge bg-panel px-3 py-3 text-sm hover:border-edge-bright focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      <div className="font-medium text-text">{ATTENTION_REASON_COPY[row.reasonCode].label}</div>
+                      <div className="font-medium text-text">
+                        {ATTENTION_REASON_COPY[row.reasonCode].label}
+                      </div>
                       <div className="text-text-secondary">{row.summary}</div>
                     </Link>
                   </li>

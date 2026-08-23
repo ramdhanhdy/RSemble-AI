@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { AttentionItem } from "./attention-types";
 import { mergeDeduplicateAndSortAttention } from "./attention-query";
 
-function item(partial: Partial<AttentionItem> & Pick<AttentionItem, "key" | "reasonCode" | "sourceId">): AttentionItem {
+function item(
+  partial: Partial<AttentionItem> & Pick<AttentionItem, "key" | "reasonCode" | "sourceId">,
+): AttentionItem {
   return {
     kind: "evaluation_recovery",
     ownerHref: `/evaluations/results/${partial.sourceId}`,

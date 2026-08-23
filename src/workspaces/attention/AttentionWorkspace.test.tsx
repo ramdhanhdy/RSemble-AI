@@ -73,7 +73,9 @@ describe("AttentionWorkspace", () => {
     ]);
     expect(h.$("[data-attention-records]")?.getAttribute("href")).toBe("/records");
     expect(
-      h.$$("button, a").some((el) => /^(Retry|Resume|Add model)$/i.test((el.textContent ?? "").trim())),
+      h
+        .$$("button, a")
+        .some((el) => /^(Retry|Resume|Add model)$/i.test((el.textContent ?? "").trim())),
     ).toBe(false);
     act(() => h.root.unmount());
   });

@@ -62,10 +62,16 @@ function rankDocument(document: SearchDocument, raw: string, tokens: string[]): 
   const haystack = new Set([
     foldedId,
     ...foldedTitle.split(/[^\p{L}\p{N}]+/u).filter(Boolean),
-    ...foldSearchText(document.subtitle).split(/[^\p{L}\p{N}]+/u).filter(Boolean),
+    ...foldSearchText(document.subtitle)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean),
     ...document.tokens.map((token) => foldSearchText(token)),
   ]);
-  if (tokens.every((token) => haystack.has(token) || [...haystack].some((part) => part.startsWith(token)))) {
+  if (
+    tokens.every(
+      (token) => haystack.has(token) || [...haystack].some((part) => part.startsWith(token)),
+    )
+  ) {
     return { document, rank: "token", matchingFields: ["tokens"] };
   }
   return null;
@@ -74,7 +80,8 @@ function rankDocument(document: SearchDocument, raw: string, tokens: string[]): 
 function compareHits(a: SearchHit, b: SearchHit): number {
   const rank = RANK_ORDER[a.rank] - RANK_ORDER[b.rank];
   if (rank !== 0) return rank;
-  if (a.document.updatedAt !== b.document.updatedAt) return b.document.updatedAt - a.document.updatedAt;
+  if (a.document.updatedAt !== b.document.updatedAt)
+    return b.document.updatedAt - a.document.updatedAt;
   return a.document.id < b.document.id ? -1 : a.document.id > b.document.id ? 1 : 0;
 }
 

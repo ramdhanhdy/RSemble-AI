@@ -28,7 +28,9 @@ function compareItems(a: AttentionItem, b: AttentionItem): number {
   return a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0;
 }
 
-export function mergeDeduplicateAndSortAttention(items: readonly AttentionItem[]): AttentionQueryResult {
+export function mergeDeduplicateAndSortAttention(
+  items: readonly AttentionItem[],
+): AttentionQueryResult {
   const newest = new Map<string, AttentionItem>();
   for (const item of items) {
     const prior = newest.get(item.supersessionKey);

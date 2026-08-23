@@ -28,7 +28,12 @@ const CORPUS = [
   doc("task-beta", { type: "task", title: "Review the brief", updatedAt: 20 }),
   doc("set-1", { type: "task_set", title: "Briefing suite", updatedAt: 30 }),
   doc("eval-1", { type: "evaluation", title: "Briefing run", updatedAt: 40 }),
-  doc("cmp-1", { type: "comparison", title: "Ad hoc compare", tokens: ["adhoc", "compare"], updatedAt: 50 }),
+  doc("cmp-1", {
+    type: "comparison",
+    title: "Ad hoc compare",
+    tokens: ["adhoc", "compare"],
+    updatedAt: 50,
+  }),
 ];
 
 describe("querySearchIndex ranking", () => {
@@ -63,7 +68,9 @@ describe("querySearchIndex ranking", () => {
     const page = querySearchIndex(createSearchIndex(twins), { text: "same", limit: 2, offset: 0 });
     expect(ids(page)).toEqual(["cc", "aa"]);
     expect(page.total).toBe(3);
-    expect(ids(querySearchIndex(createSearchIndex(twins), { text: "same", limit: 2, offset: 2 }))).toEqual(["bb"]);
+    expect(
+      ids(querySearchIndex(createSearchIndex(twins), { text: "same", limit: 2, offset: 2 })),
+    ).toEqual(["bb"]);
   });
 
   it("treats empty, huge, and unicode queries as safe local text", () => {

@@ -195,7 +195,11 @@ describe("queryEvaluationAttention INCLUDE", () => {
   it("includes repairable missing cells", () => {
     const run = makeRun("run-base", [MK1, MK2]);
     const exp = experiment("completed_with_failures", [
-      { taskId: "t1", selectedAttemptId: "att-t1", attempts: [attempt("att-t1", "partial", { runId: "run-base" })] },
+      {
+        taskId: "t1",
+        selectedAttemptId: "att-t1",
+        attempts: [attempt("att-t1", "partial", { runId: "run-base" })],
+      },
     ]);
     const aggregation = aggregateExperiment({
       snapshot: exp.snapshot,
@@ -292,6 +296,8 @@ describe("queryEvaluationAttention EXCLUDE", () => {
     const exp = experiment("completed", [
       { taskId: "t1", selectedAttemptId: "a1", attempts: [attempt("a1", "completed")] },
     ]);
-    expect(queryEvaluationAttention({ experiment: exp, declaredPartialWorkload: true })).toEqual([]);
+    expect(queryEvaluationAttention({ experiment: exp, declaredPartialWorkload: true })).toEqual(
+      [],
+    );
   });
 });

@@ -89,7 +89,10 @@ export function AttentionPopover({
                 >
                   <div className="font-medium">{ATTENTION_REASON_COPY[row.reasonCode].label}</div>
                   <div className="text-xs text-text-secondary">
-                    <time dateTime={new Date(row.occurredAt).toISOString()} title={new Date(row.occurredAt).toISOString()}>
+                    <time
+                      dateTime={new Date(row.occurredAt).toISOString()}
+                      title={new Date(row.occurredAt).toISOString()}
+                    >
                       {formatAttentionAge(row.occurredAt, now)}
                     </time>
                     {" · "}

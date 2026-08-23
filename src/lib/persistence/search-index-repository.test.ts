@@ -181,7 +181,9 @@ describe.each([
 
 describe("SearchIndexRepository error classification", () => {
   it("rejects mutations when Dexie database state is not writable", async () => {
-    const db = new RSembleEvaluationDB(`test-search-unwritable-${Math.random().toString(36).slice(2)}`);
+    const db = new RSembleEvaluationDB(
+      `test-search-unwritable-${Math.random().toString(36).slice(2)}`,
+    );
     const repo = createSearchIndexRepository(db);
     db.setState("blocked");
 

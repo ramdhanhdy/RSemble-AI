@@ -13,25 +13,14 @@
 //  - classifies storage errors and asserts database writability before writes.
 // =============================================================================
 
-import {
-  classifyStorageError,
-  StorageError,
-  type RSembleEvaluationDB,
-} from "./database";
+import { classifyStorageError, StorageError, type RSembleEvaluationDB } from "./database";
 import {
   parseSearchDocument,
   type SearchDocument,
   type SearchDocumentType,
 } from "../search/search-types";
-import {
-  createSearchIndex,
-  type SearchIndex,
-} from "../search/search-index";
-import {
-  querySearchIndex,
-  type SearchPage,
-  type SearchQuery,
-} from "../search/search-query";
+import { createSearchIndex, type SearchIndex } from "../search/search-index";
+import { querySearchIndex, type SearchPage, type SearchQuery } from "../search/search-query";
 
 export interface SearchIndexListQuery {
   type?: SearchDocumentType;
@@ -114,7 +103,9 @@ export function createSearchIndexRepository(db: RSembleEvaluationDB): SearchInde
     }
   }
 
-  async function deleteDocuments(refs: readonly { type: SearchDocumentType; id: string }[]): Promise<void> {
+  async function deleteDocuments(
+    refs: readonly { type: SearchDocumentType; id: string }[],
+  ): Promise<void> {
     if (refs.length === 0) return;
     db.assertWritable();
     try {

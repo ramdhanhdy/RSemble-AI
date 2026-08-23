@@ -3,10 +3,7 @@ import type { ExperimentControllerEvent } from "../evaluations/experiment-contro
 import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import { queryComparisonAttention } from "./comparison-attention";
 import { queryEvaluationAttention } from "./evaluation-attention";
-import {
-  mergeDeduplicateAndSortAttention,
-  type AttentionQueryResult,
-} from "./attention-query";
+import { mergeDeduplicateAndSortAttention, type AttentionQueryResult } from "./attention-query";
 
 export interface AttentionServiceDeps {
   listExperiments: () => Promise<ExperimentRecord[]>;
@@ -78,10 +75,13 @@ export function createAttentionService(deps: AttentionServiceDeps): AttentionSer
   return {
     async start() {
       if (disposed) return snapshot;
-      if (deps.subscribeComparisons) unsubscribers.push(deps.subscribeComparisons(scheduleIfVisible));
+      if (deps.subscribeComparisons)
+        unsubscribers.push(deps.subscribeComparisons(scheduleIfVisible));
       if (deps.subscribeRuns) unsubscribers.push(deps.subscribeRuns(scheduleIfVisible));
-      if (deps.subscribeController) unsubscribers.push(deps.subscribeController(() => scheduleIfVisible()));
-      if (deps.addBroadcastListener) unsubscribers.push(deps.addBroadcastListener(() => scheduleIfVisible()));
+      if (deps.subscribeController)
+        unsubscribers.push(deps.subscribeController(() => scheduleIfVisible()));
+      if (deps.addBroadcastListener)
+        unsubscribers.push(deps.addBroadcastListener(() => scheduleIfVisible()));
       if (deps.addVisibilityListener) unsubscribers.push(deps.addVisibilityListener(schedule));
       const mine = ++token;
       await recompute(mine);
