@@ -494,7 +494,8 @@ export function buildValidArchiveV3Fixture(): WorkbenchArchiveV3 {
       observationRuleVersions: [1],
       aggregationRuleVersions: [1],
       uncertaintyRuleVersions: [1],
-      localScopeNotice: "Local workbench export. No remote transport metadata. Credentials excluded.",
+      localScopeNotice:
+        "Local workbench export. No remote transport metadata. Credentials excluded.",
       disclosure: {
         scope: "local",
         notes: "Local workbench export. No remote transport metadata.",
@@ -545,10 +546,11 @@ export function buildValidArchiveV3Fixture(): WorkbenchArchiveV3 {
 
 export function cloneArchiveV3(archive: WorkbenchArchiveV3): WorkbenchArchiveV3 {
   const cloned = JSON.parse(JSON.stringify(archive)) as WorkbenchArchiveV3;
-  // Strip per-collection content digests from clones — tests that mutate
-  // the fixture must recompute both payloadDigest and contentDigests.
-  // The validator treats missing contentDigests as backward-compatible.
-  delete (cloned.manifest as unknown as Record<string, unknown>).contentDigests;
+  // Canonical clone: recompute both integrity digests so the copy is valid
+  // under the strict canonical contract. Tests that mutate the clone must
+  // recompute digests again for their variant.
+  cloned.manifest.payloadDigest = computeArchiveV3PayloadDigest(cloned);
+  cloned.manifest.contentDigests = computeArchiveV3ContentDigests(cloned);
   return cloned;
 }
 

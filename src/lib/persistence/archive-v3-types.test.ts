@@ -12,6 +12,7 @@ import {
   ARCHIVE_V3_FORMAT_VERSION,
   ARCHIVE_V3_STORAGE_VERSION,
   ARCHIVE_V3_COLLECTION_KEYS,
+  computeArchiveV3ContentDigests,
   computeArchiveV3PayloadDigest,
   detectLegacyFusionArchive,
   isWorkbenchArchiveV3,
@@ -394,6 +395,7 @@ describe("validateArchiveV3 — reference graph validation", () => {
     fixture.lab.studies[0].status = "archived";
     fixture.lab.studies[0].archivedAt = 2_000;
     fixture.manifest.payloadDigest = computeArchiveV3PayloadDigest(fixture);
+    fixture.manifest.contentDigests = computeArchiveV3ContentDigests(fixture);
     const result = validateArchiveV3(fixture);
     expect(result.valid).toBe(true);
     expect(result.errors).toEqual([]);

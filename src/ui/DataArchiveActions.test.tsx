@@ -20,7 +20,10 @@ import {
 } from "../lib/persistence/repository-context";
 import { RSembleEvaluationDB } from "../lib/persistence/database";
 import { importWorkbenchArchive, type WorkbenchArchiveV1 } from "../lib/persistence/archive";
-import { computeArchiveV3ContentDigests, computeArchiveV3PayloadDigest } from "../lib/persistence/archive-v3-types";
+import {
+  computeArchiveV3ContentDigests,
+  computeArchiveV3PayloadDigest,
+} from "../lib/persistence/archive-v3-types";
 import type { EvaluationSuite } from "../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../lib/persistence/run-types";
 import * as fx from "../lib/persistence/archive-v2-fixtures";
@@ -381,6 +384,11 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
         (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
         await flush();
       });
+      // The phased importer commits seven verified transactions plus a
+      // disposable-search rebuild — give the queue room to drain.
+      await settle();
+      await settle();
+      await settle();
       await settle();
 
       expect(await db.suites.count()).toBe(1);
@@ -399,7 +407,7 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
     }
   });
 
-  it("a non-identical collision in v3 is previewed with IDs and the commit aborts without any write", async () => {
+  it("a v3 collision is disclosed as a planned remap and confirming imports it under a new ID", async () => {
     await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
     const incoming = v3fx.buildValidArchiveV3Fixture();
     incoming.suites[0] = { ...incoming.suites[0], name: "changed" };
@@ -413,28 +421,29 @@ describe("DataArchiveActions — preview-first import flow (Task 10C)", () => {
       .$$('[role="status"]')
       .map((el) => el.textContent ?? "")
       .join("\n");
-    expect(status).toContain("1 collision");
+    // The preview discloses the planned remap instead of threatening an abort.
+    expect(status).toContain("1 planned remap");
     expect(status).toContain("suites/suite-1");
+    expect(status).toContain("imported under new IDs");
 
     await act(async () => {
       (h.$('button[data-action="confirm-import"]') as HTMLButtonElement).click();
       await flush();
     });
     await settle();
+    await settle();
+    await settle();
+    await settle();
 
-    const alertText = h
-      .$$('[role="alert"]')
+    // The local suite is untouched; the archive copy landed under a new ID.
+    expect((await db.suites.get("suite-1"))?.suite).toMatchObject({ name: "Suite suite-1" });
+    expect(await db.suites.count()).toBe(2);
+    const result = h
+      .$$('[role="status"]')
       .map((el) => el.textContent ?? "")
       .join("\n");
-    expect(alertText).toContain(
-      "Import aborted: 1 collision — colliding records were left unchanged.",
-    );
-    // Nothing was written anywhere; the pre-existing suite is untouched.
-    expect((await db.suites.get("suite-1"))?.suite).toMatchObject({ name: "Suite suite-1" });
-    expect(await db.runDetails.count()).toBe(0);
-    expect(await db.tasks.count()).toBe(0);
-    // The preview is cleared with the abort.
-    expect(h.$('button[data-action="confirm-import"]')).toBeNull();
+    expect(result).toContain("1 remapped");
+    expect(result).toContain('"v3.json"');
   });
 
   it("surfaces v3 validation failure without echoing prohibited content and writes nothing", async () => {

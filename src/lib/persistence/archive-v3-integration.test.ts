@@ -38,13 +38,12 @@ import {
   validateArchiveV3,
   type WorkbenchArchiveV3,
 } from "./archive-v3-types";
-import { buildValidArchiveV3Fixture, seedCompleteV3Corpus, makePolicyStudyRecord } from "./archive-v3-fixtures";
+import { seedCompleteV3Corpus, makePolicyStudyRecord } from "./archive-v3-fixtures";
 import * as fx from "./archive-v2-fixtures";
 import {
   commitPreviewWorkbenchArchiveV3,
   exportWorkbenchArchiveV3,
   importWorkbenchArchiveAuto,
-  importWorkbenchArchiveV3Phased,
   previewWorkbenchArchive,
 } from "./archive";
 import { RSembleEvaluationDB, createDatabase } from "./database";
@@ -370,14 +369,17 @@ describe("archive v3 integration — persisted playbook identity and cutover rec
 
     const preview = await previewWorkbenchArchive(target, exported);
     expect(preview.collisions.some((c) => c.collection === "lab.cutoverReceipt")).toBe(true);
-    await expect(commitPreviewWorkbenchArchiveV3(target, preview)).rejects.toThrow(/collision/i);
+
+    // The divergent receipt lands under a suffixed metadata key; local truth
+    // at the canonical key is never overwritten.
+    await commitPreviewWorkbenchArchiveV3(target, preview);
     expect(await getFusionToResearchLabReceipt(target)).toEqual(storedReceipt);
 
     source.close();
     target.close();
   });
 
-  it("rejects replacing a bootstrap receipt when the production target already has workbench rows", async () => {
+  it("keeps the bootstrap receipt when the production target already has workbench rows and archives the incoming one", async () => {
     const source = await freshDb("bootstrap-dirty-source");
     await seedCompleteV3Corpus(source);
     const exported = await exportWorkbenchArchiveV3(source, { now: DETERMINISTIC_NOW });
@@ -404,7 +406,7 @@ describe("archive v3 integration — persisted playbook identity and cutover rec
 
     const preview = await previewWorkbenchArchive(target, exported);
     expect(preview.collisions.some((c) => c.collection === "lab.cutoverReceipt")).toBe(true);
-    await expect(commitPreviewWorkbenchArchiveV3(target, preview)).rejects.toThrow(/collision/i);
+    await commitPreviewWorkbenchArchiveV3(target, preview);
     expect(await getFusionToResearchLabReceipt(target)).toEqual(bootstrap);
 
     source.close();
@@ -527,7 +529,7 @@ describe("archive v3 integration — REV-3 deterministic legacy fusion rejection
   });
 });
 
-describe("archive v3 integration — collision rejection and idempotency", () => {
+describe("archive v3 integration — collision remapping and idempotency", () => {
   it("re-importing the identical v3 archive classifies all entities as reuse with 0 collisions", async () => {
     const db = await freshDb("idempotent");
     await seedCompleteV3Corpus(db);
@@ -546,12 +548,12 @@ describe("archive v3 integration — collision rejection and idempotency", () =>
     db.close();
   });
 
-  it("colliding record with different content is classified as collision and not overwritten", async () => {
+  it("classifies divergent content as a planned remap, keeps local truth, and imports a remapped copy", async () => {
     const db = await freshDb("collision");
     await seedCompleteV3Corpus(db);
     const exported = await exportWorkbenchArchiveV3(db, { now: DETERMINISTIC_NOW });
 
-    // Modify a study in the archive
+    // Modify a real Study field in the incoming archive.
     const modified = JSON.parse(JSON.stringify(exported)) as WorkbenchArchiveV3;
     modified.lab.studies[0].title = "Modified Colliding Title";
     modified.manifest.payloadDigest = computeArchiveV3PayloadDigest(modified);
@@ -559,90 +561,29 @@ describe("archive v3 integration — collision rejection and idempotency", () =>
     const preview = await previewWorkbenchArchive(db, modified);
     expect(preview.format).toBe("v3");
     expect(preview.collisions.some((c) => c.key === modified.lab.studies[0].id)).toBe(true);
+    expect(
+      preview.plannedRemaps.some(
+        (entry) => entry.collection === "lab.studies" && entry.key === modified.lab.studies[0].id,
+      ),
+    ).toBe(true);
 
-    await expect(commitPreviewWorkbenchArchiveV3(db, preview)).rejects.toThrow(/collision/i);
-    // Existing record unchanged in database
+    await commitPreviewWorkbenchArchiveV3(db, preview);
+
+    // Existing record unchanged.
     const stored = await db.studies.get(modified.lab.studies[0].id);
     expect(stored).toBeDefined();
     expect((stored!.record as { title: string }).title).not.toBe("Modified Colliding Title");
 
-    db.close();
-  });
-});
-
-describe("archive v3 integration — phased import with ID remapping (Task 7)", () => {
-  it("remaps a colliding Task to a new ID and threads the new ID through versions and observations", async () => {
-    const db = await freshDb("remap-task");
-    // Pre-seed a Task with different content
-    const archive = await seedCompleteV3Corpus(db);
-    const taskId = archive.tasks.tasks[0].id;
-
-    // Modify the task in the archive to create a collision
-    const modified = JSON.parse(JSON.stringify(archive)) as WorkbenchArchiveV3;
-    modified.tasks.tasks[0].title = "Colliding Modified Task Title";
-    modified.manifest.payloadDigest = computeArchiveV3PayloadDigest(modified);
-    modified.manifest.contentDigests = computeArchiveV3ContentDigests(modified);
-
-    // Import via phased import — should remap, not abort
-    const result = await importWorkbenchArchiveV3Phased(db, modified);
-
-    // The original task ID should have been remapped
-    expect(result.remapped.length).toBeGreaterThanOrEqual(1);
-    const taskRemap = result.remapped.find((e) => e.collection === "tasks.tasks");
-    expect(taskRemap).toBeDefined();
-    expect(taskRemap!.archiveId).toBe(taskId);
-    expect(taskRemap!.localId).not.toBe(taskId);
-    expect(taskRemap!.localId).toContain("-import-");
-
-    // Crosswalk should map old → new
-    expect(result.crosswalk[taskId]).toBe(taskRemap!.localId);
-
-    // The original task should still exist unchanged
-    const originalTask = await db.tasks.get(taskId);
-    expect(originalTask).toBeDefined();
-    expect((originalTask!.record as { title: string }).title).not.toBe("Colliding Modified Task Title");
-
-    // The remapped task should exist with the new ID
-    const remappedTask = await db.tasks.get(taskRemap!.localId);
-    expect(remappedTask).toBeDefined();
-    expect((remappedTask!.record as { title: string }).title).toBe("Colliding Modified Task Title");
-
-    db.close();
-  });
-
-  it("reuses identical entities and reports zero remaps on clean re-import", async () => {
-    const db = await freshDb("remap-reuse");
-    const archive = await seedCompleteV3Corpus(db);
-
-    // Re-import the identical archive
-    const result = await importWorkbenchArchiveV3Phased(db, archive);
-
-    // Everything should be reused, nothing remapped
-    expect(result.remapped.length).toBe(0);
-    expect(result.reused.length).toBeGreaterThan(0);
-    expect(result.created.length).toBe(0);
-
-    db.close();
-  });
-
-  it("isolates phases: earlier phase writes persist when a later phase would fail", async () => {
-    const db = await freshDb("remap-isolation");
-    // Seed only the cutover receipt so lab phase can proceed
-    await db.storageMeta.put({
-      key: fusionToResearchLabReceiptKey,
-      value: buildValidArchiveV3Fixture().lab.cutoverReceipt,
-    });
-
-    const archive = buildValidArchiveV3Fixture();
-
-    // Import should succeed since all phases are valid
-    const result = await importWorkbenchArchiveV3Phased(db, archive);
-    expect(result.failedPhases.length).toBe(0);
-    expect(result.created.length).toBeGreaterThan(0);
-
-    // Verify runs phase wrote data
-    const runCount = await db.runSummaries.count();
-    expect(runCount).toBeGreaterThan(0);
+    // Incoming graph exists under a fresh ID.
+    const studyRows = await db.studies.toArray();
+    expect(studyRows).toHaveLength(2);
+    expect(
+      studyRows.some(
+        (row) =>
+          row.id !== modified.lab.studies[0].id &&
+          (row.record as { title?: string }).title === "Modified Colliding Title",
+      ),
+    ).toBe(true);
 
     db.close();
   });

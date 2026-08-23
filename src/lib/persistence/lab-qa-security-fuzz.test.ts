@@ -28,7 +28,12 @@ import {
   importWorkbenchArchiveAuto,
   parseWorkbenchArchive,
 } from "./archive";
-import { validateArchiveV3, type WorkbenchArchiveV3 } from "./archive-v3-types";
+import {
+  computeArchiveV3ContentDigests,
+  computeArchiveV3PayloadDigest,
+  validateArchiveV3,
+  type WorkbenchArchiveV3,
+} from "./archive-v3-types";
 import { hasProhibitedStudyKeys, isStudyRecordEnvelope } from "../studies/study-types";
 import { isPolicyStudyRecord } from "../studies/policy/policy-study-types";
 import { createDeterministicReceipt } from "../migrations/fusion-to-research-lab-receipt";
@@ -351,118 +356,30 @@ describe("fuzz — malicious text and oversized inputs against import limits", (
 
 describe("fuzz — broken references", () => {
   it("v3 validator rejects trial/attempt/observation/playbook refs to missing studies or trials", () => {
-    const base = {
-      manifest: {
-        formatVersion: 3,
-        storageVersion: 1,
-        exportedAt: 1000,
-        producer: "rsemble-ai",
-        counts: {
-          studies: 1,
-          studyTrials: 1,
-          studyAttempts: 1,
-          studyObservations: 1,
-          policyPlaybooks: 1,
-          fusionToResearchLabReceipts: 1,
-        },
-        payloadDigest: "x",
-        disclosure: { scope: "local", notes: "" },
-      },
-      runs: { summaries: [], details: [] },
-      rubrics: { identities: [], versions: [] },
-      suites: [],
-      experiments: [],
-      tasks: {
-        tasks: [],
-        taskVersions: [],
-        taskArtifacts: [],
-        taskArtifactBytes: [],
-        taskInstances: [],
-        taskFamilies: [],
-        taskFamilyAssignments: [],
-        taskFamilyRelations: [],
-        taskFacetAnnotations: [],
-        taskMigrationCrosswalks: [],
-      },
-      taskSets: { records: [], versions: [], materializations: [], ownershipCrosswalks: [] },
-      evidence: {
-        modelConfigurations: [],
-        observations: [],
-        evidenceDecisions: [],
-        evidenceIndexJobs: [],
-        verifierOutcomes: [],
-      },
-      comparisons: { indexes: [], inputSnapshots: [], limitations: [] },
-      lab: {
-        recipeRecords: [],
-        recipeVersions: [],
-        poolRecords: [],
-        poolVersions: [],
-        studies: [],
-        trials: [],
-        attempts: [],
-        observations: [],
-        playbooks: [],
-        cutoverReceipt: createDeterministicReceipt({
-          generatedAt: 1000,
-          sourceCounts: {
-            fusionRecipes: 0,
-            poolManifests: 0,
-            fusionStudies: 0,
-            fusionTrials: 0,
-            fusionAttempts: 0,
-            fusionObservations: 0,
-            fusionPlaybooks: 0,
-          },
-          convertedCounts: {
-            labRecipeRecords: 0,
-            labRecipeVersions: 0,
-            modelPoolRecords: 0,
-            modelPoolVersions: 0,
-            studies: 0,
-            studyTrials: 0,
-            studyAttempts: 0,
-            studyObservations: 0,
-            policyPlaybooks: 0,
-          },
-          discardedCounts: {
-            fusionRecipes: 0,
-            poolManifests: 0,
-            fusionStudies: 0,
-            fusionTrials: 0,
-            fusionAttempts: 0,
-            fusionObservations: 0,
-            fusionPlaybooks: 0,
-          },
-          decisions: [],
-        }),
-      },
+    const reseal = (archive: WorkbenchArchiveV3) => {
+      archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+      archive.manifest.contentDigests = computeArchiveV3ContentDigests(archive);
+      return archive;
     };
 
     // Trial referencing a missing study.
-    const trial = makePolicyStudyTrial("trial-orphan", "study-missing");
-    const withOrphanTrial = structuredClone(base) as unknown as WorkbenchArchiveV3;
-    withOrphanTrial.manifest.counts.studyTrials = 1;
-    withOrphanTrial.lab.trials = [trial as never];
-    const r1 = validateArchiveV3(withOrphanTrial);
+    const withOrphanTrial = buildValidArchiveV3Fixture();
+    withOrphanTrial.lab.trials[0].studyId = "study-missing";
+    const r1 = validateArchiveV3(reseal(withOrphanTrial));
     expect(r1.valid).toBe(false);
     expect(r1.errors.some((e) => /studyId study-missing not found/.test(e.message))).toBe(true);
 
     // Observation referencing a missing trial.
-    const obs = makePolicyStudyObservation("obs-orphan", "study-missing", "trial-missing");
-    const withOrphanObs = structuredClone(base) as unknown as WorkbenchArchiveV3;
-    withOrphanObs.manifest.counts.studyObservations = 1;
-    withOrphanObs.lab.observations = [obs as never];
-    const r2 = validateArchiveV3(withOrphanObs);
+    const withOrphanObs = buildValidArchiveV3Fixture();
+    withOrphanObs.lab.observations[0].trialId = "trial-missing";
+    const r2 = validateArchiveV3(reseal(withOrphanObs));
     expect(r2.valid).toBe(false);
     expect(r2.errors.some((e) => /trialId trial-missing not found/.test(e.message))).toBe(true);
 
     // Playbook referencing a missing study.
-    const report = makePolicyReportPayload("study-missing");
-    const withOrphanPlaybook = structuredClone(base) as unknown as WorkbenchArchiveV3;
-    withOrphanPlaybook.manifest.counts.policyPlaybooks = 1;
-    withOrphanPlaybook.lab.playbooks = [{ id: "pb-orphan", playbook: report }];
-    const r3 = validateArchiveV3(withOrphanPlaybook);
+    const withOrphanPlaybook = buildValidArchiveV3Fixture();
+    withOrphanPlaybook.lab.playbooks[0].playbook.studyId = "study-missing";
+    const r3 = validateArchiveV3(reseal(withOrphanPlaybook));
     expect(r3.valid).toBe(false);
     expect(r3.errors.some((e) => /studyId study-missing not found/.test(e.message))).toBe(true);
   });

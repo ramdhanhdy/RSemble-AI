@@ -7,7 +7,11 @@ import {
 } from "../model-rollups/model-rollup-types";
 import { buildValidArchiveV3Fixture } from "./archive-v3-fixtures";
 import { buildValidNonFusionArchiveV2Fixture } from "./archive-v2-fixtures";
-import { computeArchiveV3ContentDigests, computeArchiveV3PayloadDigest, validateArchiveV3 } from "./archive-v3-types";
+import {
+  computeArchiveV3ContentDigests,
+  computeArchiveV3PayloadDigest,
+  validateArchiveV3,
+} from "./archive-v3-types";
 import {
   commitPreviewWorkbenchArchiveV3,
   exportWorkbenchArchiveV3,
@@ -175,10 +179,15 @@ describe("archive v3 Model Rollup authority", () => {
     expect(preview.collisions).toContainEqual(
       expect.objectContaining({ collection: "modelRollups.records", key: RECORD.id }),
     );
-    await expect(commitPreviewWorkbenchArchiveV3(target, preview)).rejects.toMatchObject({
-      kind: "conflict",
-    });
-    expect(await target.modelRollupVersions.count()).toBe(0);
+
+    // The phased importer resolves the collision by remapping the rollup
+    // lineage to a fresh id; the divergent local record stays untouched.
+    await commitPreviewWorkbenchArchiveV3(target, preview);
+    const localRow = await target.modelRollups.get(RECORD.id);
+    expect((localRow?.record as { name?: string }).name).toBe("Collision");
+    expect(await target.modelRollups.count()).toBe(2);
+    // The archive's version history follows its remapped parent.
+    expect(await target.modelRollupVersions.count()).toBe(1);
   });
 
   it("keeps supported v2 and v1 imports readable with empty rollup collections", async () => {

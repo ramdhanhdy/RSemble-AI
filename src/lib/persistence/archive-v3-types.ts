@@ -470,15 +470,56 @@ export function isWorkbenchArchiveV3(value: unknown): value is WorkbenchArchiveV
 
 // --- Prohibited content scan -------------------------------------------------
 
-function hasProhibitedContent(value: unknown): boolean {
-  if (typeof value === "string") {
-    if (value.startsWith("sk-") || value.startsWith("AIza") || value.startsWith("Bearer ")) {
-      return true;
+/** Credential-like VALUE pattern applied to every string field — identity and
+ *  reference fields included — during BOTH export scanning and import
+ *  validation. Boundary-aware: auth material fires at a token boundary at the
+ *  start, middle, or end of any string, while ordinary words containing
+ *  key-shaped runs ("legacy-task-set") are not credentials. */
+const CREDENTIAL_LIKE_SOURCE =
+  "(?<![A-Za-z0-9])(?:sk-[A-Za-z0-9]|AIza[0-9A-Za-z_-]{10,}|Bearer\\s+\\S)";
+
+/** Non-global variant for boolean scans (.test is stateful under /g). */
+export const CREDENTIAL_LIKE_INLINE = new RegExp(CREDENTIAL_LIKE_SOURCE);
+
+const CREDENTIAL_LIKE_GLOBAL = new RegExp(CREDENTIAL_LIKE_SOURCE, "g");
+
+/** Redact every credential-like fragment from a human-facing diagnostic.
+ *  Diagnostics name entities, never echo matched material — including when
+ *  the offending ENTITY ID is itself the smuggled secret. */
+export function redactCredentialMaterial(text: string): string {
+  return text.replace(CREDENTIAL_LIKE_GLOBAL, "[REDACTED]");
+}
+
+/**
+ * Deep-scan an arbitrary value for credential-like MATERIAL. One scanner for
+ * export and import validation: every string in the tree is tested with the
+ * boundary-aware pattern (no field-name skip list), so secrets hidden in
+ * identity/reference fields or mid-prose cannot slip through.
+ */
+export function containsCredentialMaterial(value: unknown): boolean {
+  const stack: unknown[] = [value];
+  while (stack.length > 0) {
+    const v = stack.pop();
+    if (typeof v === "string") {
+      if (CREDENTIAL_LIKE_INLINE.test(v)) return true;
+      continue;
     }
-    return false;
+    if (Array.isArray(v)) {
+      stack.push(...v);
+      continue;
+    }
+    if (isRecord(v)) {
+      stack.push(...Object.values(v));
+    }
   }
+  return false;
+}
+
+/** Prohibited KEY names (structural smuggling) — checked recursively on top of
+ *  the boundary-aware VALUE scan. */
+function hasProhibitedKeyDeep(value: unknown): boolean {
   if (Array.isArray(value)) {
-    return value.some(hasProhibitedContent);
+    return value.some(hasProhibitedKeyDeep);
   }
   if (isRecord(value)) {
     for (const key of Object.keys(value)) {
@@ -495,10 +536,14 @@ function hasProhibitedContent(value: unknown): boolean {
       ) {
         return true;
       }
-      if (hasProhibitedContent(value[key])) return true;
+      if (hasProhibitedKeyDeep(value[key])) return true;
     }
   }
   return false;
+}
+
+function hasProhibitedContent(value: unknown): boolean {
+  return containsCredentialMaterial(value) || hasProhibitedKeyDeep(value);
 }
 
 function scanProhibitedContent(archive: WorkbenchArchiveV3): string | null {
@@ -745,34 +790,56 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
     });
   }
 
-  // New manifest fields (backward-compatible: older archives may omit them).
-  // When present they must be valid; absence is not an error.
-  if (manifest.appVersion !== undefined && !isNonEmptyString(manifest.appVersion)) {
-    errors.push({ field: "manifest.appVersion", message: "appVersion must be a non-empty string when present." });
+  // Canonical manifest enforcement (Child 10 review repair R5): every
+  // canonical field is REQUIRED. Older v3 envelopes that predate these
+  // fields must go through the explicit normalizeLegacyArchiveV3 adapter —
+  // direct validation rejects them.
+  if (!isNonEmptyString(manifest.appVersion)) {
+    errors.push({
+      field: "manifest.appVersion",
+      message: "appVersion is required and must be a non-empty string.",
+    });
   }
-  if (manifest.contentDigests !== undefined) {
-    if (!isRecord(manifest.contentDigests)) {
-      errors.push({ field: "manifest.contentDigests", message: "contentDigests must be an object when present." });
-    } else {
-      for (const [key, value] of Object.entries(manifest.contentDigests)) {
-        if (typeof value !== "string" || !value.startsWith("sha256:")) {
-          errors.push({ field: `manifest.contentDigests.${key}`, message: "each content digest must be a sha256:<hex> string." });
-        }
+  if (manifest.contentDigests === undefined) {
+    errors.push({
+      field: "manifest.contentDigests",
+      message: "contentDigests is required for canonical v3 archives.",
+    });
+  } else if (!isRecord(manifest.contentDigests)) {
+    errors.push({ field: "manifest.contentDigests", message: "contentDigests must be an object." });
+  } else {
+    for (const [key, value] of Object.entries(manifest.contentDigests)) {
+      if (typeof value !== "string" || !value.startsWith("sha256:")) {
+        errors.push({
+          field: `manifest.contentDigests.${key}`,
+          message: "each content digest must be a sha256:<hex> string.",
+        });
       }
     }
   }
   const validateRuleVersionArray = (field: string, value: unknown) => {
-    if (value !== undefined) {
-      if (!Array.isArray(value) || !value.every((v) => Number.isInteger(v) && v > 0)) {
-        errors.push({ field: `manifest.${field}`, message: `${field} must be an array of positive integers when present.` });
-      }
+    if (value === undefined) {
+      errors.push({
+        field: `manifest.${field}`,
+        message: `${field} is required for canonical v3 archives.`,
+      });
+      return;
+    }
+    if (!Array.isArray(value) || !value.every((v) => Number.isInteger(v) && v > 0)) {
+      errors.push({
+        field: `manifest.${field}`,
+        message: `${field} must be an array of positive integers.`,
+      });
     }
   };
   validateRuleVersionArray("observationRuleVersions", manifest.observationRuleVersions);
   validateRuleVersionArray("aggregationRuleVersions", manifest.aggregationRuleVersions);
   validateRuleVersionArray("uncertaintyRuleVersions", manifest.uncertaintyRuleVersions);
-  if (manifest.localScopeNotice !== undefined && typeof manifest.localScopeNotice !== "string") {
-    errors.push({ field: "manifest.localScopeNotice", message: "localScopeNotice must be a string when present." });
+  if (!isNonEmptyString(manifest.localScopeNotice)) {
+    errors.push({
+      field: "manifest.localScopeNotice",
+      message: "localScopeNotice is required and must be a non-empty string.",
+    });
   }
 
   const runs = value.runs;
@@ -987,9 +1054,33 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
   const prohibitedViolation = scanProhibitedContent(archive);
   if (prohibitedViolation !== null) {
     errors.push({
-      field: prohibitedViolation,
+      field: redactCredentialMaterial(prohibitedViolation),
       message: "prohibited credential or auth content detected in archive.",
     });
+  }
+
+  // Artifact-bytes scan: decoded payload text goes through the same
+  // boundary-aware scanner — base64 wrapping must not hide secret material.
+  if (Array.isArray(archive.tasks.taskArtifactBytes)) {
+    const decoder = new TextDecoder("utf-8", { fatal: false });
+    for (const ab of archive.tasks.taskArtifactBytes) {
+      if (typeof ab?.bytesBase64 !== "string") continue;
+      let decoded: Uint8Array;
+      try {
+        const raw = atob(ab.bytesBase64);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        decoded = bytes;
+      } catch {
+        continue;
+      }
+      if (CREDENTIAL_LIKE_INLINE.test(decoder.decode(decoded))) {
+        errors.push({
+          field: redactCredentialMaterial(`tasks.taskArtifactBytes[${ab.id}]`),
+          message: "prohibited credential or auth content detected in archive.",
+        });
+      }
+    }
   }
 
   // Ordering & duplicates
@@ -1136,6 +1227,51 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
 
   checkOrdering("comparisons.limitations", archive.comparisons.limitations, byRunId, errors);
   checkDuplicates("comparisons.limitations", archive.comparisons.limitations, byRunId, errors);
+
+  // Limitations are 1:1 with migrated (non-resolving) ad-hoc comparison
+  // indexes — ported from the v2 contract (spec §9). A migrated/partial
+  // snapshot must carry exactly one matching limitation; a limitation must
+  // reference such an index.
+  {
+    const migratedRunIds = new Set(
+      archive.comparisons.indexes
+        .filter(
+          (index) =>
+            isRecord(index) &&
+            isRecord((index as { taskBinding?: unknown }).taskBinding) &&
+            (index as { taskBinding: { kind?: string } }).taskBinding.kind === "ad_hoc" &&
+            typeof (index as { taskBinding: { inputSnapshotRef?: unknown } }).taskBinding
+              .inputSnapshotRef === "string" &&
+            (
+              index as { taskBinding: { inputSnapshotRef: string } }
+            ).taskBinding.inputSnapshotRef.startsWith("migrated:"),
+        )
+        .map((index) => (index as { id: string }).id),
+    );
+    for (const limitation of archive.comparisons.limitations) {
+      if (!migratedRunIds.has(limitation.runId)) {
+        errors.push({
+          field: "comparisons.limitations",
+          message: `limitation references comparison ${limitation.runId} without a migrated non-resolving snapshot.`,
+        });
+      }
+      if (limitation.reason !== "instance_input_incomplete") {
+        errors.push({
+          field: `comparisons.limitations[${limitation.runId}].reason`,
+          message: "migrated comparisons carry the instance_input_incomplete limitation.",
+        });
+      }
+    }
+    const recordedRunIds = new Set(archive.comparisons.limitations.map((l) => l.runId));
+    for (const runId of migratedRunIds) {
+      if (!recordedRunIds.has(runId)) {
+        errors.push({
+          field: "comparisons.limitations",
+          message: `missing limitation record for migrated comparison ${runId}.`,
+        });
+      }
+    }
+  }
 
   // Lab collections ordering & duplicates
   checkOrdering("lab.recipeRecords", archive.lab.recipeRecords, byId, errors);
@@ -1443,4 +1579,51 @@ export function validateArchiveV3(value: unknown): ArchiveV3ValidationResult {
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+// --- Legacy v3 normalization adapter (Child 10 review repair R5) --------------
+
+/** Standard local-scope notice emitted by canonical exports. */
+const ARCHIVE_V3_LOCAL_SCOPE_NOTICE =
+  "Local workbench export. No remote transport metadata. Credentials excluded.";
+
+export type LegacyArchiveV3Normalization =
+  { ok: true; archive: WorkbenchArchiveV3 } | { ok: false; errors: ArchiveV3ValidationError[] };
+
+/**
+ * Explicit adapter for older v3 envelopes that predate the canonical manifest
+ * fields. Fills ONLY absent fields with honest defaults — present values are
+ * never altered — then validates the normalized archive against the strict
+ * canonical contract. Returns the validation errors when the envelope cannot
+ * be normalized.
+ */
+export function normalizeLegacyArchiveV3(value: unknown): LegacyArchiveV3Normalization {
+  if (!isWorkbenchArchiveV3(value)) {
+    return {
+      ok: false,
+      errors: [{ field: "manifest", message: "not a recognizable archive v3 payload." }],
+    };
+  }
+  const clone = JSON.parse(JSON.stringify(value)) as WorkbenchArchiveV3;
+  const manifest = clone.manifest as unknown as Record<string, unknown>;
+  if (manifest.appVersion === undefined) {
+    manifest.appVersion = "0.0.0-legacy";
+  }
+  if (manifest.observationRuleVersions === undefined) {
+    manifest.observationRuleVersions = [];
+  }
+  if (manifest.aggregationRuleVersions === undefined) {
+    manifest.aggregationRuleVersions = [];
+  }
+  if (manifest.uncertaintyRuleVersions === undefined) {
+    manifest.uncertaintyRuleVersions = [];
+  }
+  if (manifest.localScopeNotice === undefined || manifest.localScopeNotice === null) {
+    manifest.localScopeNotice = ARCHIVE_V3_LOCAL_SCOPE_NOTICE;
+  }
+  if (manifest.contentDigests === undefined) {
+    manifest.contentDigests = computeArchiveV3ContentDigests(clone);
+  }
+  const check = validateArchiveV3(clone);
+  return check.valid ? { ok: true, archive: clone } : { ok: false, errors: check.errors };
 }

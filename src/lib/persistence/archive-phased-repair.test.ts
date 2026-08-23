@@ -21,6 +21,7 @@ import "fake-indexeddb/auto";
 import { describe, expect, it, afterEach, beforeEach, vi } from "vitest";
 import {
   ArchiveImportCancelledError,
+  IMPORT_JOURNAL_KEY,
   importWorkbenchArchiveAuto,
   importWorkbenchArchiveV3Phased,
   previewWorkbenchArchive,
@@ -31,12 +32,8 @@ import {
   validateArchiveV3,
   type WorkbenchArchiveV3,
 } from "./archive-v3-types";
-import {
-  buildValidArchiveV3Fixture,
-  seedCompleteV3Corpus,
-} from "./archive-v3-fixtures";
+import { buildValidArchiveV3Fixture, seedCompleteV3Corpus } from "./archive-v3-fixtures";
 import { RSembleEvaluationDB } from "./database";
-import { IMPORT_JOURNAL_KEY } from "./archive";
 
 function freshDb(name: string): RSembleEvaluationDB {
   const db = new RSembleEvaluationDB(`test-phased-${name}-${Math.random()}`);
@@ -104,25 +101,36 @@ describe("phased v3 import — complete collision remapping (R2)", () => {
     expect(taskVersion).toBeDefined();
     expect((taskVersion as { version_: { taskId: string } }).version_.taskId).toBe(newTaskId);
 
-    const instanceRemap = result.remapped.find(
-      (e) => e.collection === "tasks.taskInstances",
-    );
+    const instanceRemap = result.remapped.find((e) => e.collection === "tasks.taskInstances");
     expect(instanceRemap).toBeDefined();
     const remappedInstance = await db.taskInstances.get(instanceRemap!.localId);
     expect(remappedInstance).toBeDefined();
     expect((remappedInstance as { instance: { taskId: string } }).instance.taskId).toBe(newTaskId);
 
-    // Evidence observation (later phase) also points at the new task.
+    // Observation identity derives from sourceTaskCellId. That composite edge
+    // is rewritten with the Task ID, then observationIdFor recomputes a valid
+    // new id; decisions and comparison receipts follow it.
     const observationRemap = result.remapped.find(
-      (e) => e.collection === "evidence.observations",
+      (entry) => entry.collection === "evidence.observations",
     );
     expect(observationRemap).toBeDefined();
-    const remappedObservation = await db.observations.get(observationRemap!.localId);
-    expect(remappedObservation).toBeDefined();
-    expect((remappedObservation as { observation: { taskId: string } }).observation.taskId).toBe(newTaskId);
+    expect(observationRemap!.localId).toMatch(/^obs:sha256:[0-9a-f]{64}$/);
+    const importedObservation = (await db.observations.get(observationRemap!.localId)) as
+      | {
+          observation: {
+            taskId: string;
+            sourceTaskCellId: string;
+          };
+        }
+      | undefined;
+    expect(importedObservation).toBeDefined();
+    expect(importedObservation!.observation.taskId).toBe(newTaskId);
+    expect(importedObservation!.observation.sourceTaskCellId).toContain(newTaskId);
+    expect(await db.observations.count()).toBe(2);
 
-    // Crosswalk is namespaced: task-1 maps only within tasks.tasks.
-    expect(result.crosswalk["tasks.tasks\u0000task-1"]).toBe(newTaskId);
+    // Crosswalk is namespaced by PARENT identity space: task-1 maps only
+    // within the tasks namespace, never globally.
+    expect(result.crosswalk["tasks\u0000task-1"]).toBe(newTaskId);
     expect(result.crosswalk["task-1"]).toBeUndefined();
   });
 
@@ -139,9 +147,7 @@ describe("phased v3 import — complete collision remapping (R2)", () => {
     const result = await importWorkbenchArchiveV3Phased(db, resealedIncoming);
     // A version-table collision promotes the remap to the parent identity:
     // the whole task lineage lands under a new id at the SAME version number.
-    const versionRemap = result.remapped.find(
-      (e) => e.collection === "tasks.taskVersions",
-    );
+    const versionRemap = result.remapped.find((e) => e.collection === "tasks.taskVersions");
     expect(versionRemap).toBeDefined();
     const [newTaskId, newVersion] = versionRemap!.localId.split("@");
     expect(newTaskId).not.toBe("task-1");
@@ -150,12 +156,16 @@ describe("phased v3 import — complete collision remapping (R2)", () => {
     const remappedVersion = await db.taskVersions.get([newTaskId, 1]);
     expect(remappedVersion).toBeDefined();
     expect((remappedVersion as { version_: { taskId: string } }).version_.taskId).toBe(newTaskId);
-    expect((remappedVersion as { version_: { objective: string } }).version_.objective).toBe("Different objective");
+    expect((remappedVersion as { version_: { objective: string } }).version_.objective).toBe(
+      "Different objective",
+    );
 
     // The original task and its original version row persist untouched.
     expect(((await db.tasks.get("task-1")) as { record: { id: string } }).record.id).toBe("task-1");
     const originalVersion = await db.taskVersions.get(["task-1", 1]);
-    expect((originalVersion as { version_: { objective: string } }).version_.objective).toBe("Do the task");
+    expect((originalVersion as { version_: { objective: string } }).version_.objective).toBe(
+      "Do the task",
+    );
 
     // The legacy migration crosswalk keeps its own key; the incoming row's
     // rewritten mapping (pointing at the new task id) lands under a
@@ -168,30 +178,32 @@ describe("phased v3 import — complete collision remapping (R2)", () => {
     dbs.push(db);
     await seedCompleteV3Corpus(db);
 
-    const incoming = resealed(buildValidArchiveV3Fixture());
+    const incoming = buildValidArchiveV3Fixture();
+    incoming.tasks.tasks[0].updatedAt = 9999; // collide Task id "task-1"
 
-    // suite-1 exists locally with different content → suites/suite-1 remaps.
-    const suiteRow = await db.suites.get("suite-1");
-    (suiteRow!.suite as { name: string }).name = "Locally diverged suite name";
-    await db.suites.put(suiteRow!);
+    // Reuse the exact string "task-1" as an UNRELATED Study identity and
+    // retarget only its Lab graph. Flat string crosswalks would corrupt these
+    // study references when the Task remaps.
+    incoming.lab.studies[0].id = "task-1";
+    for (const trial of incoming.lab.trials) trial.studyId = "task-1";
+    for (const attempt of incoming.lab.attempts) attempt.studyId = "task-1";
+    for (const observation of incoming.lab.observations) observation.studyId = "task-1";
+    incoming.lab.playbooks[0].playbook.studyId = "task-1";
+    const sealed = resealed(incoming);
 
-    // The string "suite-1" appears as an unrelated field on the experiment
-    // (suiteId) — it must NOT be rewritten by the suite remap.
-    const result = await importWorkbenchArchiveV3Phased(db, incoming);
+    const result = await importWorkbenchArchiveV3Phased(db, sealed);
+    const newTaskId = result.crosswalk["tasks\u0000task-1"];
+    expect(newTaskId).toMatch(/^task-1-import-/);
+    expect(result.crosswalk["studies\u0000task-1"]).toBeUndefined();
+    expect(result.crosswalk["task-1"]).toBeUndefined();
 
-    const suiteRemap = result.remapped.find((e) => e.collection === "suites");
-    expect(suiteRemap).toBeDefined();
-
-    // The crosswalk itself is collection-qualified.
-    expect(result.crosswalk["suites\u0000suite-1"]).toBe(suiteRemap!.localId);
-    expect(result.crosswalk["suite-1"]).toBeUndefined();
-
-    // The experiment was imported (create) and still references "suite-1".
-    const experiment = await db.experiments.get("exp-1");
-    expect(experiment).toBeDefined();
-    expect((experiment as { experiment: { suiteId: string } }).experiment.suiteId).toBe(
-      "suite-1",
-    );
+    // The unrelated Study keeps the original same-string id.
+    expect(await db.studies.get("task-1")).toBeDefined();
+    const trialRemap = result.remapped.find((entry) => entry.collection === "lab.trials");
+    expect(trialRemap).toBeDefined();
+    const importedTrial = await db.studyTrials.get(trialRemap!.localId);
+    expect(importedTrial?.studyId).toBe("task-1");
+    expect(importedTrial?.studyId).not.toBe(newTaskId);
   });
 
   it("does not mutate the caller's archive object", async () => {
@@ -252,9 +264,9 @@ describe("phased v3 import — production routing (R1)", () => {
 
     // Planned remaps are disclosed with collection + key.
     expect(preview.plannedRemaps.length).toBeGreaterThan(0);
-    const taskRemap = preview.plannedRemaps.find((r) => r.collection === "tasks.tasks");
-    expect(taskRemap).toBeDefined();
-    expect(taskRemap!.key).toBe("task-1");
+    const versionRemap = preview.plannedRemaps.find((r) => r.collection === "tasks.taskVersions");
+    expect(versionRemap).toBeDefined();
+    expect(versionRemap!.key).toBe("task-1@1");
   });
 });
 
@@ -275,11 +287,21 @@ describe("phased v3 import — durable journal and resume (R3)", () => {
     const journal = raw!.value as {
       importId: string;
       archiveDigest: string;
+      archivePayload: WorkbenchArchiveV3;
+      transformedPayload: WorkbenchArchiveV3;
+      crosswalk: Record<string, string>;
+      remapped: unknown[];
       phaseState: Record<string, string>;
       verificationReceipt: unknown;
     };
     expect(journal.importId).toBe(result.importId);
     expect(journal.archiveDigest).toBe(computeArchiveV3PayloadDigest(incoming));
+    expect(journal.archivePayload.manifest.payloadDigest).toBe(
+      computeArchiveV3PayloadDigest(incoming),
+    );
+    expect(journal.transformedPayload.manifest.payloadDigest).toMatch(/^sha256:/);
+    expect(journal.crosswalk).toBeDefined();
+    expect(journal.remapped).toEqual([]);
     // Every phase is completed AND verified.
     for (const [phase, state] of Object.entries(journal.phaseState)) {
       expect(state).toBe("completed");
@@ -298,19 +320,17 @@ describe("phased v3 import — durable journal and resume (R3)", () => {
     // table write fail via a spy on the Dexie transaction.
     const originalTransaction = db.transaction.bind(db);
     let phaseIndex = 0;
-    const failing = vi
-      .spyOn(db, "transaction")
-      .mockImplementation(((mode: string, tables: unknown, scope?: unknown) => {
-        phaseIndex += 1;
-        if (phaseIndex === 2) {
-          return Promise.reject(new Error("Injected phase-2 failure"));
-        }
-        return originalTransaction(
-          mode as never,
-          tables as never,
-          scope as never,
-        ) as never;
-      }) as never);
+    const failing = vi.spyOn(db, "transaction").mockImplementation(((
+      mode: string,
+      tables: unknown,
+      scope?: unknown,
+    ) => {
+      phaseIndex += 1;
+      if (phaseIndex === 2) {
+        return Promise.reject(new Error("Injected phase-2 failure"));
+      }
+      return originalTransaction(mode as never, tables as never, scope as never) as never;
+    }) as never);
 
     await expect(importWorkbenchArchiveV3Phased(db, incoming)).rejects.toThrow(
       /Injected phase-2 failure/,
@@ -332,6 +352,55 @@ describe("phased v3 import — durable journal and resume (R3)", () => {
     const journal = raw!.value as { phaseState: Record<string, string> };
     expect(journal.phaseState["runs-rubrics-suites-experiments"]).toBe("completed");
     expect(journal.phaseState["tasks"]).toBe("failed");
+  });
+
+  it("resume reuses the persisted crosswalk after a remapped phase without duplicating IDs", async () => {
+    const db = freshDb("resume-remapped");
+    dbs.push(db);
+    await seedCompleteV3Corpus(db);
+
+    const incoming = buildValidArchiveV3Fixture();
+    incoming.tasks.tasks[0].updatedAt = 9999;
+    const sealed = resealed(incoming);
+
+    // Fail phase 3 after the remapped Tasks phase committed.
+    const originalTransaction = db.transaction.bind(db);
+    let phaseIndex = 0;
+    const failing = vi.spyOn(db, "transaction").mockImplementation(((
+      mode: string,
+      tables: unknown,
+      scope?: unknown,
+    ) => {
+      phaseIndex += 1;
+      if (phaseIndex === 3) return Promise.reject(new Error("Injected phase-3 failure"));
+      return originalTransaction(mode as never, tables as never, scope as never) as never;
+    }) as never);
+
+    await expect(importWorkbenchArchiveV3Phased(db, sealed)).rejects.toThrow(
+      /Injected phase-3 failure/,
+    );
+    failing.mockRestore();
+
+    const stored = await db.storageMeta.get(IMPORT_JOURNAL_KEY);
+    expect(stored).toBeDefined();
+    const journal = stored!.value as {
+      importId: string;
+      crosswalk: Record<string, string>;
+      phaseState: Record<string, string>;
+    };
+    const mappedTaskId = journal.crosswalk["tasks\u0000task-1"];
+    expect(mappedTaskId).toMatch(/^task-1-import-/);
+    expect(await db.tasks.get(mappedTaskId)).toBeDefined();
+    expect(await db.tasks.count()).toBe(2);
+    expect(journal.phaseState.tasks).toBe("completed");
+    expect(journal.phaseState.taskSets).toBe("failed");
+
+    const resumed = await importWorkbenchArchiveV3Phased(db, sealed, {
+      resumeImportId: journal.importId,
+    });
+    expect(resumed.crosswalk["tasks\u0000task-1"]).toBe(mappedTaskId);
+    expect(await db.tasks.count()).toBe(2);
+    expect(resumed.failedPhases).toEqual([]);
   });
 
   it("resume from the first unfinished phase replays no completed work", async () => {
@@ -406,9 +475,7 @@ describe("phased v3 import — durable journal and resume (R3)", () => {
     // Quota: Dexie QuotaExceededError.
     const quotaError = new Error("The current transaction exceeded its quota limitation.");
     (quotaError as { name?: string }).name = "QuotaExceededError";
-    const quotaSpy = vi
-      .spyOn(db, "transaction")
-      .mockRejectedValueOnce(quotaError as never);
+    const quotaSpy = vi.spyOn(db, "transaction").mockRejectedValueOnce(quotaError as never);
     await expect(importWorkbenchArchiveV3Phased(db, incoming)).rejects.toMatchObject({
       kind: "quota",
     });
@@ -461,6 +528,8 @@ describe("phased v3 import — disposable search rebuild (R4)", () => {
     expect(await db.searchDocuments.get(["task", "stale-task"])).toBeUndefined();
     // Fresh document for the imported task exists.
     expect(await db.searchDocuments.get(["task", "task-1"])).toBeDefined();
+    // Successful rebuild consumes and clears the scheduling marker.
+    expect(await db.storageMeta.get("search:needs-rebuild")).toBeUndefined();
   });
 });
 
@@ -469,7 +538,7 @@ describe("phased v3 import — disposable search rebuild (R4)", () => {
 // -----------------------------------------------------------------------------
 
 describe("phased v3 import — canonical manifest enforcement (R5)", () => {
-  it("a v3 archive missing canonical manifest fields is rejected after normalization", async () => {
+  it("rejects missing canonical fields directly and preserves older v3 only through the explicit preview adapter", async () => {
     const db = freshDb("manifest-strict");
     dbs.push(db);
 
@@ -477,12 +546,9 @@ describe("phased v3 import — canonical manifest enforcement (R5)", () => {
     // Strip the canonical fields an older v3 export omitted.
     delete (legacy.manifest as unknown as Record<string, unknown>).appVersion;
     delete (legacy.manifest as unknown as Record<string, unknown>).contentDigests;
-    delete (legacy.manifest as unknown as Record<string, unknown>)
-      .observationRuleVersions;
-    delete (legacy.manifest as unknown as Record<string, unknown>)
-      .aggregationRuleVersions;
-    delete (legacy.manifest as unknown as Record<string, unknown>)
-      .uncertaintyRuleVersions;
+    delete (legacy.manifest as unknown as Record<string, unknown>).observationRuleVersions;
+    delete (legacy.manifest as unknown as Record<string, unknown>).aggregationRuleVersions;
+    delete (legacy.manifest as unknown as Record<string, unknown>).uncertaintyRuleVersions;
     delete (legacy.manifest as unknown as Record<string, unknown>).localScopeNotice;
     legacy.manifest.payloadDigest = computeArchiveV3PayloadDigest(legacy);
 
@@ -496,6 +562,15 @@ describe("phased v3 import — canonical manifest enforcement (R5)", () => {
     await expect(importWorkbenchArchiveV3Phased(db, legacy)).rejects.toMatchObject({
       kind: "validation",
     });
+
+    const preview = await previewWorkbenchArchive(db, legacy);
+    expect(preview.format).toBe("v3");
+    const normalized = preview.payload as WorkbenchArchiveV3;
+    expect(validateArchiveV3(normalized).valid).toBe(true);
+    expect(normalized.manifest.appVersion).toBe("0.0.0-legacy");
+    expect(normalized.manifest.contentDigests).not.toEqual({});
+    expect(normalized.manifest.observationRuleVersions).toEqual([]);
+    expect(normalized.manifest.localScopeNotice).toMatch(/Local workbench export/);
   });
 });
 
@@ -558,10 +633,7 @@ describe("v3 validation — unified boundary-aware secret scanner (R5)", () => {
   it("catches a secret at the END of a config value", () => {
     const archive = poisoned((a) => {
       (
-        a.evidence.modelConfigurations[0].runtimeSettings as unknown as Record<
-          string,
-          unknown
-        >
+        a.evidence.modelConfigurations[0].runtimeSettings as unknown as Record<string, unknown>
       ).note = `endpoint token ${SECRET}`;
     });
     expectRejected(archive);
@@ -593,16 +665,12 @@ describe("v3 validation — comparison limitation derivation contract (R6)", () 
     archive.manifest.contentDigests = computeArchiveV3ContentDigests(archive);
     const check = validateArchiveV3(archive);
     expect(check.valid).toBe(false);
-    expect(check.errors.some((e) => e.field.includes("comparisons.limitations"))).toBe(
-      true,
-    );
+    expect(check.errors.some((e) => e.field.includes("comparisons.limitations"))).toBe(true);
   });
 
   it("rejects a limitation record without a matching migrated index", () => {
     const archive = buildValidArchiveV3Fixture();
-    archive.comparisons.limitations = [
-      { runId: "ghost-run", reason: "instance_input_incomplete" },
-    ];
+    archive.comparisons.limitations = [{ runId: "ghost-run", reason: "instance_input_incomplete" }];
     archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
     archive.manifest.contentDigests = computeArchiveV3ContentDigests(archive);
     const check = validateArchiveV3(archive);

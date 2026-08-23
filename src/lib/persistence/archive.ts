@@ -36,14 +36,12 @@
 //    their payloads.
 // =============================================================================
 import type { Table } from "dexie";
+import { createSearchIndexRepository, type SearchIndexRepository } from "./search-index-repository";
+import { createDexieSearchSourceResolver, rebuildSearchIndex } from "../search/search-reindex";
 import {
   RSembleEvaluationDB,
   StorageError,
   classifyStorageError,
-  type ProfileRow,
-  type ProfileVersionRow,
-  type SuiteRow,
-  type ExperimentRow,
   type RunDetailRow,
   type RunSummaryRow,
   type TaskSetOwnershipCrosswalkRow,
@@ -107,10 +105,14 @@ import {
 import {
   ARCHIVE_V3_FORMAT_VERSION,
   ARCHIVE_V3_STORAGE_VERSION,
+  CREDENTIAL_LIKE_INLINE,
   computeArchiveV3ContentDigests,
   computeArchiveV3PayloadDigest,
+  containsCredentialMaterial,
   detectLegacyFusionArchive,
   isWorkbenchArchiveV3,
+  normalizeLegacyArchiveV3,
+  redactCredentialMaterial,
   validateArchiveV3,
   type ArchiveUnsupportedFusionReceipt,
   type ArchiveV3ComparisonInputSnapshot,
@@ -136,7 +138,6 @@ import {
   isPolicyStudyObservation,
   isPolicyStudyRecord,
   isPolicyStudyTrial,
-  type PolicyReportPayload,
   type PolicyStudyObservation,
   type PolicyStudyRecord,
   type PolicyStudyTrial,
@@ -168,8 +169,8 @@ import {
   isTaskRecord,
   isTaskVersion,
 } from "../tasks/task-validation";
-import type {
-  TaskArtifact,
+import {
+  type TaskArtifact,
   TaskFacetAnnotation,
   TaskFamily,
   TaskFamilyAssignment,
@@ -177,6 +178,7 @@ import type {
   TaskInstance,
   TaskRecord,
   TaskVersion,
+  VersionRef,
 } from "../tasks/task-types";
 import type { TaskMigrationCrosswalk } from "../tasks/task-references";
 import {
@@ -198,6 +200,7 @@ import {
   isObservation,
   isEligibilityDecision,
   isExecutedVerifierOutcome,
+  observationIdFor,
   observationSourceKey,
 } from "../evidence/evidence-validation";
 import type { EvidenceIndexJob, EvidenceIndexJobSummary } from "./evidence-repository";
@@ -210,6 +213,7 @@ import {
 } from "../migrations/fusion-to-research-lab";
 import { isZeroCorpusBootstrapReceipt } from "../migrations/fusion-to-research-lab-receipt";
 import {
+  computeModelRollupMemberManifestDigest,
   isModelRollupRecord,
   isModelRollupVersion,
   type ModelRollupRecord,
@@ -1317,69 +1321,6 @@ function v2BytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** Credential-like VALUE pattern applied to every string field and to decoded
- *  artifact bytes. Matches `CREDENTIAL_LIKE_VALUE` in task-validation
- *  (key-like prefixes), extended to fire mid-string only at a token boundary —
- *  auth material must be caught inside prose ("prefix sk-… suffix"), while
- *  ordinary words containing key-shaped character runs ("legacy-task-set")
- *  are not credentials. */
-const CREDENTIAL_LIKE_INLINE =
-  /(?:^|[^A-Za-z0-9])(?:sk-[A-Za-z0-9]|AIza[0-9A-Za-z_-]{10,}|Bearer\s+\S)/;
-
-/**
- * Deep-scan a structured entity for credential-like VALUES. Self-referential
- * identity strings (`id`, `taskId`, `studyId`, `trialId`, `legacyScopeKey`,
- * `supersedesId`, `originId`) are skipped — a record's own ID legitimately
- * appears verbatim inside test-seeded collections like `legacy:task-1` and
- * must never be mistaken for secret material.
- */
-function v2ScanForCredentialValue(value: unknown): boolean {
-  const stack: unknown[] = [value];
-  while (stack.length > 0) {
-    const v = stack.pop();
-    if (typeof v === "string") {
-      if (CREDENTIAL_LIKE_INLINE.test(v)) return true;
-      continue;
-    }
-    if (Array.isArray(v)) {
-      for (const item of v) stack.push(item);
-      continue;
-    }
-    if (isRecord(v)) {
-      for (const [key, field] of Object.entries(v)) {
-        if (
-          key === "id" ||
-          key === "taskId" ||
-          key === "studyId" ||
-          key === "trialId" ||
-          key === "legacyScopeKey" ||
-          key === "supersedesId" ||
-          key === "originId" ||
-          key === "modelConfigurationId" ||
-          key === "sourceResultId" ||
-          key === "sourceTaskCellId" ||
-          key === "executionLineageId" ||
-          key === "taskInstanceId" ||
-          key === "taskFamilyId" ||
-          key === "candidateAttemptId" ||
-          key === "judgeAttemptId" ||
-          key === "comparabilityCohortId" ||
-          key === "protocolFingerprint" ||
-          key === "instructionDigest" ||
-          key === "configurationDigest" ||
-          key === "criterionId" ||
-          key === "modelKey" ||
-          key === "runId"
-        ) {
-          continue;
-        }
-        stack.push(field);
-      }
-    }
-  }
-  return false;
-}
-
 /**
  * Export the complete canonical workbench as a v2 envelope.
  *
@@ -1866,8 +1807,12 @@ export async function exportWorkbenchArchiveV2(
     // repeat entity ids). Diagnostics name entity/collection + id, never the
     // matched value or its content.
     const scanStructured = (label: string, id: string, entity: unknown) => {
-      if (v2ScanForCredentialValue(entity)) {
-        violations.push(`${label}[${id}] contains credential-like material (value ${REDACTED})`);
+      if (containsCredentialMaterial(entity)) {
+        // The label is redacted too — an entity ID may itself be the smuggled
+        // secret, and diagnostics never echo matched material.
+        violations.push(
+          `${redactCredentialMaterial(`${label}[${id}]`)} contains credential-like material (value ${REDACTED})`,
+        );
       }
     };
     for (const s of summaries) scanStructured("runs.summaries", s.id, s);
@@ -2401,6 +2346,15 @@ export async function exportWorkbenchArchiveV3(
           completeness: "partial",
           capturedAt: index.createdAt,
         });
+        // Migration-limitation derivation ported from v2 (spec §9): a
+        // non-resolving `migrated:` snapshot ref carries the matching
+        // explicit limitation and count.
+        if (binding.inputSnapshotRef.startsWith("migrated:")) {
+          comparisonLimitations.push({
+            runId: index.id,
+            reason: "instance_input_incomplete",
+          });
+        }
       } else {
         inputSnapshots.push({
           runId: index.id,
@@ -2501,7 +2455,7 @@ export async function exportWorkbenchArchiveV3(
         const text = new TextDecoder("utf-8", { fatal: false }).decode(decoded);
         if (CREDENTIAL_LIKE_INLINE.test(text)) {
           violations.push(
-            `tasks.taskArtifactBytes[${ab.id}] carries credential-like material (value ${REDACTED})`,
+            `${redactCredentialMaterial(`tasks.taskArtifactBytes[${ab.id}]`)} carries credential-like material (value ${REDACTED})`,
           );
         }
       }
@@ -2510,8 +2464,12 @@ export async function exportWorkbenchArchiveV3(
     // Identity-key fields are skipped (they legitimately repeat entity ids).
     // Diagnostics name entity/collection + id, never the matched value.
     const scanStructured = (label: string, id: string, entity: unknown) => {
-      if (v2ScanForCredentialValue(entity)) {
-        violations.push(`${label}[${id}] contains credential-like material (value ${REDACTED})`);
+      if (containsCredentialMaterial(entity)) {
+        // The label is redacted too — an entity ID may itself be the smuggled
+        // secret, and diagnostics never echo matched material.
+        violations.push(
+          `${redactCredentialMaterial(`${label}[${id}]`)} contains credential-like material (value ${REDACTED})`,
+        );
       }
     };
     for (const s of summaries) scanStructured("runs.summaries", s.id, s);
@@ -2555,8 +2513,7 @@ export async function exportWorkbenchArchiveV3(
     for (const v of recipeVersions)
       scanStructured("lab.recipeVersions", `${v.recipeId}@${v.version}`, v);
     for (const p of poolRecords) scanStructured("lab.poolRecords", p.id, p);
-    for (const v of poolVersions)
-      scanStructured("lab.poolVersions", `${v.poolId}@${v.version}`, v);
+    for (const v of poolVersions) scanStructured("lab.poolVersions", `${v.poolId}@${v.version}`, v);
     for (const s of studies) scanStructured("lab.studies", s.id, s);
     for (const t of trials) scanStructured("lab.trials", t.id, t);
     for (const a of attempts) scanStructured("lab.attempts", a.id, a);
@@ -2635,7 +2592,8 @@ export async function exportWorkbenchArchiveV3(
         observationRuleVersions: [EVIDENCE_RULE_VERSION],
         aggregationRuleVersions: [QUERY_AGGREGATION_RULE_VERSION],
         uncertaintyRuleVersions: [QUERY_UNCERTAINTY_RULE_VERSION],
-        localScopeNotice: "Local workbench export. No remote transport metadata. Credentials excluded.",
+        localScopeNotice:
+          "Local workbench export. No remote transport metadata. Credentials excluded.",
         disclosure: { scope: "local", notes: ARCHIVE_V2_DISCLOSURE_NOTES },
       },
       runs: {
@@ -2795,11 +2753,19 @@ export type ArchivePreviewFormat = "v1" | "v2" | "v3" | "unsupported_fusion_arch
 
 /** The complete, write-free import preview consumed by confirmation UI and
  *  the atomic commit. */
+export interface ArchivePreviewPlannedRemap {
+  collection: string;
+  key: string;
+}
+
 export interface ArchiveImportPreview {
   format: ArchivePreviewFormat;
   /** Human-facing source label (file name or adapter tag); sanitized — never
    *  archive content. */
   sourceLabel: string;
+  /** v3 only: colliding entities the phased importer will remap to fresh
+   *  local IDs on confirmation. Empty for v1/v2 (they still abort). */
+  plannedRemaps: ArchivePreviewPlannedRemap[];
   totalEntities: number;
   counts: ArchivePreviewCollectionCount[];
   create: ArchivePreviewEntity[];
@@ -2838,50 +2804,60 @@ export interface ArchiveImportCommitOptions {
 }
 
 // =============================================================================
-// Collision-safe import v3: ID remapping, phased journal, crosswalk (Task 7)
+// Collision-safe phased import v3 (Child 10 review repair):
+//
+// Preflight ALL collisions against the live database (fixpoint over the
+// transformed graph), build a collection-qualified crosswalk, transform an
+// immutable deep clone of the archive (outer keys, embedded ids, composite
+// version keys and every typed reference edge), validate the transformed
+// graph, then commit in bounded atomic phases over a durable storageMeta
+// journal with per-phase verification, classified failures, resume support,
+// and a disposable search rebuild after the canonical commit.
 // =============================================================================
 
 /** Maps an original archive ID to its new local ID after collision remapping. */
 export interface ImportCrosswalkEntry {
-  /** The ID as it appeared in the archive. */
+  /** The ID (or id@version composite key) as it appeared in the archive. */
   archiveId: string;
   /** The new ID assigned in the local database. */
   localId: string;
-  /** Collection the entity belongs to. */
+  /** Collection namespace the entity belongs to (e.g. "tasks.tasks"). */
   collection: string;
 }
 
-/** Complete crosswalk from one import session. */
-export interface ImportCrosswalk {
-  /** importId → crosswalk entries */
-  entries: ImportCrosswalkEntry[];
-}
+/** storageMeta key of THE active v3 import journal (one slot per database). */
+export const IMPORT_JOURNAL_KEY = "archive-import:v3:journal";
 
-/** One phase of a bounded atomic import. */
-export interface ImportPhase {
-  /** Stable phase identifier. */
-  name: string;
-  /** Collections written in this phase. */
-  collections: string[];
-  status: "pending" | "in_progress" | "completed" | "failed";
-  startedAt?: number;
-  completedAt?: number;
-  /** If failed, the redacted error message (never echoes content). */
-  errorMessage?: string;
-}
-
-/** Persistent journal for a phased v3 import. */
-export interface ImportJournal {
-  /** Unique import session id. */
+/** Durable journal for a phased v3 import. A phase is marked completed only
+ *  after its transaction committed AND its writes were verified; resume skips
+ *  completed phases without replaying them. */
+export interface ImportJournalRecord {
+  kind: "archive-import-journal-v3";
   importId: string;
-  /** When the import was initiated. */
   startedAt: number;
-  /** Ordered phases. */
-  phases: ImportPhase[];
-  /** ID remapping crosswalk accumulated across phases. */
+  updatedAt: number;
+  /** payloadDigest of the ORIGINAL incoming archive. */
+  archiveDigest: string;
+  /** Immutable canonical payload that initiated this session (resume source). */
+  archivePayload: WorkbenchArchiveV3;
+  /** Preflight-transformed payload consumed by unfinished phases. */
+  transformedPayload: WorkbenchArchiveV3 | null;
+  /** Persisted collection-qualified crosswalk (`namespace\0archiveId`). */
   crosswalk: Record<string, string>;
-  /** The validated archive payload (for resume). */
-  archivePayload: unknown;
+  /** Ordered remap report exposed to UI/receipts. */
+  remapped: ImportCrosswalkEntry[];
+  /** Derived-key fallback mapping (`collection\0archiveKey`). */
+  fallbackKeys: Record<string, string>;
+  phaseState: Record<string, "pending" | "in_progress" | "completed" | "failed">;
+  verificationReceipt: {
+    verifiedAt: number;
+    createdCount: number;
+    reusedCount: number;
+    remappedCount: number;
+  } | null;
+  /** Classified failure from the most recent attempt (redacted message). */
+  lastError?: { kind: string; message: string };
+  searchRebuilt?: boolean;
 }
 
 /** Ordered import phases for v3. Each phase is one Dexie transaction. */
@@ -2898,35 +2874,68 @@ export const IMPORT_V3_PHASES: readonly string[] = [
 /** Collections owned by each phase. */
 export const IMPORT_V3_PHASE_COLLECTIONS: Record<string, readonly string[]> = {
   "runs-rubrics-suites-experiments": [
-    "runs.summaries", "runs.details",
-    "rubrics.identities", "rubrics.versions",
-    "suites", "experiments",
+    "runs.summaries",
+    "runs.details",
+    "rubrics.identities",
+    "rubrics.versions",
+    "suites",
+    "experiments",
   ],
-  "tasks": [
-    "tasks.tasks", "tasks.taskVersions", "tasks.taskArtifacts",
-    "tasks.taskInstances", "tasks.taskFamilies",
-    "tasks.taskFamilyAssignments", "tasks.taskFamilyRelations",
-    "tasks.taskFacetAnnotations", "tasks.taskMigrationCrosswalks",
+  tasks: [
+    "tasks.tasks",
+    "tasks.taskVersions",
+    "tasks.taskArtifacts",
+    "tasks.taskInstances",
+    "tasks.taskFamilies",
+    "tasks.taskFamilyAssignments",
+    "tasks.taskFamilyRelations",
+    "tasks.taskFacetAnnotations",
+    "tasks.taskMigrationCrosswalks",
   ],
-  "taskSets": [
-    "taskSets.records", "taskSets.versions",
-    "taskSets.materializations", "taskSets.ownershipCrosswalks",
+  taskSets: [
+    "taskSets.records",
+    "taskSets.versions",
+    "taskSets.materializations",
+    "taskSets.ownershipCrosswalks",
   ],
-  "evidence": [
-    "evidence.modelConfigurations", "evidence.observations",
-    "evidence.evidenceDecisions", "evidence.evidenceIndexJobs",
+  evidence: [
+    "evidence.modelConfigurations",
+    "evidence.observations",
+    "evidence.evidenceDecisions",
+    "evidence.evidenceIndexJobs",
     "evidence.verifierOutcomes",
   ],
-  "comparisons": ["comparisons.indexes"],
-  "lab": [
-    "lab.recipeRecords", "lab.recipeVersions",
-    "lab.poolRecords", "lab.poolVersions",
-    "lab.studies", "lab.trials", "lab.attempts",
-    "lab.observations", "lab.playbooks",
+  comparisons: ["comparisons.indexes"],
+  lab: [
+    "lab.recipeRecords",
+    "lab.recipeVersions",
+    "lab.poolRecords",
+    "lab.poolVersions",
+    "lab.studies",
+    "lab.trials",
+    "lab.attempts",
+    "lab.observations",
+    "lab.playbooks",
     "lab.cutoverReceipt",
   ],
-  "modelRollups": ["modelRollups.records", "modelRollups.versions"],
+  modelRollups: ["modelRollups.records", "modelRollups.versions"],
 };
+
+/** Result of a phased import commit. */
+export interface PhasedImportResult {
+  importId: string;
+  created: string[];
+  reused: string[];
+  remapped: ImportCrosswalkEntry[];
+  /** Phases that failed or were skipped by cancellation (empty on success). */
+  failedPhases: string[];
+  /** Collection-qualified crosswalk:
+   *  `${collection}\u0000${archiveId}` → localId. Equal strings in unrelated
+   *  collections never cross-remap. */
+  crosswalk: Record<string, string>;
+  /** Whether the disposable search index was rebuilt after the commit. */
+  searchRebuilt: boolean;
+}
 
 /** Generate a unique import session id. */
 function generateImportId(): string {
@@ -2936,32 +2945,12 @@ function generateImportId(): string {
   return id;
 }
 
-/** Generate a remapped ID for a colliding entity. */
-function generateRemappedId(originalId: string): string {
-  // Use a deterministic suffix based on the original ID + timestamp
-  // to produce a stable, unique, human-recognizable new ID.
-  const hash = computeArtifactDigest(new TextEncoder().encode(`${originalId}:${Date.now()}`));
-  const shortHash = hash.slice(7, 15); // 8 hex chars after "sha256:"
-  return `${originalId}-import-${shortHash}`;
-}
-
-/** Result of a phased import commit. */
-export interface PhasedImportResult {
-  importId: string;
-  created: string[];
-  reused: string[];
-  remapped: ImportCrosswalkEntry[];
-  /** Phases that failed (empty on success). */
-  failedPhases: string[];
-  /** The complete crosswalk for reference resolution. */
-  crosswalk: Record<string, string>;
-}
-
-/** Single-shot auto-dispatch outcome. */
+/** Single-shot auto-dispatch outcome. The v3 branch carries the phased result
+ *  (remaps instead of aborting on collisions). */
 export type ImportAutoResult =
   | { format: "v1"; v1: ArchiveImportResult }
   | { format: "v2"; v2: ArchiveImportCommitResult }
-  | { format: "v3"; v3: ArchiveImportCommitResult };
+  | { format: "v3"; v3: PhasedImportResult };
 /** Rejection raised when an import is cancelled before its commit begins.
  *  Distinct from StorageError so callers can classify cancellation. */
 export class ArchiveImportCancelledError extends Error {
@@ -3100,6 +3089,10 @@ function finalizePreview(
       buckets.collisions.length +
       buckets.invalid.length,
     counts,
+    plannedRemaps:
+      format === "v3"
+        ? buckets.collisions.map((c) => ({ collection: c.collection, key: c.key }))
+        : [],
     create: buckets.create,
     reuse: buckets.reuse,
     collisions: buckets.collisions,
@@ -4810,6 +4803,7 @@ export async function previewWorkbenchArchive(
         collision: 0,
         invalid: 1,
       })),
+      plannedRemaps: [],
       create: [],
       reuse: [],
       collisions: [],
@@ -4825,7 +4819,18 @@ export async function previewWorkbenchArchive(
   }
 
   if (isWorkbenchArchiveV3(payload)) {
-    const check = validateArchiveV3(payload);
+    let archive = payload as WorkbenchArchiveV3;
+    let check = validateArchiveV3(archive);
+    if (!check.valid) {
+      // Older v3 envelopes (pre-canonical manifest) enter only through the
+      // explicit normalization adapter; anything it cannot normalize keeps
+      // the original validation errors.
+      const legacy = normalizeLegacyArchiveV3(payload);
+      if (legacy.ok) {
+        archive = legacy.archive;
+        check = { valid: true, errors: [] };
+      }
+    }
     if (!check.valid) {
       const first = check.errors[0];
       throw new StorageError(
@@ -4833,7 +4838,7 @@ export async function previewWorkbenchArchive(
         `The archive is invalid — nothing was imported. ${first ? `${first.field}: ${first.message}` : ""}`.trim(),
       );
     }
-    return previewV3(db, payload, options);
+    return previewV3(db, archive, options);
   }
 
   if (isWorkbenchArchiveV2(payload)) {
@@ -5784,9 +5789,11 @@ export async function commitPreviewWorkbenchArchiveV2(
 }
 
 /**
- * Commit a v3 preview atomically: ONE Dexie transaction spanning every touched
- * store. Identical records are reused; ANY collision aborts before writes;
- * injected failure/quota/cancellation rolls the whole commit back.
+ * Commit a v3 preview through THE preview-aware phased importer (Child 10
+ * review repair R1): collisions are resolved by planned remapping — never
+ * aborted, never overwritten. Identical records are reused; each phase is a
+ * verified Dexie transaction over the durable import journal; the disposable
+ * search index is rebuilt after the canonical commit.
  */
 export async function commitPreviewWorkbenchArchiveV3(
   db: RSembleEvaluationDB,
@@ -5803,527 +5810,1485 @@ export async function commitPreviewWorkbenchArchiveV3(
     throw new StorageError("validation", "commitPreviewWorkbenchArchiveV3 requires a v3 preview.");
   }
   if (options.signal?.aborted) throw new ArchiveImportCancelledError();
-  if (preview.collisions.length > 0) {
-    throw new StorageError(
-      "conflict",
-      `Import aborted: ${preview.collisions.length} collision${preview.collisions.length === 1 ? "" : "s"} — colliding records were left unchanged.`,
-    );
-  }
   if (preview.invalid.length > 0) {
     throw new StorageError(
       "validation",
       `The archive is invalid — nothing was imported. ${preview.invalid.length} invalid ${preview.invalid.length === 1 ? "entity" : "entities"}.`,
     );
   }
-  db.assertWritable();
-  const archive = preview.payload as WorkbenchArchiveV3;
-  const artifactBytesById = new Map(preview.artifactBytes.map((b) => [b.id, b.bytes]));
+  const phased = await importWorkbenchArchiveV3Phased(db, preview.payload as WorkbenchArchiveV3, {
+    signal: options.signal,
+  });
+  return {
+    created: phased.created,
+    reused: phased.reused,
+    skipped: [],
+    collisions: [],
+  };
+}
 
-  const revalidated = validateArchiveV3(JSON.parse(JSON.stringify(archive)));
-  if (!revalidated.valid) {
-    const first = revalidated.errors[0];
+/**
+ * Commit a v3 archive in bounded atomic phases with collision-safe ID
+ * remapping.
+ *
+ * Pipeline: preflight ALL collisions against the live database (fixpoint over
+ * the transformed graph) → collection-qualified crosswalk → immutable deep
+ * clone transform (outer keys, embedded ids, composite version keys, every
+ * typed reference edge) → validate the transformed graph → bounded atomic
+ * phases over a durable journal (per-phase verification, classified failures,
+ * resume) → verification receipt → disposable search rebuild.
+ *
+ * The caller's archive object is never mutated. v1/v2 imports are unchanged.
+ */
+export async function importWorkbenchArchiveV3Phased(
+  db: RSembleEvaluationDB,
+  archiveInput: WorkbenchArchiveV3,
+  options: {
+    signal?: AbortSignal;
+    sourceLabel?: string;
+    /** Resume THE journal slot previously written under this import id. */
+    resumeImportId?: string;
+  } = {},
+): Promise<PhasedImportResult> {
+  db.assertWritable();
+  const signal = options.signal;
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+  throwIfAborted();
+
+  // Validate the canonical archive BEFORE any read or write.
+  const validation = validateArchiveV3(JSON.parse(JSON.stringify(archiveInput)));
+  if (!validation.valid) {
     throw new StorageError(
       "validation",
-      `The archive changed after preview — nothing was imported. ${first ? `${first.field}: ${first.message}` : "validation failed"}`.trim(),
+      `The archive is invalid — nothing was imported. ${validation.errors[0]?.message ?? ""}`.trim(),
     );
   }
 
-  for (const artifact of archive.tasks.taskArtifacts) {
-    const bytes = artifactBytesById.get(artifact.id);
-    if (bytes === undefined) continue;
-    const digest = computeArtifactDigest(bytes);
-    if (bytes.length !== artifact.byteCount || digest !== artifact.contentDigest) {
+  const originalDigest = archiveInput.manifest.payloadDigest;
+
+  // Journal: fresh session, or verified resume of an interrupted one.
+  let journal: ImportJournalRecord;
+  let importId: string;
+  let pendingPhases: readonly string[] = IMPORT_V3_PHASES;
+  let resumedWithPersistedPlan = false;
+  if (options.resumeImportId !== undefined) {
+    const existing = await loadImportJournal(db);
+    if (
+      existing === undefined ||
+      existing.importId !== options.resumeImportId ||
+      existing.archiveDigest !== originalDigest
+    ) {
       throw new StorageError(
         "validation",
-        `tasks.taskArtifacts[${artifact.id}] digest no longer matches the previewed bytes.`,
+        "No matching import journal found to resume — nothing was imported.",
       );
     }
+    journal = existing;
+    importId = existing.importId;
+    pendingPhases = IMPORT_V3_PHASES.filter((p) => existing.phaseState[p] !== "completed");
+    resumedWithPersistedPlan =
+      existing.transformedPayload !== null &&
+      existing.transformedPayload !== undefined &&
+      isWorkbenchArchiveV3(existing.transformedPayload) &&
+      existing.crosswalk !== undefined &&
+      existing.fallbackKeys !== undefined &&
+      Array.isArray(existing.remapped);
+  } else {
+    importId = generateImportId();
+    journal = {
+      kind: "archive-import-journal-v3",
+      importId,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      archiveDigest: originalDigest,
+      archivePayload: JSON.parse(JSON.stringify(archiveInput)) as WorkbenchArchiveV3,
+      transformedPayload: null,
+      crosswalk: {},
+      remapped: [],
+      fallbackKeys: {},
+      phaseState: Object.fromEntries(IMPORT_V3_PHASES.map((p) => [p, "pending"])),
+      verificationReceipt: null,
+    };
+    await saveImportJournal(db, journal);
   }
 
-  const createdKeys = new Set(preview.create.map((c) => `${c.collection}\u0000${c.key}`));
-  const isCreated = (collection: string, key: string) =>
-    createdKeys.has(`${collection}\u0000${key}`);
+  // Preflight fixpoint: fresh sessions plan against the LIVE database and
+  // persist the immutable source, transformed payload, qualified crosswalk,
+  // and fallback keys BEFORE any phase writes. Resume rehydrates that exact
+  // plan — never reallocate against completed remapped rows.
+  let plan: CollisionPlan;
+  let working: WorkbenchArchiveV3;
+  if (resumedWithPersistedPlan) {
+    plan = collisionPlanFromJournal(journal);
+    working = JSON.parse(JSON.stringify(journal.transformedPayload)) as WorkbenchArchiveV3;
+  } else {
+    const source =
+      journal.archivePayload !== undefined
+        ? journal.archivePayload
+        : (JSON.parse(JSON.stringify(archiveInput)) as WorkbenchArchiveV3);
+    ({ plan, working } = await buildCollisionPlanAndTransform(db, source, importId));
+    journal.archivePayload = JSON.parse(JSON.stringify(source)) as WorkbenchArchiveV3;
+    journal.transformedPayload = JSON.parse(JSON.stringify(working)) as WorkbenchArchiveV3;
+    journal.crosswalk = plan.crosswalkRecord();
+    journal.remapped = plan.report.map((entry) => ({ ...entry }));
+    journal.fallbackKeys = fallbackKeyRecord(plan);
+    journal.updatedAt = Date.now();
+    await saveImportJournal(db, journal);
+  }
 
   const created: string[] = [];
   const reused: string[] = [];
-  const skipped: string[] = [];
+  const failedPhases: string[] = [];
+  const pristine = await isPristineCanonicalWorkbench(db);
 
-  const tablesToLock: Table[] = [
-    db.runSummaries,
-    db.runDetails,
-    db.profiles,
-    db.profileVersions,
-    db.suites,
-    db.experiments,
-    db.tasks,
-    db.taskVersions,
-    db.taskArtifacts,
-    db.taskArtifactBytes,
-    db.taskInstances,
-    db.taskFamilies,
-    db.taskFamilyAssignments,
-    db.taskFamilyRelations,
-    db.taskFacetAnnotations,
-    db.taskMigrationCrosswalk,
-    db.taskSets,
-    db.taskSetVersions,
-    db.taskSetMaterializations,
-    db.taskSetOwnershipCrosswalk,
-    db.modelConfigurations,
-    db.observations,
-    db.evidenceDecisions,
-    db.evidenceIndexJobs,
-    db.verifierOutcomes,
-    db.modelRollups,
-    db.modelRollupVersions,
-    db.comparisonResults,
-    db.labRecipeRecords,
-    db.labRecipeVersions,
-    db.modelPoolRecords,
-    db.modelPoolVersions,
-    db.studies,
-    db.studyTrials,
-    db.studyAttempts,
-    db.studyObservations,
-    db.policyPlaybooks,
-    db.storageMeta,
-  ];
+  for (const phase of pendingPhases) {
+    throwIfAborted();
+    journal.phaseState[phase] = "in_progress";
+    journal.updatedAt = Date.now();
+    await saveImportJournal(db, journal);
+    try {
+      await db.transaction("rw", tablesForPhase(db, phase), async () => {
+        throwIfAborted();
+        await writeImportPhase(
+          db,
+          phase,
+          working,
+          plan.fallbackKeys,
+          importId,
+          created,
+          reused,
+          pristine,
+        );
+      });
+    } catch (err) {
+      if (err instanceof ArchiveImportCancelledError) {
+        journal.phaseState[phase] = "pending";
+        journal.lastError = { kind: "cancel", message: "Import cancelled." };
+        journal.updatedAt = Date.now();
+        await saveImportJournal(db, journal);
+        throw err;
+      }
+      failedPhases.push(phase);
+      const storageErr = err instanceof StorageError ? err : classifyStorageError(err);
+      journal.phaseState[phase] = "failed";
+      journal.lastError = {
+        kind: classifyImportFailure(storageErr),
+        message: redactCredentialMaterial(storageErr.message).slice(0, 300),
+      };
+      journal.updatedAt = Date.now();
+      await saveImportJournal(db, journal);
+      throw storageErr;
+    }
+    journal.phaseState[phase] = "completed";
+    journal.updatedAt = Date.now();
+    await saveImportJournal(db, journal);
+  }
 
+  // Verification receipt over the whole session.
+  journal.verificationReceipt = {
+    verifiedAt: Date.now(),
+    createdCount: created.length,
+    reusedCount: reused.length,
+    remappedCount: plan.report.length,
+  };
+
+  // Disposable search rebuild after the canonical commit. Failure schedules a
+  // rebuild via the marker — never silently swallowed.
+  let searchRebuilt = false;
   try {
-    await db.transaction("rw", tablesToLock, async () => {
-      // Re-verify collisions
-      for (const entity of preview.create) {
-        let existing: unknown = undefined;
-        switch (entity.collection) {
-          case "runs.details":
-            existing = await db.runDetails.get(entity.key);
-            break;
-          case "rubrics.identities":
-            existing = await db.profiles.get(entity.key);
-            break;
-          case "rubrics.versions": {
-            const [id, ver] = splitVersionKey(entity.key);
-            existing = await db.profileVersions.get([id, ver]);
-            break;
-          }
-          case "suites":
-            existing = await db.suites.get(entity.key);
-            break;
-          case "experiments":
-            existing = await db.experiments.get(entity.key);
-            break;
-          case "tasks.tasks":
-            existing = await db.tasks.get(entity.key);
-            break;
-          case "tasks.taskVersions": {
-            const [id, ver] = splitVersionKey(entity.key);
-            existing = await db.taskVersions.get([id, ver]);
-            break;
-          }
-          case "tasks.taskArtifacts":
-            existing = await db.taskArtifacts.get(entity.key);
-            break;
-          case "tasks.taskInstances":
-            existing = await db.taskInstances.get(entity.key);
-            break;
-          case "tasks.taskFamilies":
-            existing = await db.taskFamilies.get(entity.key);
-            break;
-          case "tasks.taskFamilyAssignments":
-            existing = await db.taskFamilyAssignments.get(entity.key);
-            break;
-          case "tasks.taskFamilyRelations":
-            existing = await db.taskFamilyRelations.get(entity.key);
-            break;
-          case "tasks.taskFacetAnnotations":
-            existing = await db.taskFacetAnnotations.get(entity.key);
-            break;
-          case "tasks.taskMigrationCrosswalks":
-            existing = await db.taskMigrationCrosswalk.get(entity.key);
-            break;
-          case "taskSets.records":
-            existing = await db.taskSets.get(entity.key);
-            break;
-          case "taskSets.versions": {
-            const [id, ver] = splitVersionKey(entity.key);
-            existing = await db.taskSetVersions.get([id, ver]);
-            break;
-          }
-          case "taskSets.materializations":
-            existing = await db.taskSetMaterializations.get(entity.key);
-            break;
-          case "taskSets.ownershipCrosswalks":
-            existing = await db.taskSetOwnershipCrosswalk.get(entity.key);
-            break;
-          case "evidence.modelConfigurations":
-            existing = await db.modelConfigurations.get(entity.key);
-            break;
-          case "evidence.observations":
-            existing = await db.observations.get(entity.key);
-            break;
-          case "evidence.evidenceDecisions":
-            existing = await db.evidenceDecisions.get(entity.key);
-            break;
-          case "evidence.evidenceIndexJobs":
-            existing = await db.evidenceIndexJobs.get(entity.key);
-            break;
-          case "evidence.verifierOutcomes":
-            existing = await db.verifierOutcomes.get(entity.key);
-            break;
-          case "modelRollups.records":
-            existing = await db.modelRollups.get(entity.key);
-            break;
-          case "modelRollups.versions": {
-            const [id, ver] = splitVersionKey(entity.key);
-            existing = await db.modelRollupVersions.get([id, ver]);
-            break;
-          }
-          case "comparisons.indexes":
-            existing = await db.comparisonResults.get(entity.key);
-            break;
-          case "lab.recipeRecords":
-            existing = await db.labRecipeRecords.get(entity.key);
-            break;
-          case "lab.recipeVersions": {
-            const [id, ver] = splitVersionKey(entity.key);
-            existing = await db.labRecipeVersions.get([id, ver]);
-            break;
-          }
-          case "lab.poolRecords":
-            existing = await db.modelPoolRecords.get(entity.key);
-            break;
-          case "lab.poolVersions": {
-            const [id, ver] = splitVersionKey(entity.key);
-            existing = await db.modelPoolVersions.get([id, ver]);
-            break;
-          }
-          case "lab.studies":
-            existing = await db.studies.get(entity.key);
-            break;
-          case "lab.trials":
-            existing = await db.studyTrials.get(entity.key);
-            break;
-          case "lab.attempts":
-            existing = await db.studyAttempts.get(entity.key);
-            break;
-          case "lab.observations":
-            existing = await db.studyObservations.get(entity.key);
-            break;
-          case "lab.playbooks":
-            existing = await db.policyPlaybooks.get(entity.key);
-            break;
-          case "lab.cutoverReceipt":
-            existing = await db.storageMeta.get(entity.key);
-            break;
-          default:
-            throw new StorageError(
-              "validation",
-              `Unknown collection ${entity.collection} during import collision re-verify.`,
-            );
-        }
-        if (existing !== undefined) {
-          const bootstrapReplace =
-            entity.collection === "lab.cutoverReceipt" &&
-            isZeroCorpusBootstrapReceipt((existing as { value?: unknown }).value) &&
-            (await isPristineCanonicalWorkbench(db));
-          if (!bootstrapReplace) {
-            throw new StorageError(
-              "conflict",
-              `Import collision detected during write transaction on ${entity.collection}[${entity.key}] — import aborted before write.`,
-            );
-          }
+    await rebuildDisposableSearchIndex(db);
+    searchRebuilt = true;
+    await clearSearchRebuildMarker(db);
+  } catch {
+    await markSearchForRebuild(db);
+  }
+  journal.searchRebuilt = searchRebuilt;
+  journal.updatedAt = Date.now();
+  await saveImportJournal(db, journal);
+
+  return {
+    importId,
+    created,
+    reused,
+    remapped: plan.report,
+    failedPhases,
+    crosswalk: plan.crosswalkRecord(),
+    searchRebuilt,
+  };
+}
+
+/** Classify a phased-import failure for durable reporting. */
+export function classifyImportFailure(err: unknown): string {
+  if (err instanceof ArchiveImportCancelledError) return "cancel";
+  if (err instanceof StorageError) {
+    if (err.kind === "quota" || err.kind === "unavailable") return err.kind;
+    return err.kind;
+  }
+  return classifyStorageError(err).kind;
+}
+
+// --- Collision plan -----------------------------------------------------------
+
+interface CollisionPlan {
+  /** namespace → archive id → local id (identity-level mappings only). */
+  entries: Map<string, Map<string, string>>;
+  /** Ordered, collection-qualified report of every planned remap. */
+  report: ImportCrosswalkEntry[];
+  /** Derived-key rows that must land under a suffixed key instead of their
+   *  own identity (legacy migration crosswalks, ownership crosswalks,
+   *  cutover receipt): collection → archiveKey → suffixed local key. */
+  fallbackKeys: Map<string, Map<string, string>>;
+  crosswalkRecord(): Record<string, string>;
+}
+
+function createCollisionPlan(): CollisionPlan {
+  const entries = new Map<string, Map<string, string>>();
+  const report: ImportCrosswalkEntry[] = [];
+  const fallbackKeys = new Map<string, Map<string, string>>();
+  return {
+    entries,
+    report,
+    fallbackKeys,
+    crosswalkRecord() {
+      const record: Record<string, string> = {};
+      for (const [ns, mappings] of entries) {
+        for (const [from, to] of mappings) record[`${ns}\u0000${from}`] = to;
+      }
+      return record;
+    },
+  };
+}
+
+function fallbackKeyRecord(plan: CollisionPlan): Record<string, string> {
+  const record: Record<string, string> = {};
+  for (const [collection, mappings] of plan.fallbackKeys) {
+    for (const [from, to] of mappings) record[`${collection}\u0000${from}`] = to;
+  }
+  return record;
+}
+
+/** Rehydrate the persisted collection-qualified plan. Resume MUST reuse this
+ * exact mapping: recomputing against already-committed remapped rows could
+ * allocate different ids and duplicate completed work. */
+function collisionPlanFromJournal(journal: ImportJournalRecord): CollisionPlan {
+  const plan = createCollisionPlan();
+  for (const [qualified, to] of Object.entries(journal.crosswalk)) {
+    const separator = qualified.indexOf("\u0000");
+    if (separator <= 0) continue;
+    const ns = qualified.slice(0, separator);
+    const from = qualified.slice(separator + 1);
+    const mappings = plan.entries.get(ns) ?? new Map<string, string>();
+    mappings.set(from, to);
+    plan.entries.set(ns, mappings);
+  }
+  for (const [qualified, to] of Object.entries(journal.fallbackKeys)) {
+    const separator = qualified.indexOf("\u0000");
+    if (separator <= 0) continue;
+    const collection = qualified.slice(0, separator);
+    const from = qualified.slice(separator + 1);
+    const mappings = plan.fallbackKeys.get(collection) ?? new Map<string, string>();
+    mappings.set(from, to);
+    plan.fallbackKeys.set(collection, mappings);
+  }
+  plan.report.push(...journal.remapped.map((entry) => ({ ...entry })));
+  return plan;
+}
+
+/** Collision collections whose identity namespace is shared with a parent
+ *  entity: version tables follow their parent id, run summary/detail pair. */
+const NS_BY_COLLISION_COLLECTION: Record<string, string> = {
+  "runs.summaries": "runs",
+  "runs.details": "runs",
+  "rubrics.identities": "rubrics",
+  "rubrics.versions": "rubrics",
+  suites: "suites",
+  experiments: "experiments",
+  "tasks.tasks": "tasks",
+  "tasks.taskVersions": "tasks",
+  "tasks.taskArtifacts": "artifacts",
+  "tasks.taskInstances": "instances",
+  "tasks.taskFamilies": "families",
+  "tasks.taskFamilyAssignments": "assignments",
+  "tasks.taskFamilyRelations": "relations",
+  "tasks.taskFacetAnnotations": "annotations",
+  "taskSets.records": "taskSets",
+  "taskSets.versions": "taskSets",
+  "taskSets.materializations": "materializations",
+  "evidence.modelConfigurations": "modelConfigurations",
+  "evidence.observations": "observations",
+  "comparisons.indexes": "runs", // comparisonId === runId (spec §3)
+  "lab.recipeRecords": "recipes",
+  "lab.recipeVersions": "recipes",
+  "lab.poolRecords": "pools",
+  "lab.poolVersions": "pools",
+  "lab.studies": "studies",
+  "lab.trials": "trials",
+  "lab.attempts": "attempts",
+  "lab.observations": "labObservations",
+  "lab.playbooks": "playbooks",
+  "modelRollups.records": "rollups",
+  "modelRollups.versions": "rollups",
+};
+
+/** Collections whose PRIMARY KEY is a derived or legacy label: they cannot be
+ *  remapped without breaking their derivation, so divergent copies land under
+ *  a suffixed key instead of overwriting local truth. */
+const FALLBACK_KEY_COLLECTIONS: ReadonlySet<string> = new Set([
+  "tasks.taskMigrationCrosswalks",
+  "taskSets.ownershipCrosswalks",
+  "lab.cutoverReceipt",
+]);
+
+/** Collections keyed by a DERIVED identity (observationId#ruleVersion,
+ *  sourceResultId, run::task::model::time). A byte-divergent row here cannot
+ *  move: its key IS its derivation. Such divergence is an honest conflict. */
+const DERIVED_CONFLICT_COLLECTIONS: ReadonlySet<string> = new Set([
+  "evidence.evidenceDecisions",
+  "evidence.evidenceIndexJobs",
+  "evidence.verifierOutcomes",
+]);
+
+/** Content-addressed identity formats: a remapped local id MUST preserve the
+ *  canonical `<prefix><64 hex>` shape or entity guards would reject it. The
+ *  full digest of the allocation tuple becomes the new content address. */
+const CONTENT_ADDRESSED_NS_PREFIX: Record<string, string> = {
+  observations: "obs:sha256:",
+  modelConfigurations: "mc:sha256:",
+  playbooks: "pb:sha256:",
+};
+
+/** Deterministic remapped ID: stable for a given (importId, namespace, id)
+ *  triple so resume reproduces identical mappings. */
+function deterministicRemappedId(
+  originalId: string,
+  ns: string,
+  importId: string,
+  taken: Set<string>,
+): string {
+  const contentPrefix = CONTENT_ADDRESSED_NS_PREFIX[ns];
+  const matchesContentShape =
+    contentPrefix !== undefined &&
+    originalId.startsWith(contentPrefix) &&
+    /^[0-9a-f]{64}$/.test(originalId.slice(contentPrefix.length));
+  for (let n = 0; n < 64; n++) {
+    const digest = computeArtifactDigest(
+      new TextEncoder().encode(`${importId}\u0000${ns}\u0000${originalId}\u0000${n}`),
+    );
+    let candidate: string;
+    if (matchesContentShape) {
+      candidate = `${contentPrefix}${digest.slice(7, 71)}`;
+    } else {
+      candidate = `${originalId}-import-${digest.slice(7, 15)}${n > 0 ? `-${n}` : ""}`;
+    }
+    if (!taken.has(candidate)) {
+      taken.add(candidate);
+      return candidate;
+    }
+  }
+  throw new StorageError(
+    "conflict",
+    `Unable to allocate a remapped ID for ${redactCredentialMaterial(originalId)}.`,
+  );
+}
+
+async function seedTakenIds(db: RSembleEvaluationDB): Promise<Map<string, Set<string>>> {
+  const taken = new Map<string, Set<string>>();
+  const add = (ns: string, keys: unknown[]) => {
+    const set = taken.get(ns) ?? new Set<string>();
+    for (const k of keys) {
+      if (typeof k === "string") set.add(k);
+      else if (Array.isArray(k)) set.add(String(k[0]));
+    }
+    taken.set(ns, set);
+  };
+  add("runs", [
+    ...(await db.runSummaries.toCollection().primaryKeys()),
+    ...(await db.runDetails.toCollection().primaryKeys()),
+  ]);
+  add("rubrics", [
+    ...(await db.profiles.toCollection().primaryKeys()),
+    ...(await db.profileVersions.toCollection().primaryKeys()),
+  ]);
+  add("suites", [...(await db.suites.toCollection().primaryKeys())]);
+  add("experiments", [...(await db.experiments.toCollection().primaryKeys())]);
+  add("tasks", [
+    ...(await db.tasks.toCollection().primaryKeys()),
+    ...(await db.taskVersions.toCollection().primaryKeys()),
+  ]);
+  add("artifacts", [
+    ...(await db.taskArtifacts.toCollection().primaryKeys()),
+    ...(await db.taskArtifactBytes.toCollection().primaryKeys()),
+  ]);
+  add("instances", [...(await db.taskInstances.toCollection().primaryKeys())]);
+  add("families", [...(await db.taskFamilies.toCollection().primaryKeys())]);
+  add("assignments", [...(await db.taskFamilyAssignments.toCollection().primaryKeys())]);
+  add("relations", [...(await db.taskFamilyRelations.toCollection().primaryKeys())]);
+  add("annotations", [...(await db.taskFacetAnnotations.toCollection().primaryKeys())]);
+  add("taskSets", [
+    ...(await db.taskSets.toCollection().primaryKeys()),
+    ...(await db.taskSetVersions.toCollection().primaryKeys()),
+  ]);
+  add("materializations", [...(await db.taskSetMaterializations.toCollection().primaryKeys())]);
+  add("modelConfigurations", [...(await db.modelConfigurations.toCollection().primaryKeys())]);
+  add("observations", [...(await db.observations.toCollection().primaryKeys())]);
+  add("comparisons", [...(await db.comparisonResults.toCollection().primaryKeys())]);
+  add("recipes", [
+    ...(await db.labRecipeRecords.toCollection().primaryKeys()),
+    ...(await db.labRecipeVersions.toCollection().primaryKeys()),
+  ]);
+  add("pools", [
+    ...(await db.modelPoolRecords.toCollection().primaryKeys()),
+    ...(await db.modelPoolVersions.toCollection().primaryKeys()),
+  ]);
+  add("studies", [...(await db.studies.toCollection().primaryKeys())]);
+  add("trials", [...(await db.studyTrials.toCollection().primaryKeys())]);
+  add("attempts", [...(await db.studyAttempts.toCollection().primaryKeys())]);
+  add("labObservations", [...(await db.studyObservations.toCollection().primaryKeys())]);
+  add("playbooks", [...(await db.policyPlaybooks.toCollection().primaryKeys())]);
+  add("rollups", [
+    ...(await db.modelRollups.toCollection().primaryKeys()),
+    ...(await db.modelRollupVersions.toCollection().primaryKeys()),
+  ]);
+  return taken;
+}
+
+function registerCollision(
+  plan: CollisionPlan,
+  collection: string,
+  key: string,
+  importId: string,
+  taken: Map<string, Set<string>>,
+): void {
+  if (DERIVED_CONFLICT_COLLECTIONS.has(collection)) {
+    throw new StorageError(
+      "conflict",
+      `A locally diverged derived-key record conflicts with the archive (${redactCredentialMaterial(`${collection}[${key}]`)}) — nothing was imported.`,
+    );
+  }
+
+  if (plan.report.some((entry) => entry.collection === collection && entry.archiveId === key)) {
+    return;
+  }
+
+  if (FALLBACK_KEY_COLLECTIONS.has(collection)) {
+    if (collection === "lab.cutoverReceipt") return; // writer decides bootstrap vs fallback
+    const map = plan.fallbackKeys.get(collection) ?? new Map<string, string>();
+    if (!map.has(key)) {
+      map.set(key, `${key}#import:${importId.slice(-8)}`);
+      plan.fallbackKeys.set(collection, map);
+      plan.report.push({ archiveId: key, localId: map.get(key)!, collection });
+    }
+    return;
+  }
+
+  const ns = NS_BY_COLLISION_COLLECTION[collection];
+  if (ns === undefined) {
+    throw new StorageError(
+      "conflict",
+      `Unknown colliding collection during import planning (${redactCredentialMaterial(collection)}).`,
+    );
+  }
+  const composite = key.includes("@");
+  const idPart = composite ? splitVersionKey(key)[0] : key;
+  const mappings = plan.entries.get(ns) ?? new Map<string, string>();
+  if (!mappings.has(idPart)) {
+    const nsTaken = taken.get(ns) ?? new Set<string>();
+    const localId = deterministicRemappedId(idPart, ns, importId, nsTaken);
+    taken.set(ns, nsTaken);
+    mappings.set(idPart, localId);
+    plan.entries.set(ns, mappings);
+  }
+  const mapped = mappings.get(idPart)!;
+  plan.report.push({
+    archiveId: key,
+    localId: composite ? `${mapped}@${splitVersionKey(key)[1]}` : mapped,
+    collection,
+  });
+}
+
+/** Preflight fixpoint: plan collisions, transform, repeat until the rewritten
+ *  graph introduces no NEW collisions (bounded). */
+async function buildCollisionPlanAndTransform(
+  db: RSembleEvaluationDB,
+  source: WorkbenchArchiveV3,
+  importId: string,
+): Promise<{ plan: CollisionPlan; working: WorkbenchArchiveV3 }> {
+  const plan = createCollisionPlan();
+  const taken = await seedTakenIds(db);
+
+  let working = source;
+  for (let round = 0; round < 8; round++) {
+    const preview = await previewV3(db, working, {});
+    if (preview.invalid.length > 0) {
+      throw new StorageError(
+        "validation",
+        `The archive is invalid — nothing was imported. ${preview.invalid[0].collection}[${preview.invalid[0].key}].`,
+      );
+    }
+    let grew = false;
+    for (const collision of preview.collisions) {
+      if (
+        FALLBACK_KEY_COLLECTIONS.has(collision.collection) &&
+        plan.fallbackKeys.has(collision.collection)
+      ) {
+        continue; // already scheduled for fallback handling
+      }
+      const reportCount = plan.report.length;
+      registerCollision(plan, collision.collection, collision.key, importId, taken);
+      if (plan.report.length > reportCount) grew = true;
+    }
+    if (!grew) break;
+    working = remapArchiveClone(source, plan);
+  }
+
+  const leftover = await previewV3(db, working, {});
+  const unresolved = leftover.collisions.filter(
+    (c) =>
+      !FALLBACK_KEY_COLLECTIONS.has(c.collection) &&
+      !DERIVED_CONFLICT_COLLECTIONS.has(c.collection),
+  );
+  if (unresolved.length > 0) {
+    throw new StorageError(
+      "conflict",
+      `Import could not resolve ${unresolved.length} collision(s) — nothing was imported.`,
+    );
+  }
+  return { plan, working };
+}
+
+// --- Transform -----------------------------------------------------------------
+
+type IdRemap = (id: string) => string;
+
+function nsRemap(plan: CollisionPlan, ns: string): IdRemap {
+  const mappings = plan.entries.get(ns);
+  return (id) => (mappings !== undefined ? (mappings.get(id) ?? id) : id);
+}
+
+function remapNullableId(id: string | null, remap: IdRemap): string | null {
+  return id === null ? null : remap(id);
+}
+
+/** VersionRef-shaped rubric references: only the id component is namespaced;
+ *  the version number is preserved verbatim. */
+function remapVersionRefId(ref: VersionRef | null, remap: IdRemap): VersionRef | null {
+  if (ref === null) return null;
+  return { id: remap(ref.id), version: ref.version };
+}
+
+/** Rewrite one exact colon-delimited identifier inside a composite lineage
+ *  key. Task IDs can contain regex metacharacters, so the source id is escaped
+ *  and replaced only at segment boundaries. */
+function remapColonDelimitedId(value: string, from: string, to: string): string {
+  if (from === to) return value;
+  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const segment = new RegExp(`(^|:)${escaped}(?=:|$)`, "g");
+  return value.replace(segment, (_match, prefix: string) => `${prefix}${to}`);
+}
+
+/** Apply the collection-qualified crosswalk to a DEEP CLONE of the archive:
+ *  outer row keys, embedded ids, composite version keys, and every typed
+ *  reference edge (including nested arrays/objects and playbook links). The
+ *  caller's object is never touched. */
+function remapArchiveClone(source: WorkbenchArchiveV3, plan: CollisionPlan): WorkbenchArchiveV3 {
+  const clone = JSON.parse(JSON.stringify(source)) as WorkbenchArchiveV3;
+  const runs = nsRemap(plan, "runs");
+  const rubrics = nsRemap(plan, "rubrics");
+  const suitesN = nsRemap(plan, "suites");
+  const experimentsN = nsRemap(plan, "experiments");
+  const tasksN = nsRemap(plan, "tasks");
+  const artifacts = nsRemap(plan, "artifacts");
+  const instances = nsRemap(plan, "instances");
+  const families = nsRemap(plan, "families");
+  const taskSetsN = nsRemap(plan, "taskSets");
+  const modelConfigurationsN = nsRemap(plan, "modelConfigurations");
+  let observationsN = nsRemap(plan, "observations");
+  const recipes = nsRemap(plan, "recipes");
+  const pools = nsRemap(plan, "pools");
+  const studiesN = nsRemap(plan, "studies");
+  const trials = nsRemap(plan, "trials");
+  const attempts = nsRemap(plan, "attempts");
+  const labObservations = nsRemap(plan, "labObservations");
+  const playbooks = nsRemap(plan, "playbooks");
+  const rollups = nsRemap(plan, "rollups");
+  const assignments = nsRemap(plan, "assignments");
+  const relations = nsRemap(plan, "relations");
+  const annotations = nsRemap(plan, "annotations");
+  const materializations = nsRemap(plan, "materializations");
+
+  // Runs (summary + detail share one run identity).
+  for (const s of clone.runs.summaries) s.id = runs(s.id);
+  for (const d of clone.runs.details) d.id = runs(d.id);
+
+  // Rubrics.
+  for (const r of clone.rubrics.identities) r.id = rubrics(r.id);
+  for (const v of clone.rubrics.versions) v.id = rubrics(v.id);
+
+  // Suites & experiments.
+  for (const s of clone.suites) s.id = suitesN(s.id);
+  for (const e of clone.experiments) {
+    e.id = experimentsN(e.id);
+    e.suiteId = suitesN(e.suiteId);
+  }
+
+  // Tasks and their graph.
+  for (const t of clone.tasks.tasks) t.id = tasksN(t.id);
+  for (const v of clone.tasks.taskVersions) {
+    v.taskId = tasksN(v.taskId);
+    for (const c of v.defaultContextManifest)
+      c.artifactId = remapNullableId(c.artifactId, artifacts);
+  }
+  for (const a of clone.tasks.taskArtifacts) a.id = artifacts(a.id);
+  for (const b of clone.tasks.taskArtifactBytes) b.id = artifacts(b.id);
+  for (const i of clone.tasks.taskInstances) {
+    i.id = instances(i.id);
+    i.taskId = tasksN(i.taskId);
+    i.normalizedInput.artifactIds = i.normalizedInput.artifactIds.map(artifacts);
+    for (const c of i.contextManifest) c.artifactId = remapNullableId(c.artifactId, artifacts);
+  }
+  for (const f of clone.tasks.taskFamilies) f.id = families(f.id);
+  for (const a of clone.tasks.taskFamilyAssignments) {
+    a.id = assignments(a.id);
+    a.taskId = tasksN(a.taskId);
+    a.familyId = families(a.familyId);
+  }
+  for (const r of clone.tasks.taskFamilyRelations) {
+    r.id = relations(r.id);
+    r.fromFamilyId = families(r.fromFamilyId);
+    r.toFamilyId = families(r.toFamilyId);
+  }
+  for (const a of clone.tasks.taskFacetAnnotations) {
+    a.id = annotations(a.id);
+    a.taskId = tasksN(a.taskId);
+  }
+  for (const cw of clone.tasks.taskMigrationCrosswalks) cw.taskId = tasksN(cw.taskId);
+
+  // Task Sets.
+  for (const r of clone.taskSets.records) r.id = taskSetsN(r.id);
+  for (const v of clone.taskSets.versions) {
+    v.taskSetId = taskSetsN(v.taskSetId);
+    v.defaultRubricRef = remapVersionRefId(v.defaultRubricRef, rubrics);
+    for (const member of v.members) {
+      member.taskVersionRef.taskId = tasksN(member.taskVersionRef.taskId);
+      member.rubricOverrideRef = remapVersionRefId(member.rubricOverrideRef, rubrics);
+    }
+  }
+  for (const m of clone.taskSets.materializations) {
+    m.id = materializations(m.id);
+    m.taskSetId = taskSetsN(m.taskSetId);
+    if (m.snapshot !== undefined && m.snapshot !== null) {
+      m.snapshot.taskSetId = taskSetsN(m.snapshot.taskSetId);
+    }
+  }
+  for (const cw of clone.taskSets.ownershipCrosswalks) cw.taskSetId = taskSetsN(cw.taskSetId);
+
+  // Evidence. Observation ids are DERIVED from the source key
+  // (`observationIdFor`), so the id is recomputed AFTER the reference rewrite
+  // and the namespace mapping is reconciled to the actual derived id —
+  // dependents (decisions, comparison indexes, playbooks) then resolve.
+  for (const mc of clone.evidence.modelConfigurations) mc.id = modelConfigurationsN(mc.id);
+  {
+    const derivedById = new Map<string, string>();
+    for (const o of clone.evidence.observations) {
+      const archiveId = o.id;
+      const archiveTaskId = o.taskId;
+      const mappedTaskId = tasksN(archiveTaskId);
+      o.sourceResultId = runs(o.sourceResultId);
+      o.runId = runs(o.runId);
+      o.taskId = mappedTaskId;
+      o.sourceTaskCellId = remapColonDelimitedId(o.sourceTaskCellId, archiveTaskId, mappedTaskId);
+      o.executionLineageId = remapColonDelimitedId(
+        o.executionLineageId,
+        archiveTaskId,
+        mappedTaskId,
+      );
+      o.taskInstanceId = instances(o.taskInstanceId);
+      o.taskFamilyId = remapNullableId(o.taskFamilyId, families);
+      o.modelConfigurationId = modelConfigurationsN(o.modelConfigurationId);
+      o.assessmentRef.rubricRef = remapVersionRefId(o.assessmentRef.rubricRef, rubrics);
+      if (o.rubricRef !== null) {
+        o.rubricRef = { id: rubrics(o.rubricRef.id), version: o.rubricRef.version };
+      }
+      o.id = observationIdFor(o);
+      if (o.id !== archiveId) derivedById.set(archiveId, o.id);
+    }
+    if (derivedById.size > 0) {
+      const observationMappings = plan.entries.get("observations") ?? new Map<string, string>();
+      for (const [archiveId, actual] of derivedById) {
+        observationMappings.set(archiveId, actual);
+        const report = plan.report.find(
+          (entry) => entry.collection === "evidence.observations" && entry.archiveId === archiveId,
+        );
+        if (report === undefined) {
+          plan.report.push({
+            archiveId,
+            localId: actual,
+            collection: "evidence.observations",
+          });
+        } else {
+          report.localId = actual;
         }
       }
+      plan.entries.set("observations", observationMappings);
+      observationsN = nsRemap(plan, "observations");
+    }
+  }
+  for (const d of clone.evidence.evidenceDecisions)
+    d.observationId = observationsN(d.observationId);
+  for (const j of clone.evidence.evidenceIndexJobs) j.sourceResultId = runs(j.sourceResultId);
+  for (const vo of clone.evidence.verifierOutcomes) {
+    vo.runId = runs(vo.runId);
+    vo.taskId = tasksN(vo.taskId);
+  }
 
-      // --- runs ---
+  // Comparisons. A comparison's identity IS its run (spec §3), so the index
+  // id always equals the (possibly remapped) runId. inputSnapshots.runId and
+  // limitations.runId name the comparison index — they follow the run.
+  for (const ix of clone.comparisons.indexes) {
+    ix.runId = runs(ix.runId);
+    ix.id = ix.runId;
+    if (ix.taskBinding.kind === "canonical") ix.taskBinding.taskId = tasksN(ix.taskBinding.taskId);
+    ix.taskInstanceId = remapNullableId(ix.taskInstanceId, instances);
+    ix.activeObservationIds = ix.activeObservationIds.map(observationsN);
+    ix.lineage.repeatedFrom = remapNullableId(ix.lineage.repeatedFrom, runs);
+  }
+  for (const snap of clone.comparisons.inputSnapshots) {
+    snap.runId = runs(snap.runId);
+    snap.taskId = remapNullableId(snap.taskId, tasksN);
+    snap.taskInstanceId = remapNullableId(snap.taskInstanceId, instances);
+  }
+  for (const lim of clone.comparisons.limitations) lim.runId = runs(lim.runId);
+
+  // Lab.
+  for (const r of clone.lab.recipeRecords) r.id = recipes(r.id);
+  for (const v of clone.lab.recipeVersions) v.recipeId = recipes(v.recipeId);
+  for (const p of clone.lab.poolRecords) p.id = pools(p.id);
+  for (const v of clone.lab.poolVersions) v.poolId = pools(v.poolId);
+  for (const st of clone.lab.studies) {
+    st.id = studiesN(st.id);
+    st.definition.modelPool.poolId = pools(st.definition.modelPool.poolId);
+    for (const fr of st.definition.fusionRecipes) fr.recipeId = recipes(fr.recipeId);
+    st.reportRef = remapNullableId(st.reportRef, playbooks);
+    st.confirmationOf = remapNullableId(st.confirmationOf, studiesN);
+  }
+  for (const t of clone.lab.trials) {
+    t.id = trials(t.id);
+    t.studyId = studiesN(t.studyId);
+  }
+  for (const a of clone.lab.attempts) {
+    a.id = attempts(a.id);
+    a.studyId = studiesN(a.studyId);
+    a.fromTrialId = trials(a.fromTrialId);
+    a.toTrialId = trials(a.toTrialId);
+  }
+  for (const o of clone.lab.observations) {
+    o.id = labObservations(o.id);
+    o.studyId = studiesN(o.studyId);
+    o.trialId = trials(o.trialId);
+    o.sourceRunId = remapNullableId(o.sourceRunId, runs);
+  }
+  for (const p of clone.lab.playbooks) {
+    p.id = playbooks(p.id);
+    p.playbook.studyId = studiesN(p.playbook.studyId);
+    p.playbook.supportingTrialIds = p.playbook.supportingTrialIds.map(trials);
+    p.playbook.supportingObservationIds = p.playbook.supportingObservationIds.map(labObservations);
+  }
+
+  // Model rollups. The member-manifest digest COVERS rollupId, so it is
+  // recomputed after the id rewrite (the derivation law, not a loophole).
+  if (clone.modelRollups !== undefined) {
+    for (const r of clone.modelRollups.records) r.id = rollups(r.id);
+    for (const v of clone.modelRollups.versions) {
+      v.rollupId = rollups(v.rollupId);
+      v.memberConfigurationIds = v.memberConfigurationIds.map(modelConfigurationsN);
+      v.memberManifestDigest = computeModelRollupMemberManifestDigest(v);
+    }
+  }
+
+  resortArchiveV3(clone);
+  clone.manifest.payloadDigest = computeArchiveV3PayloadDigest(clone);
+  clone.manifest.contentDigests = computeArchiveV3ContentDigests(clone);
+  return clone;
+}
+
+/** Re-sort every transformed collection with the exporter's comparators —
+ *  remapped ids can reorder lexicographic sort orders. */
+function resortArchiveV3(archive: WorkbenchArchiveV3): void {
+  archive.runs.summaries = v2SortById(archive.runs.summaries);
+  archive.runs.details = v2SortById(archive.runs.details);
+  archive.rubrics.identities = v2SortById(archive.rubrics.identities);
+  archive.rubrics.versions = v2SortByIdVersion(archive.rubrics.versions);
+  archive.suites = v2SortById(archive.suites);
+  archive.experiments = v2SortById(archive.experiments);
+  archive.tasks.tasks = v2SortById(archive.tasks.tasks);
+  archive.tasks.taskVersions = v2SortByTaskIdVersion(archive.tasks.taskVersions);
+  archive.tasks.taskArtifacts = v2SortById(archive.tasks.taskArtifacts);
+  archive.tasks.taskArtifactBytes = v2SortById(archive.tasks.taskArtifactBytes);
+  archive.tasks.taskInstances = v2SortById(archive.tasks.taskInstances);
+  archive.tasks.taskFamilies = v2SortById(archive.tasks.taskFamilies);
+  archive.tasks.taskFamilyAssignments = v2SortById(archive.tasks.taskFamilyAssignments);
+  archive.tasks.taskFamilyRelations = v2SortById(archive.tasks.taskFamilyRelations);
+  archive.tasks.taskFacetAnnotations = v2SortById(archive.tasks.taskFacetAnnotations);
+  archive.tasks.taskMigrationCrosswalks = v2SortByLegacyScopeKey(
+    archive.tasks.taskMigrationCrosswalks,
+  );
+  archive.taskSets.records = v2SortById(archive.taskSets.records);
+  archive.taskSets.versions = v2SortByTaskSetIdVersion(archive.taskSets.versions);
+  archive.taskSets.materializations = v2SortById(archive.taskSets.materializations);
+  archive.taskSets.ownershipCrosswalks = v2SortByKey(archive.taskSets.ownershipCrosswalks);
+  archive.evidence.modelConfigurations = v2SortById(archive.evidence.modelConfigurations);
+  archive.evidence.observations = v2SortById(archive.evidence.observations);
+  archive.evidence.evidenceDecisions = v2SortByObservationIdRuleVersion(
+    archive.evidence.evidenceDecisions,
+  );
+  archive.evidence.evidenceIndexJobs = v2SortBySourceResultId(archive.evidence.evidenceIndexJobs);
+  archive.evidence.verifierOutcomes = v2SortByVerifierOutcomeKey(archive.evidence.verifierOutcomes);
+  archive.comparisons.indexes = v2SortById(archive.comparisons.indexes);
+  archive.comparisons.inputSnapshots = v2SortByRunId(archive.comparisons.inputSnapshots);
+  archive.comparisons.limitations = v2SortByRunId(archive.comparisons.limitations);
+  archive.lab.recipeRecords = v2SortById(archive.lab.recipeRecords);
+  archive.lab.recipeVersions = v3SortByRecipeIdVersion(archive.lab.recipeVersions);
+  archive.lab.poolRecords = v2SortById(archive.lab.poolRecords);
+  archive.lab.poolVersions = v3SortByPoolIdVersion(archive.lab.poolVersions);
+  archive.lab.studies = v2SortById(archive.lab.studies);
+  archive.lab.trials = v2SortById(archive.lab.trials);
+  archive.lab.attempts = v2SortById(archive.lab.attempts);
+  archive.lab.observations = v2SortById(archive.lab.observations);
+  archive.lab.playbooks = v2SortById(archive.lab.playbooks);
+  if (archive.modelRollups !== undefined) {
+    archive.modelRollups.records = v2SortById(archive.modelRollups.records);
+    archive.modelRollups.versions = [...archive.modelRollups.versions].sort((a, b) =>
+      a.rollupId === b.rollupId ? a.version - b.version : a.rollupId.localeCompare(b.rollupId),
+    );
+  }
+}
+
+// --- Journal helpers ------------------------------------------------------------
+
+async function loadImportJournal(
+  db: RSembleEvaluationDB,
+): Promise<ImportJournalRecord | undefined> {
+  const row = await db.storageMeta.get(IMPORT_JOURNAL_KEY);
+  return row?.value as ImportJournalRecord | undefined;
+}
+
+async function saveImportJournal(
+  db: RSembleEvaluationDB,
+  journal: ImportJournalRecord,
+): Promise<void> {
+  await db.storageMeta.put({ key: IMPORT_JOURNAL_KEY, value: journal });
+}
+
+// --- Search rebuild helpers -------------------------------------------------------
+
+const SEARCH_REBUILD_MARKER_KEY = "search:needs-rebuild";
+
+/** Rebuild the disposable search index from live canonical sources. Throws on
+ *  failure — callers schedule a rebuild marker instead of swallowing. */
+async function rebuildDisposableSearchIndex(db: RSembleEvaluationDB): Promise<void> {
+  const searchRepo: SearchIndexRepository = createSearchIndexRepository(db);
+  const resolver = createDexieSearchSourceResolver(db);
+  const result = await rebuildSearchIndex({ searchRepo, resolver });
+  if (result.errors.length > 0) {
+    throw new StorageError(
+      "unavailable",
+      `Search rebuild failed after import: ${redactCredentialMaterial(result.errors[0])}`,
+    );
+  }
+}
+
+async function clearSearchRebuildMarker(db: RSembleEvaluationDB): Promise<void> {
+  await db.storageMeta.delete(SEARCH_REBUILD_MARKER_KEY);
+}
+
+async function markSearchForRebuild(db: RSembleEvaluationDB): Promise<void> {
+  // Failures propagate: silently losing the schedule would strand stale hits.
+  await db.storageMeta.put({
+    key: SEARCH_REBUILD_MARKER_KEY,
+    value: { at: Date.now(), reason: "archive-import" },
+  });
+}
+
+// --- Phase writer ------------------------------------------------------------------
+
+/** Put one row atomically: create-with-post-write-verification, reuse on
+ *  byte-equality, honest conflict on divergence (racing writer). */
+async function upsertVerified<T>(
+  table: Table<T, string>,
+  key: string,
+  row: T,
+  extract: (existing: T) => unknown,
+  incoming: unknown,
+  displayKey: string,
+  created: string[],
+  reused: string[],
+): Promise<void> {
+  const outcome = await upsertVerifiedReturning(table, key, row, extract, incoming);
+  if (outcome === "created") created.push(displayKey);
+  else reused.push(displayKey);
+}
+
+/** Put-or-reuse core returning the classification; callers decide how to
+ *  tally composite entries (e.g. artifact bytes riding the meta row). */
+async function upsertVerifiedReturning<T>(
+  table: Table<T, string>,
+  key: string,
+  row: T,
+  extract: (existing: T) => unknown,
+  incoming: unknown,
+): Promise<"created" | "reused"> {
+  const existing = await table.get(key);
+  if (existing === undefined) {
+    await table.put(row);
+    const reread = await table.get(key);
+    if (reread === undefined || canon(extract(reread)) !== canon(incoming)) {
+      throw new StorageError(
+        "conflict",
+        `Import verification failed for ${redactCredentialMaterial(key)}.`,
+      );
+    }
+    return "created";
+  }
+  if (canon(extract(existing)) === canon(incoming)) return "reused";
+  throw new StorageError(
+    "conflict",
+    `A racing writer diverged at ${redactCredentialMaterial(key)} — phase rolled back.`,
+  );
+}
+
+async function upsertCompositeVerified<T>(
+  table: Table<T, [string, number]>,
+  key: [string, number],
+  row: T,
+  extract: (existing: T) => unknown,
+  incoming: unknown,
+  displayKey: string,
+  created: string[],
+  reused: string[],
+): Promise<void> {
+  const existing = await table.get(key);
+  if (existing === undefined) {
+    await table.put(row);
+    const reread = await table.get(key);
+    if (reread === undefined || canon(extract(reread)) !== canon(incoming)) {
+      throw new StorageError(
+        "conflict",
+        `Import verification failed for ${redactCredentialMaterial(displayKey)}.`,
+      );
+    }
+    created.push(displayKey);
+    return;
+  }
+  if (canon(extract(existing)) === canon(incoming)) {
+    reused.push(displayKey);
+    return;
+  }
+  throw new StorageError(
+    "conflict",
+    `A racing writer diverged at ${redactCredentialMaterial(displayKey)} — phase rolled back.`,
+  );
+}
+
+/** Fallback-key variant for derived-key rows (legacy crosswalks): divergent
+ *  copies keep local truth at the original key and land under a suffixed key. */
+async function upsertWithFallbackKey<T>(
+  table: Table<T, string>,
+  key: string,
+  fallbackKey: string,
+  buildRow: (id: string) => T,
+  extract: (existing: T) => unknown,
+  incoming: unknown,
+  collection: string,
+  created: string[],
+  reused: string[],
+): Promise<void> {
+  const existing = await table.get(key);
+  if (existing !== undefined && canon(extract(existing)) === canon(incoming)) {
+    reused.push(`${collection}\u0000${key}`);
+    return;
+  }
+  const atFallback = await table.get(fallbackKey);
+  if (atFallback !== undefined && canon(extract(atFallback)) === canon(incoming)) {
+    reused.push(`${collection}\u0000${fallbackKey}`);
+    return;
+  }
+  if (atFallback !== undefined) {
+    throw new StorageError(
+      "conflict",
+      `A racing writer diverged at ${redactCredentialMaterial(fallbackKey)} — phase rolled back.`,
+    );
+  }
+  await table.put(buildRow(fallbackKey));
+  created.push(`${collection}\u0000${fallbackKey}`);
+}
+
+/** Write one phase's collections from the TRANSFORMED archive. Every write is
+ *  verified in-transaction before commit; any throw rolls back ONLY this
+ *  phase. */
+async function writeImportPhase(
+  db: RSembleEvaluationDB,
+  phaseName: string,
+  archive: WorkbenchArchiveV3,
+  fallbackKeys: Map<string, Map<string, string>>,
+  importId: string,
+  created: string[],
+  reused: string[],
+  /** Computed OUTSIDE any transaction — counting stores mid-transaction that
+   *  are outside the transaction scope raises NotFoundError. */
+  pristine: boolean,
+): Promise<void> {
+  switch (phaseName) {
+    case "runs-rubrics-suites-experiments": {
       const fullSummariesById = new Map<string, FullRunSummaryV2>();
       for (const s of archive.runs.summaries) {
         if (isFullRunSummaryV2(s)) fullSummariesById.set(s.id, s);
       }
       for (const s of archive.runs.summaries) {
-        if (isLegacyRunSummary(s)) {
-          if (isCreated("runs.summaries", s.id)) {
-            await db.runSummaries.put(summaryRowFor(s));
-            created.push(s.id);
-          } else reused.push(s.id);
+        // Full summaries are written by the detail branch below; direct
+        // writes cover legacy summary-only rows.
+        if (!isLegacyRunSummary(s)) continue;
+        await upsertVerified(
+          db.runSummaries,
+          s.id,
+          summaryRowFor(s),
+          (r) => r.summary,
+          s,
+          `runs.summaries\u0000${s.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const d of archive.runs.details) {
+        const compatible = repairRunRecordForCompatibility(d) ?? (isRunRecordV2(d) ? d : null);
+        if (compatible === null) continue;
+        await upsertVerified(
+          db.runDetails,
+          compatible.id,
+          detailRowFor(compatible),
+          (r) => r.record,
+          compatible,
+          `runs.details\u0000${compatible.id}`,
+          created,
+          reused,
+        );
+        const fullSummary = fullSummariesById.get(compatible.id);
+        if (fullSummary !== undefined && (await db.runSummaries.get(compatible.id)) === undefined) {
+          await db.runSummaries.put(summaryRowFor(fullSummary));
         }
       }
-      for (const detail of archive.runs.details) {
-        const compatible =
-          repairRunRecordForCompatibility(detail) ?? (isRunRecordV2(detail) ? detail : null);
-        if (compatible === null) continue;
-        if (isCreated("runs.details", compatible.id)) {
-          await db.runDetails.put(detailRowFor(compatible));
-          const fullSummary = fullSummariesById.get(compatible.id);
-          if (fullSummary) {
-            await db.runSummaries.put(summaryRowFor(fullSummary));
-          }
-          created.push(compatible.id);
-        } else reused.push(compatible.id);
-      }
-
-      // --- rubrics ---
-      for (const identity of archive.rubrics.identities) {
-        if (!isRubricRecord(identity)) continue;
-        if (isCreated("rubrics.identities", identity.id)) {
-          await db.profiles.put({
-            id: identity.id,
-            record: identity,
-            revision: identity.revision,
-            latestVersion: identity.latestVersion,
-            updatedAt: identity.updatedAt,
-            archivedAt: identity.archivedAt,
-          });
-          created.push(identity.id);
-        } else reused.push(identity.id);
+      for (const r of archive.rubrics.identities) {
+        if (!isRubricRecord(r)) continue;
+        await upsertVerified(
+          db.profiles,
+          r.id,
+          {
+            id: r.id,
+            record: r,
+            revision: r.revision,
+            latestVersion: r.latestVersion,
+            updatedAt: r.updatedAt,
+            archivedAt: r.archivedAt,
+          },
+          (x) => x.record,
+          r,
+          `rubrics.identities\u0000${r.id}`,
+          created,
+          reused,
+        );
       }
       for (const v of archive.rubrics.versions) {
         if (!isEvaluationRubric(v)) continue;
-        const key = versionKey(v.id, v.version);
-        if (isCreated("rubrics.versions", key)) {
-          await db.profileVersions.put({
-            id: v.id,
-            version: v.version,
-            profile: v,
-            updatedAt: v.updatedAt,
-          });
-          created.push(key);
-        } else reused.push(key);
+        await upsertCompositeVerified(
+          db.profileVersions,
+          [v.id, v.version],
+          { id: v.id, version: v.version, profile: v, updatedAt: v.updatedAt },
+          (x) => x.profile,
+          v,
+          `rubrics.versions\u0000${versionKey(v.id, v.version)}`,
+          created,
+          reused,
+        );
       }
-
-      // --- suites & experiments ---
-      for (const suite of archive.suites) {
-        if (!isEvaluationSuite(suite)) continue;
-        if (isCreated("suites", suite.id)) {
-          await db.suites.put({
-            id: suite.id,
-            suite,
+      for (const su of archive.suites) {
+        if (!isEvaluationSuite(su)) continue;
+        await upsertVerified(
+          db.suites,
+          su.id,
+          {
+            id: su.id,
+            suite: su,
             revision: 1,
-            version: suite.version,
-            updatedAt: suite.updatedAt,
-            archivedAt: suite.archivedAt,
-          });
-          created.push(suite.id);
-        } else reused.push(suite.id);
+            version: su.version,
+            updatedAt: su.updatedAt,
+            archivedAt: su.archivedAt,
+          },
+          (x) => x.suite,
+          su,
+          `suites\u0000${su.id}`,
+          created,
+          reused,
+        );
       }
-      for (const experiment of archive.experiments) {
-        if (!isExperimentRecord(experiment)) continue;
-        if (isCreated("experiments", experiment.id)) {
-          await db.experiments.put({
-            id: experiment.id,
-            experiment,
+      for (const e of archive.experiments) {
+        if (!isExperimentRecord(e)) continue;
+        await upsertVerified(
+          db.experiments,
+          e.id,
+          {
+            id: e.id,
+            experiment: e,
             revision: 1,
-            suiteId: experiment.suiteId,
-            suiteVersion: experiment.suiteVersion,
-            protocolFingerprint: experiment.protocolFingerprint,
-            createdAt: experiment.createdAt,
-            status: experiment.status,
-          });
-          created.push(experiment.id);
-        } else reused.push(experiment.id);
+            suiteId: e.suiteId,
+            suiteVersion: e.suiteVersion,
+            protocolFingerprint: e.protocolFingerprint,
+            createdAt: e.createdAt,
+            status: e.status,
+          },
+          (x) => x.experiment,
+          e,
+          `experiments\u0000${e.id}`,
+          created,
+          reused,
+        );
       }
-
-      // --- tasks ---
+      break;
+    }
+    case "tasks": {
       for (const t of archive.tasks.tasks) {
         if (!isTaskRecord(t)) continue;
-        if (isCreated("tasks.tasks", t.id)) {
-          await db.tasks.put(taskRowFor(t));
-          created.push(t.id);
-        } else reused.push(t.id);
+        await upsertVerified(
+          db.tasks,
+          t.id,
+          taskRowFor(t),
+          (r) => r.record,
+          t,
+          `tasks.tasks\u0000${t.id}`,
+          created,
+          reused,
+        );
       }
       for (const v of archive.tasks.taskVersions) {
         if (!isTaskVersion(v)) continue;
-        const key = versionKey(v.taskId, v.version);
-        if (isCreated("tasks.taskVersions", key)) {
-          await db.taskVersions.put(taskVersionRowFor(v));
-          created.push(key);
-        } else reused.push(key);
+        await upsertCompositeVerified(
+          db.taskVersions,
+          [v.taskId, v.version],
+          taskVersionRowFor(v),
+          (r) => r.version_,
+          v,
+          `tasks.taskVersions\u0000${versionKey(v.taskId, v.version)}`,
+          created,
+          reused,
+        );
       }
-      for (const artifact of archive.tasks.taskArtifacts) {
-        if (!isTaskArtifact(artifact)) continue;
-        if (isCreated("tasks.taskArtifacts", artifact.id)) {
-          const bytes = artifactBytesById.get(artifact.id);
-          if (bytes === undefined) {
+      for (const a of archive.tasks.taskArtifacts) {
+        if (!isTaskArtifact(a)) continue;
+        const encoded = archive.tasks.taskArtifactBytes.find((b) => b.id === a.id);
+        const decoded = encoded !== undefined ? decodeBase64Bytes(encoded.bytesBase64) : null;
+        if (decoded === null) {
+          throw new StorageError(
+            "validation",
+            `tasks.taskArtifacts[${a.id}] is missing bytes payload.`,
+          );
+        }
+        const metaResult = await upsertVerifiedReturning(
+          db.taskArtifacts,
+          a.id,
+          {
+            id: a.id,
+            contentDigest: a.contentDigest,
+            mediaType: a.mediaType,
+            byteCount: a.byteCount,
+            storageRef: a.storageRef,
+            createdAt: a.createdAt,
+          },
+          (x) => x,
+          a,
+        );
+        // Bytes row rides the artifact entry (preview counts them as one).
+        const existingBytes = await db.taskArtifactBytes.get(a.id);
+        if (existingBytes === undefined) {
+          await db.taskArtifactBytes.put({ id: a.id, bytes: decoded });
+          const reread = await db.taskArtifactBytes.get(a.id);
+          if (reread === undefined || !bytesMatch(reread.bytes, decoded)) {
             throw new StorageError(
-              "validation",
-              `tasks.taskArtifacts[${artifact.id}] is missing bytes payload.`,
+              "conflict",
+              `Import verification failed for tasks.taskArtifactBytes[${a.id}].`,
             );
           }
-          await db.taskArtifacts.put({
-            id: artifact.id,
-            contentDigest: artifact.contentDigest,
-            mediaType: artifact.mediaType,
-            byteCount: artifact.byteCount,
-            storageRef: artifact.storageRef,
-            createdAt: artifact.createdAt,
-          });
-          await db.taskArtifactBytes.put({ id: artifact.id, bytes });
-          created.push(artifact.id);
-        } else reused.push(artifact.id);
+          if (metaResult === "created") created.push(`tasks.taskArtifacts\u0000${a.id}`);
+        } else if (!bytesMatch(existingBytes.bytes, decoded)) {
+          throw new StorageError(
+            "conflict",
+            `Artifact bytes diverged at tasks.taskArtifactBytes[${a.id}] — phase rolled back.`,
+          );
+        }
+        if (
+          metaResult === "reused" &&
+          existingBytes !== undefined &&
+          bytesMatch(existingBytes.bytes, decoded)
+        ) {
+          reused.push(`tasks.taskArtifacts\u0000${a.id}`);
+        }
       }
       for (const i of archive.tasks.taskInstances) {
         if (!isTaskInstance(i)) continue;
-        if (isCreated("tasks.taskInstances", i.id)) {
-          await db.taskInstances.put(taskInstanceRowFor(i));
-          created.push(i.id);
-        } else reused.push(i.id);
+        await upsertVerified(
+          db.taskInstances,
+          i.id,
+          taskInstanceRowFor(i),
+          (r) => r.instance,
+          i,
+          `tasks.taskInstances\u0000${i.id}`,
+          created,
+          reused,
+        );
       }
       for (const f of archive.tasks.taskFamilies) {
         if (!isTaskFamily(f)) continue;
-        if (isCreated("tasks.taskFamilies", f.id)) {
-          await db.taskFamilies.put(familyRowFor(f));
-          created.push(f.id);
-        } else reused.push(f.id);
+        await upsertVerified(
+          db.taskFamilies,
+          f.id,
+          familyRowFor(f),
+          (r) => r.family,
+          f,
+          `tasks.taskFamilies\u0000${f.id}`,
+          created,
+          reused,
+        );
       }
       for (const a of archive.tasks.taskFamilyAssignments) {
         if (!isTaskFamilyAssignment(a)) continue;
-        if (isCreated("tasks.taskFamilyAssignments", a.id)) {
-          await db.taskFamilyAssignments.put(assignmentRowFor(a));
-          created.push(a.id);
-        } else reused.push(a.id);
+        await upsertVerified(
+          db.taskFamilyAssignments,
+          a.id,
+          assignmentRowFor(a),
+          (r) => r.assignment,
+          a,
+          `tasks.taskFamilyAssignments\u0000${a.id}`,
+          created,
+          reused,
+        );
       }
       for (const r of archive.tasks.taskFamilyRelations) {
         if (!isExportableTaskFamilyRelation(r)) continue;
-        if (isCreated("tasks.taskFamilyRelations", r.id)) {
-          await db.taskFamilyRelations.put(relationRowFor(r));
-          created.push(r.id);
-        } else reused.push(r.id);
+        await upsertVerified(
+          db.taskFamilyRelations,
+          r.id,
+          relationRowFor(r),
+          (r2) => r2.relation,
+          r,
+          `tasks.taskFamilyRelations\u0000${r.id}`,
+          created,
+          reused,
+        );
       }
       for (const a of archive.tasks.taskFacetAnnotations) {
         if (!isTaskFacetAnnotation(a)) continue;
-        if (isCreated("tasks.taskFacetAnnotations", a.id)) {
-          await db.taskFacetAnnotations.put(annotationRowFor(a));
-          created.push(a.id);
-        } else reused.push(a.id);
+        await upsertVerified(
+          db.taskFacetAnnotations,
+          a.id,
+          annotationRowFor(a),
+          (r) => r.annotation,
+          a,
+          `tasks.taskFacetAnnotations\u0000${a.id}`,
+          created,
+          reused,
+        );
       }
       for (const cw of archive.tasks.taskMigrationCrosswalks) {
-        if (isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) {
-          await db.taskMigrationCrosswalk.put({
-            legacyScopeKey: cw.legacyScopeKey,
-            taskId: cw.taskId,
-            taskVersion: cw.taskVersion,
-          });
-          created.push(cw.legacyScopeKey);
-        } else reused.push(cw.legacyScopeKey);
+        const fallback = fallbackKeys.get("tasks.taskMigrationCrosswalks")?.get(cw.legacyScopeKey);
+        if (fallback === undefined) {
+          await upsertVerified(
+            db.taskMigrationCrosswalk,
+            cw.legacyScopeKey,
+            { legacyScopeKey: cw.legacyScopeKey, taskId: cw.taskId, taskVersion: cw.taskVersion },
+            (x) => x,
+            cw,
+            `tasks.taskMigrationCrosswalks\u0000${cw.legacyScopeKey}`,
+            created,
+            reused,
+          );
+        } else {
+          await upsertWithFallbackKey(
+            db.taskMigrationCrosswalk,
+            cw.legacyScopeKey,
+            fallback,
+            (id) => ({ legacyScopeKey: id, taskId: cw.taskId, taskVersion: cw.taskVersion }),
+            (x) => x,
+            cw,
+            "tasks.taskMigrationCrosswalks",
+            created,
+            reused,
+          );
+        }
       }
-
-      // --- taskSets ---
+      break;
+    }
+    case "taskSets": {
       for (const r of archive.taskSets.records) {
         if (!isTaskSetRecord(r)) continue;
-        if (isCreated("taskSets.records", r.id)) {
-          await db.taskSets.put(taskSetRecordRowFor(r));
-          created.push(r.id);
-        } else reused.push(r.id);
+        await upsertVerified(
+          db.taskSets,
+          r.id,
+          taskSetRecordRowFor(r),
+          (x) => x.record,
+          r,
+          `taskSets.records\u0000${r.id}`,
+          created,
+          reused,
+        );
       }
       for (const v of archive.taskSets.versions) {
         if (!isTaskSetVersion(v)) continue;
-        const key = versionKey(v.taskSetId, v.version);
-        if (isCreated("taskSets.versions", key)) {
-          await db.taskSetVersions.put(taskSetVersionRowFor(v));
-          created.push(key);
-        } else reused.push(key);
+        await upsertCompositeVerified(
+          db.taskSetVersions,
+          [v.taskSetId, v.version],
+          taskSetVersionRowFor(v),
+          (x) => x.version_,
+          v,
+          `taskSets.versions\u0000${versionKey(v.taskSetId, v.version)}`,
+          created,
+          reused,
+        );
       }
       for (const m of archive.taskSets.materializations) {
         if (!isTaskSetMaterializationRecord(m)) continue;
-        if (isCreated("taskSets.materializations", m.id)) {
-          await db.taskSetMaterializations.put(m);
-          created.push(m.id);
-        } else reused.push(m.id);
+        await upsertVerified(
+          db.taskSetMaterializations,
+          m.id,
+          m,
+          (x) => x,
+          m,
+          `taskSets.materializations\u0000${m.id}`,
+          created,
+          reused,
+        );
       }
       for (const cw of archive.taskSets.ownershipCrosswalks) {
         if (!isTaskSetOwnershipCrosswalkRow(cw)) continue;
-        if (isCreated("taskSets.ownershipCrosswalks", cw.key)) {
-          await db.taskSetOwnershipCrosswalk.put(cw);
-          created.push(cw.key);
-        } else reused.push(cw.key);
+        const fallback = fallbackKeys.get("taskSets.ownershipCrosswalks")?.get(cw.key);
+        if (fallback === undefined) {
+          await upsertVerified(
+            db.taskSetOwnershipCrosswalk,
+            cw.key,
+            cw,
+            (x) => x,
+            cw,
+            `taskSets.ownershipCrosswalks\u0000${cw.key}`,
+            created,
+            reused,
+          );
+        } else {
+          await upsertWithFallbackKey(
+            db.taskSetOwnershipCrosswalk,
+            cw.key,
+            fallback,
+            (id) => ({ ...cw, key: id }),
+            (x) => x,
+            cw,
+            "taskSets.ownershipCrosswalks",
+            created,
+            reused,
+          );
+        }
       }
-
-      // --- evidence ---
+      break;
+    }
+    case "evidence": {
       for (const mc of archive.evidence.modelConfigurations) {
         if (!isModelConfigurationSnapshot(mc)) continue;
-        if (isCreated("evidence.modelConfigurations", mc.id)) {
-          await db.modelConfigurations.put(modelConfigurationRowFor(mc));
-          created.push(mc.id);
-        } else reused.push(mc.id);
+        await upsertVerified(
+          db.modelConfigurations,
+          mc.id,
+          modelConfigurationRowFor(mc),
+          (r) => r.snapshot,
+          mc,
+          `evidence.modelConfigurations\u0000${mc.id}`,
+          created,
+          reused,
+        );
       }
       for (const obs of archive.evidence.observations) {
         if (!isObservation(obs)) continue;
-        if (isCreated("evidence.observations", obs.id)) {
-          await db.observations.put(evidenceObservationRowFor(obs));
-          created.push(obs.id);
-        } else reused.push(obs.id);
+        await upsertVerified(
+          db.observations,
+          obs.id,
+          evidenceObservationRowFor(obs),
+          (r) => r.observation,
+          obs,
+          `evidence.observations\u0000${obs.id}`,
+          created,
+          reused,
+        );
       }
       for (const dec of archive.evidence.evidenceDecisions) {
         if (!isEligibilityDecision(dec)) continue;
         const key = `${dec.observationId}#${dec.ruleVersion}`;
-        if (isCreated("evidence.evidenceDecisions", key)) {
-          await db.evidenceDecisions.put(evidenceDecisionRowFor(dec));
-          created.push(key);
-        } else reused.push(key);
+        await upsertVerified(
+          db.evidenceDecisions,
+          key,
+          evidenceDecisionRowFor(dec),
+          (r) => r.decision,
+          dec,
+          `evidence.evidenceDecisions\u0000${key}`,
+          created,
+          reused,
+        );
       }
       for (const job of archive.evidence.evidenceIndexJobs) {
         if (!isEvidenceIndexJob(job)) continue;
-        if (isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) {
-          await db.evidenceIndexJobs.put(toJobRow(job));
-          created.push(job.sourceResultId);
-        } else reused.push(job.sourceResultId);
+        await upsertVerified(
+          db.evidenceIndexJobs,
+          job.sourceResultId,
+          toJobRow(job),
+          (r) => fromJobRow(r as never),
+          job,
+          `evidence.evidenceIndexJobs\u0000${job.sourceResultId}`,
+          created,
+          reused,
+        );
       }
       for (const vo of archive.evidence.verifierOutcomes) {
         if (!isExecutedVerifierOutcome(vo)) continue;
         const key = verifierOutcomeKey(vo);
-        if (isCreated("evidence.verifierOutcomes", key)) {
-          await db.verifierOutcomes.put(toVerifierRow(vo));
-          created.push(key);
-        } else reused.push(key);
+        await upsertVerified(
+          db.verifierOutcomes,
+          key,
+          toVerifierRow(vo),
+          (r) => fromVerifierRow(r as never),
+          vo,
+          `evidence.verifierOutcomes\u0000${key}`,
+          created,
+          reused,
+        );
       }
-
-      // --- Model Rollup definitions ---
-      const rollups = archive.modelRollups ?? { records: [], versions: [] };
-      for (const record of rollups.records) {
-        if (!isModelRollupRecord(record)) continue;
-        if (isCreated("modelRollups.records", record.id)) {
-          await db.modelRollups.put({
-            id: record.id,
-            record,
-            name: record.name,
-            latestVersion: record.latestVersion,
-            revision: record.revision,
-            createdAt: record.createdAt,
-            updatedAt: record.updatedAt,
-            archivedAt: record.archivedAt,
-          });
-          created.push(record.id);
-        } else reused.push(record.id);
-      }
-      for (const version of rollups.versions) {
-        if (!isModelRollupVersion(version)) continue;
-        const key = versionKey(version.rollupId, version.version);
-        if (isCreated("modelRollups.versions", key)) {
-          await db.modelRollupVersions.put({
-            rollupId: version.rollupId,
-            version: version.version,
-            version_: version,
-            memberManifestDigest: version.memberManifestDigest,
-            createdAt: version.createdAt,
-          });
-          created.push(key);
-        } else reused.push(key);
-      }
-
-      // --- comparisons ---
+      break;
+    }
+    case "comparisons": {
       for (const index of archive.comparisons.indexes) {
         if (!isComparisonResultIndex(index)) continue;
-        if (isCreated("comparisons.indexes", index.id)) {
-          await db.comparisonResults.put(index);
-          created.push(index.id);
-        } else reused.push(index.id);
+        await upsertVerified(
+          db.comparisonResults,
+          index.id,
+          index,
+          (x) => x,
+          index,
+          `comparisons.indexes\u0000${index.id}`,
+          created,
+          reused,
+        );
       }
-
-      // --- lab (Child 06 canonical collections) ---
+      break;
+    }
+    case "lab": {
       for (const r of archive.lab.recipeRecords) {
         if (!isLabRecipeRecord(r)) continue;
-        if (isCreated("lab.recipeRecords", r.id)) {
-          await db.labRecipeRecords.put({
+        await upsertVerified(
+          db.labRecipeRecords,
+          r.id,
+          {
             id: r.id,
             record: r,
             kind: r.kind,
@@ -6332,28 +7297,39 @@ export async function commitPreviewWorkbenchArchiveV3(
             createdAt: r.createdAt,
             updatedAt: r.updatedAt,
             revision: r.revision,
-          });
-          created.push(r.id);
-        } else reused.push(r.id);
+          },
+          (x) => x.record,
+          r,
+          `lab.recipeRecords\u0000${r.id}`,
+          created,
+          reused,
+        );
       }
       for (const v of archive.lab.recipeVersions) {
         if (!isLabRecipeVersion(v)) continue;
-        const key = versionKey(v.recipeId, v.version);
-        if (isCreated("lab.recipeVersions", key)) {
-          await db.labRecipeVersions.put({
+        await upsertCompositeVerified(
+          db.labRecipeVersions,
+          [v.recipeId, v.version],
+          {
             recipeId: v.recipeId,
             version: v.version,
             version_: v,
             digest: v.digest,
             createdAt: v.createdAt,
-          });
-          created.push(key);
-        } else reused.push(key);
+          },
+          (x) => x.version_,
+          v,
+          `lab.recipeVersions\u0000${versionKey(v.recipeId, v.version)}`,
+          created,
+          reused,
+        );
       }
       for (const p of archive.lab.poolRecords) {
         if (!isModelPoolRecord(p)) continue;
-        if (isCreated("lab.poolRecords", p.id)) {
-          await db.modelPoolRecords.put({
+        await upsertVerified(
+          db.modelPoolRecords,
+          p.id,
+          {
             id: p.id,
             record: p,
             latestVersion: p.latestVersion,
@@ -6361,46 +7337,63 @@ export async function commitPreviewWorkbenchArchiveV3(
             createdAt: p.createdAt,
             updatedAt: p.updatedAt,
             revision: p.revision,
-          });
-          created.push(p.id);
-        } else reused.push(p.id);
+          },
+          (x) => x.record,
+          p,
+          `lab.poolRecords\u0000${p.id}`,
+          created,
+          reused,
+        );
       }
       for (const v of archive.lab.poolVersions) {
         if (!isModelPoolVersion(v)) continue;
-        const key = versionKey(v.poolId, v.version);
-        if (isCreated("lab.poolVersions", key)) {
-          await db.modelPoolVersions.put({
+        await upsertCompositeVerified(
+          db.modelPoolVersions,
+          [v.poolId, v.version],
+          {
             poolId: v.poolId,
             version: v.version,
             version_: v,
             digest: v.digest,
             createdAt: v.createdAt,
-          });
-          created.push(key);
-        } else reused.push(key);
+          },
+          (x) => x.version_,
+          v,
+          `lab.poolVersions\u0000${versionKey(v.poolId, v.version)}`,
+          created,
+          reused,
+        );
       }
-      for (const s of archive.lab.studies) {
-        if (!isPolicyStudyRecord(s)) continue;
-        if (isCreated("lab.studies", s.id)) {
-          await db.studies.put({
-            id: s.id,
-            record: s,
-            kind: s.kind,
-            status: s.status,
-            claimLevel: s.claimLevel,
-            confirmationOf: s.confirmationOf,
-            revision: s.revision,
-            createdAt: s.createdAt,
-            updatedAt: s.updatedAt,
-            archivedAt: s.archivedAt,
-          });
-          created.push(s.id);
-        } else reused.push(s.id);
+      for (const st of archive.lab.studies) {
+        if (!isPolicyStudyRecord(st)) continue;
+        await upsertVerified(
+          db.studies,
+          st.id,
+          {
+            id: st.id,
+            record: st,
+            kind: st.kind,
+            status: st.status,
+            claimLevel: st.claimLevel,
+            confirmationOf: st.confirmationOf,
+            revision: st.revision,
+            createdAt: st.createdAt,
+            updatedAt: st.updatedAt,
+            archivedAt: st.archivedAt,
+          },
+          (x) => x.record,
+          st,
+          `lab.studies\u0000${st.id}`,
+          created,
+          reused,
+        );
       }
       for (const t of archive.lab.trials) {
         if (!isPolicyStudyTrial(t)) continue;
-        if (isCreated("lab.trials", t.id)) {
-          await db.studyTrials.put({
+        await upsertVerified(
+          db.studyTrials,
+          t.id,
+          {
             id: t.id,
             trial: t,
             studyId: t.studyId,
@@ -6409,28 +7402,40 @@ export async function commitPreviewWorkbenchArchiveV3(
             revision: 1,
             createdAt: t.createdAt,
             sealedAt: t.sealedAt,
-          });
-          created.push(t.id);
-        } else reused.push(t.id);
+          },
+          (x) => x.trial,
+          t,
+          `lab.trials\u0000${t.id}`,
+          created,
+          reused,
+        );
       }
       for (const a of archive.lab.attempts) {
         if (!isStudyAttempt(a)) continue;
-        if (isCreated("lab.attempts", a.id)) {
-          await db.studyAttempts.put({
+        await upsertVerified(
+          db.studyAttempts,
+          a.id,
+          {
             id: a.id,
             attempt: a,
             studyId: a.studyId,
             fromTrialId: a.fromTrialId,
             toTrialId: a.toTrialId,
             createdAt: a.createdAt,
-          });
-          created.push(a.id);
-        } else reused.push(a.id);
+          },
+          (x) => x.attempt,
+          a,
+          `lab.attempts\u0000${a.id}`,
+          created,
+          reused,
+        );
       }
       for (const o of archive.lab.observations) {
         if (!isPolicyStudyObservation(o)) continue;
-        if (isCreated("lab.observations", o.id)) {
-          await db.studyObservations.put({
+        await upsertVerified(
+          db.studyObservations,
+          o.id,
+          {
             id: o.id,
             observation: o,
             studyId: o.studyId,
@@ -6438,531 +7443,169 @@ export async function commitPreviewWorkbenchArchiveV3(
             status: o.status,
             createdAt: o.createdAt,
             finishedAt: o.finishedAt,
-          });
-          created.push(o.id);
-        } else reused.push(o.id);
+          },
+          (x) => x.observation,
+          o,
+          `lab.observations\u0000${o.id}`,
+          created,
+          reused,
+        );
       }
       for (const p of archive.lab.playbooks) {
         if (!isRecord(p) || typeof p.id !== "string" || !isPolicyReportPayload(p.playbook))
           continue;
-        if (isCreated("lab.playbooks", p.id)) {
-          await db.policyPlaybooks.put({
+        await upsertVerified(
+          db.policyPlaybooks,
+          p.id,
+          {
             id: p.id,
             playbook: p.playbook,
             studyId: p.playbook.studyId,
             definitionFingerprint: p.playbook.definitionFingerprint,
             digest: fingerprintStudyValue(p.playbook),
             createdAt: p.playbook.createdAt,
-          });
-          created.push(p.id);
-        } else reused.push(p.id);
+          },
+          (x) => x.playbook,
+          p.playbook,
+          `lab.playbooks\u0000${p.id}`,
+          created,
+          reused,
+        );
       }
-      if (isCreated("lab.cutoverReceipt", fusionToResearchLabReceiptKey)) {
-        await db.storageMeta.put({
-          key: fusionToResearchLabReceiptKey,
-          value: archive.lab.cutoverReceipt,
-        });
-        created.push(fusionToResearchLabReceiptKey);
-      } else reused.push(fusionToResearchLabReceiptKey);
-
-      void skipped;
-    });
-  } catch (err) {
-    if (err instanceof ArchiveImportCancelledError) throw err;
-    if (err instanceof StorageError) throw err;
-    throw classifyStorageError(err);
-  }
-
-  return {
-    created,
-    reused,
-    skipped,
-    collisions: preview.collisions.map((c) => c.key),
-  };
-}
-
-
-/**
- * Commit a v3 archive in bounded atomic phases with collision-safe ID
- * remapping. Each phase is one Dexie transaction. Colliding entities
- * (same ID, different content) receive new IDs and a complete crosswalk
- * is maintained. Failed phases roll back independently; completed phases
- * are durable. After all phases complete, disposable search indexes are
- * marked for rebuild.
- *
- * v1 and v2 imports are unchanged — this function handles v3 only.
- */
-export async function importWorkbenchArchiveV3Phased(
-  db: RSembleEvaluationDB,
-  archive: WorkbenchArchiveV3,
-  options: { signal?: AbortSignal; sourceLabel?: string } = {},
-): Promise<PhasedImportResult> {
-  const importId = generateImportId();
-  const crosswalk: Record<string, string> = {};
-  const remapped: ImportCrosswalkEntry[] = [];
-  const created: string[] = [];
-  const reused: string[] = [];
-  const failedPhases: string[] = [];
-
-  const signal = options.signal;
-  const throwIfAborted = () => {
-    if (signal?.aborted) throw new ArchiveImportCancelledError();
-  };
-
-  // Validate the archive before any writes
-  const validation = validateArchiveV3(JSON.parse(JSON.stringify(archive)));
-  if (!validation.valid) {
-    throw new StorageError(
-      "validation",
-      `The archive is invalid — nothing was imported. ${validation.errors[0]?.message ?? ""}`.trim(),
-    );
-  }
-
-  db.assertWritable();
-  throwIfAborted();
-
-  // --- Phase 1: Runs, Rubrics, Suites, Experiments ---
-  await executeImportPhase(db, "runs-rubrics-suites-experiments", archive, crosswalk, remapped, created, reused, importId, signal);
-  applyCrosswalkToArchive(archive, crosswalk);
-
-  // --- Phase 2: Tasks ---
-  await executeImportPhase(db, "tasks", archive, crosswalk, remapped, created, reused, importId, signal);
-  applyCrosswalkToArchive(archive, crosswalk);
-
-  // --- Phase 3: Task Sets ---
-  await executeImportPhase(db, "taskSets", archive, crosswalk, remapped, created, reused, importId, signal);
-  applyCrosswalkToArchive(archive, crosswalk);
-
-  // --- Phase 4: Evidence ---
-  await executeImportPhase(db, "evidence", archive, crosswalk, remapped, created, reused, importId, signal);
-  applyCrosswalkToArchive(archive, crosswalk);
-
-  // --- Phase 5: Comparisons ---
-  await executeImportPhase(db, "comparisons", archive, crosswalk, remapped, created, reused, importId, signal);
-  applyCrosswalkToArchive(archive, crosswalk);
-
-  // --- Phase 6: Lab ---
-  await executeImportPhase(db, "lab", archive, crosswalk, remapped, created, reused, importId, signal);
-  applyCrosswalkToArchive(archive, crosswalk);
-
-  // --- Phase 7: Model Rollups ---
-  await executeImportPhase(db, "modelRollups", archive, crosswalk, remapped, created, reused, importId, signal);
-
-  // --- Post-commit: mark search for rebuild ---
-  try {
-    await markSearchForRebuild(db);
-  } catch {
-    // Search rebuild marker is best-effort; import data is already committed.
-  }
-
-  return { importId, created, reused, remapped, failedPhases, crosswalk };
-}
-
-/**
- * Execute one import phase in a single Dexie transaction. Entities with
- * colliding IDs are remapped (new ID generated, crosswalk recorded).
- * Any error rolls back only this phase.
- */
-async function executeImportPhase(
-  db: RSembleEvaluationDB,
-  phaseName: string,
-  archive: WorkbenchArchiveV3,
-  crosswalk: Record<string, string>,
-  remapped: ImportCrosswalkEntry[],
-  created: string[],
-  reused: string[],
-  importId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  const collections = IMPORT_V3_PHASE_COLLECTIONS[phaseName];
-  if (!collections) return;
-
-  const throwIfAborted = () => {
-    if (signal?.aborted) throw new ArchiveImportCancelledError();
-  };
-  throwIfAborted();
-
-  try {
-    await db.transaction("rw", tablesForPhase(db, phaseName), async () => {
-      throwIfAborted();
-
-      switch (phaseName) {
-        case "runs-rubrics-suites-experiments": {
-          // Runs
-          for (const s of archive.runs.summaries) {
-            if (!isRunSummary(s)) continue;
-            await putOrRemap(db.runSummaries, s.id, summaryRowFor(s), crosswalk, remapped, created, reused, "runs.summaries", (existing) => canon((existing as RunSummaryRow).summary) === canon(s));
+      // Cutover receipt: bootstrap-pristine targets adopt the archive receipt;
+      // divergent receipts land under a suffixed metadata key.
+      {
+        const existing = await db.storageMeta.get(fusionToResearchLabReceiptKey);
+        const incoming = archive.lab.cutoverReceipt;
+        if (existing === undefined || canon(existing.value) === canon(incoming)) {
+          if (existing === undefined) {
+            await db.storageMeta.put({ key: fusionToResearchLabReceiptKey, value: incoming });
+            created.push(fusionToResearchLabReceiptKey);
+          } else {
+            reused.push(fusionToResearchLabReceiptKey);
           }
-          for (const d of archive.runs.details) {
-            const compatible = repairRunRecordForCompatibility(d) ?? (isRunRecordV2(d) ? d : null);
-            if (compatible === null) continue;
-            await putOrRemap(db.runDetails, d.id, detailRowFor(compatible), crosswalk, remapped, created, reused, "runs.details", (existing) => canon((existing as RunDetailRow).record) === canon(compatible));
+        } else if (isZeroCorpusBootstrapReceipt(existing.value) && pristine) {
+          await db.storageMeta.put({ key: fusionToResearchLabReceiptKey, value: incoming });
+          created.push(fusionToResearchLabReceiptKey);
+        } else {
+          const fallbackKey = `${fusionToResearchLabReceiptKey}-import-${importId.slice(-8)}`;
+          const atFallback = await db.storageMeta.get(fallbackKey);
+          if (atFallback !== undefined && canon(atFallback.value) === canon(incoming)) {
+            reused.push(`lab.cutoverReceipt\u0000${fallbackKey}`);
+          } else if (atFallback === undefined) {
+            await db.storageMeta.put({ key: fallbackKey, value: incoming });
+            created.push(`lab.cutoverReceipt\u0000${fallbackKey}`);
+          } else {
+            throw new StorageError("conflict", "Cutover receipt diverged — phase rolled back.");
           }
-          // Rubrics
-          for (const r of archive.rubrics.identities) {
-            if (!isRubricRecord(r)) continue;
-            await putOrRemap(db.profiles, r.id, { id: r.id, record: r, revision: r.revision, latestVersion: r.latestVersion, updatedAt: r.updatedAt, archivedAt: r.archivedAt }, crosswalk, remapped, created, reused, "rubrics.identities", (existing) => canon((existing as ProfileRow).record) === canon(r));
-          }
-          for (const v of archive.rubrics.versions) {
-            if (!isEvaluationRubric(v)) continue;
-            const key = versionKey(v.id, v.version);
-            await putOrRemapComposite(db.profileVersions, [v.id, v.version], { id: v.id, version: v.version, profile: v, updatedAt: v.updatedAt }, "id", "version", crosswalk, remapped, created, reused, "rubrics.versions", key, (existing) => canon((existing as ProfileVersionRow).profile) === canon(v));
-          }
-          // Suites
-          for (const s of archive.suites) {
-            if (!isEvaluationSuite(s)) continue;
-            await putOrRemap(db.suites, s.id, { id: s.id, suite: s, revision: 1, version: s.version, updatedAt: s.updatedAt, archivedAt: s.archivedAt }, crosswalk, remapped, created, reused, "suites", (existing) => canon((existing as SuiteRow).suite) === canon(s));
-          }
-          // Experiments
-          for (const e of archive.experiments) {
-            if (!isExperimentRecord(e)) continue;
-            await putOrRemap(db.experiments, e.id, { id: e.id, experiment: e, revision: 1, suiteId: e.suiteId, suiteVersion: e.suiteVersion, protocolFingerprint: e.protocolFingerprint, createdAt: e.createdAt, status: e.status }, crosswalk, remapped, created, reused, "experiments", (existing) => canon((existing as ExperimentRow).experiment) === canon(e));
-          }
-          break;
-        }
-        case "tasks": {
-          for (const t of archive.tasks.tasks) {
-            if (!isTaskRecord(t)) continue;
-            await putOrRemap(db.tasks, t.id, taskRowFor(t), crosswalk, remapped, created, reused, "tasks.tasks", (existing) => canon((existing as ReturnType<typeof taskRowFor>).record) === canon(t));
-          }
-          for (const v of archive.tasks.taskVersions) {
-            if (!isTaskVersion(v)) continue;
-            const key = versionKey(v.taskId, v.version);
-            await putOrRemapComposite(db.taskVersions, [v.taskId, v.version], taskVersionRowFor(v), "taskId", "version", crosswalk, remapped, created, reused, "tasks.taskVersions", key, (existing) => canon((existing as ReturnType<typeof taskVersionRowFor>).version_) === canon(v));
-          }
-          for (const a of archive.tasks.taskArtifacts) {
-            if (!isTaskArtifact(a)) continue;
-            await putOrRemap(db.taskArtifacts, a.id, { id: a.id, contentDigest: a.contentDigest, mediaType: a.mediaType, byteCount: a.byteCount, storageRef: a.storageRef, createdAt: a.createdAt }, crosswalk, remapped, created, reused, "tasks.taskArtifacts", (existing) => canon(existing) === canon(a));
-          }
-          for (const ab of archive.tasks.taskArtifactBytes) {
-            const decoded = decodeBase64Bytes(ab.bytesBase64);
-            if (decoded === null) continue;
-            await putOrRemap(db.taskArtifactBytes, ab.id, { id: ab.id, bytes: decoded }, crosswalk, remapped, created, reused, "tasks.taskArtifactBytes", (existing) => bytesMatch((existing as { bytes: Uint8Array }).bytes, decoded));
-          }
-          for (const i of archive.tasks.taskInstances) {
-            if (!isTaskInstance(i)) continue;
-            await putOrRemap(db.taskInstances, i.id, taskInstanceRowFor(i), crosswalk, remapped, created, reused, "tasks.taskInstances", (existing) => canon((existing as ReturnType<typeof taskInstanceRowFor>).instance) === canon(i));
-          }
-          for (const f of archive.tasks.taskFamilies) {
-            if (!isTaskFamily(f)) continue;
-            await putOrRemap(db.taskFamilies, f.id, familyRowFor(f), crosswalk, remapped, created, reused, "tasks.taskFamilies", (existing) => canon((existing as ReturnType<typeof familyRowFor>).family) === canon(f));
-          }
-          for (const a of archive.tasks.taskFamilyAssignments) {
-            if (!isTaskFamilyAssignment(a)) continue;
-            await putOrRemap(db.taskFamilyAssignments, a.id, assignmentRowFor(a), crosswalk, remapped, created, reused, "tasks.taskFamilyAssignments", (existing) => canon((existing as ReturnType<typeof assignmentRowFor>).assignment) === canon(a));
-          }
-          for (const r of archive.tasks.taskFamilyRelations) {
-            if (!isExportableTaskFamilyRelation(r)) continue;
-            await putOrRemap(db.taskFamilyRelations, r.id, relationRowFor(r), crosswalk, remapped, created, reused, "tasks.taskFamilyRelations", (existing) => canon((existing as ReturnType<typeof relationRowFor>).relation) === canon(r));
-          }
-          for (const a of archive.tasks.taskFacetAnnotations) {
-            if (!isTaskFacetAnnotation(a)) continue;
-            await putOrRemap(db.taskFacetAnnotations, a.id, annotationRowFor(a), crosswalk, remapped, created, reused, "tasks.taskFacetAnnotations", (existing) => canon((existing as ReturnType<typeof annotationRowFor>).annotation) === canon(a));
-          }
-          for (const cw of archive.tasks.taskMigrationCrosswalks) {
-            await putOrRemap(db.taskMigrationCrosswalk, cw.legacyScopeKey, { legacyScopeKey: cw.legacyScopeKey, taskId: cw.taskId, taskVersion: cw.taskVersion }, crosswalk, remapped, created, reused, "tasks.taskMigrationCrosswalks", (existing) => (existing as TaskMigrationCrosswalk).taskId === cw.taskId && (existing as TaskMigrationCrosswalk).taskVersion === cw.taskVersion);
-          }
-          break;
-        }
-        case "taskSets": {
-          for (const r of archive.taskSets.records) {
-            if (!isTaskSetRecord(r)) continue;
-            await putOrRemap(db.taskSets, r.id, taskSetRecordRowFor(r), crosswalk, remapped, created, reused, "taskSets.records", (existing) => canon((existing as ReturnType<typeof taskSetRecordRowFor>).record) === canon(r));
-          }
-          for (const v of archive.taskSets.versions) {
-            if (!isTaskSetVersion(v)) continue;
-            const key = versionKey(v.taskSetId, v.version);
-            await putOrRemapComposite(db.taskSetVersions, [v.taskSetId, v.version], taskSetVersionRowFor(v), "taskSetId", "version", crosswalk, remapped, created, reused, "taskSets.versions", key, (existing) => canon((existing as ReturnType<typeof taskSetVersionRowFor>).version_) === canon(v));
-          }
-          for (const m of archive.taskSets.materializations) {
-            if (!isTaskSetMaterializationRecord(m)) continue;
-            await putOrRemap(db.taskSetMaterializations, m.id, m, crosswalk, remapped, created, reused, "taskSets.materializations", (existing) => canon(existing) === canon(m));
-          }
-          for (const cw of archive.taskSets.ownershipCrosswalks) {
-            if (!isTaskSetOwnershipCrosswalkRow(cw)) continue;
-            await putOrRemap(db.taskSetOwnershipCrosswalk, cw.key, cw, crosswalk, remapped, created, reused, "taskSets.ownershipCrosswalks", (existing) => canon(existing) === canon(cw));
-          }
-          break;
-        }
-        case "evidence": {
-          for (const mc of archive.evidence.modelConfigurations) {
-            if (!isModelConfigurationSnapshot(mc)) continue;
-            await putOrRemap(db.modelConfigurations, mc.id, modelConfigurationRowFor(mc), crosswalk, remapped, created, reused, "evidence.modelConfigurations", (existing) => canon((existing as ModelConfigurationRow).snapshot) === canon(mc));
-          }
-          for (const obs of archive.evidence.observations) {
-            if (!isObservation(obs)) continue;
-            await putOrRemap(db.observations, obs.id, evidenceObservationRowFor(obs), crosswalk, remapped, created, reused, "evidence.observations", (existing) => canon((existing as EvidenceObservationRow).observation) === canon(obs));
-          }
-          for (const dec of archive.evidence.evidenceDecisions) {
-            if (!isEligibilityDecision(dec)) continue;
-            const key = `${dec.observationId}#${dec.ruleVersion}`;
-            await putOrRemap(db.evidenceDecisions, key, evidenceDecisionRowFor(dec), crosswalk, remapped, created, reused, "evidence.evidenceDecisions", (existing) => canon((existing as EvidenceDecisionRow).decision) === canon(dec));
-          }
-          for (const job of archive.evidence.evidenceIndexJobs) {
-            if (!isEvidenceIndexJob(job)) continue;
-            await putOrRemap(db.evidenceIndexJobs, job.sourceResultId, toJobRow(job), crosswalk, remapped, created, reused, "evidence.evidenceIndexJobs", (existing) => canon(fromJobRow(existing as EvidenceIndexJobRow)) === canon(job));
-          }
-          for (const vo of archive.evidence.verifierOutcomes) {
-            if (!isExecutedVerifierOutcome(vo)) continue;
-            const key = verifierOutcomeKey(vo);
-            await putOrRemap(db.verifierOutcomes, key, toVerifierRow(vo), crosswalk, remapped, created, reused, "evidence.verifierOutcomes", (existing) => canon(fromVerifierRow(existing as VerifierOutcomeRow)) === canon(vo));
-          }
-          break;
-        }
-        case "comparisons": {
-          for (const index of archive.comparisons.indexes) {
-            if (!isComparisonResultIndex(index)) continue;
-            await putOrRemap(db.comparisonResults, index.id, index, crosswalk, remapped, created, reused, "comparisons.indexes", (existing) => canon(existing) === canon(index));
-          }
-          break;
-        }
-        case "lab": {
-          for (const r of archive.lab.recipeRecords) {
-            if (!isLabRecipeRecord(r)) continue;
-            await putOrRemap(db.labRecipeRecords, r.id, { id: r.id, record: r, kind: r.kind, latestVersion: r.latestVersion, archivedAt: r.archivedAt, createdAt: r.createdAt, updatedAt: r.updatedAt, revision: r.revision }, crosswalk, remapped, created, reused, "lab.recipeRecords", (existing) => canon((existing as { record: LabRecipeRecord }).record) === canon(r));
-          }
-          for (const v of archive.lab.recipeVersions) {
-            if (!isLabRecipeVersion(v)) continue;
-            const key = versionKey(v.recipeId, v.version);
-            await putOrRemapComposite(db.labRecipeVersions, [v.recipeId, v.version], { recipeId: v.recipeId, version: v.version, version_: v, digest: v.digest, createdAt: v.createdAt }, "recipeId", "version", crosswalk, remapped, created, reused, "lab.recipeVersions", key, (existing) => canon((existing as { version_: LabRecipeVersion }).version_) === canon(v));
-          }
-          for (const p of archive.lab.poolRecords) {
-            if (!isModelPoolRecord(p)) continue;
-            await putOrRemap(db.modelPoolRecords, p.id, { id: p.id, record: p, latestVersion: p.latestVersion, archivedAt: p.archivedAt, createdAt: p.createdAt, updatedAt: p.updatedAt, revision: p.revision }, crosswalk, remapped, created, reused, "lab.poolRecords", (existing) => canon((existing as { record: ModelPoolRecord }).record) === canon(p));
-          }
-          for (const v of archive.lab.poolVersions) {
-            if (!isModelPoolVersion(v)) continue;
-            const key = versionKey(v.poolId, v.version);
-            await putOrRemapComposite(db.modelPoolVersions, [v.poolId, v.version], { poolId: v.poolId, version: v.version, version_: v, digest: v.digest, createdAt: v.createdAt }, "poolId", "version", crosswalk, remapped, created, reused, "lab.poolVersions", key, (existing) => canon((existing as { version_: ModelPoolVersion }).version_) === canon(v));
-          }
-          for (const s of archive.lab.studies) {
-            if (!isPolicyStudyRecord(s)) continue;
-            await putOrRemap(db.studies, s.id, { id: s.id, record: s, kind: s.kind, status: s.status, claimLevel: s.claimLevel, confirmationOf: s.confirmationOf, revision: s.revision, createdAt: s.createdAt, updatedAt: s.updatedAt, archivedAt: s.archivedAt }, crosswalk, remapped, created, reused, "lab.studies", (existing) => canon((existing as { record: PolicyStudyRecord }).record) === canon(s));
-          }
-          for (const t of archive.lab.trials) {
-            if (!isPolicyStudyTrial(t)) continue;
-            await putOrRemap(db.studyTrials, t.id, { id: t.id, trial: t, studyId: t.studyId, status: t.status, sampleIndex: t.sampleIndex, revision: 1, createdAt: t.createdAt, sealedAt: t.sealedAt }, crosswalk, remapped, created, reused, "lab.trials", (existing) => canon((existing as { trial: PolicyStudyTrial }).trial) === canon(t));
-          }
-          for (const a of archive.lab.attempts) {
-            if (!isStudyAttempt(a)) continue;
-            await putOrRemap(db.studyAttempts, a.id, { id: a.id, attempt: a, studyId: a.studyId, fromTrialId: a.fromTrialId, toTrialId: a.toTrialId, createdAt: a.createdAt }, crosswalk, remapped, created, reused, "lab.attempts", (existing) => canon((existing as { attempt: StudyAttempt }).attempt) === canon(a));
-          }
-          for (const o of archive.lab.observations) {
-            if (!isPolicyStudyObservation(o)) continue;
-            await putOrRemap(db.studyObservations, o.id, { id: o.id, observation: o, studyId: o.studyId, trialId: o.trialId, status: o.status, createdAt: o.createdAt, finishedAt: o.finishedAt }, crosswalk, remapped, created, reused, "lab.observations", (existing) => canon((existing as { observation: PolicyStudyObservation }).observation) === canon(o));
-          }
-          for (const p of archive.lab.playbooks) {
-            if (!isRecord(p) || typeof p.id !== "string" || !isPolicyReportPayload(p.playbook)) continue;
-            await putOrRemap(db.policyPlaybooks, p.id, { id: p.id, playbook: p.playbook, studyId: p.playbook.studyId, definitionFingerprint: p.playbook.definitionFingerprint, digest: fingerprintStudyValue(p.playbook), createdAt: p.playbook.createdAt }, crosswalk, remapped, created, reused, "lab.playbooks", (existing) => canon((existing as { playbook: PolicyReportPayload }).playbook) === canon(p.playbook));
-          }
-          // Cutover receipt
-          {
-            const existing = await db.storageMeta.get(fusionToResearchLabReceiptKey);
-            if (existing === undefined) {
-              await db.storageMeta.put({ key: fusionToResearchLabReceiptKey, value: archive.lab.cutoverReceipt });
-              created.push(fusionToResearchLabReceiptKey);
-            } else if (canon(existing.value) === canon(archive.lab.cutoverReceipt)) {
-              reused.push(fusionToResearchLabReceiptKey);
-            } else if (isZeroCorpusBootstrapReceipt(existing.value) && await isPristineCanonicalWorkbench(db)) {
-              await db.storageMeta.put({ key: fusionToResearchLabReceiptKey, value: archive.lab.cutoverReceipt });
-              created.push(fusionToResearchLabReceiptKey);
-            } else {
-              // Remap: different receipt → store with note
-              const newKey = `${fusionToResearchLabReceiptKey}-import-${importId.slice(0, 8)}`;
-              await db.storageMeta.put({ key: newKey, value: archive.lab.cutoverReceipt });
-              crosswalk[fusionToResearchLabReceiptKey] = newKey;
-              remapped.push({ archiveId: fusionToResearchLabReceiptKey, localId: newKey, collection: "lab.cutoverReceipt" });
-              created.push(newKey);
-            }
-          }
-          break;
-        }
-        case "modelRollups": {
-          const rollups = archive.modelRollups ?? { records: [], versions: [] };
-          for (const r of rollups.records) {
-            if (!isModelRollupRecord(r)) continue;
-            await putOrRemap(db.modelRollups, r.id, { id: r.id, record: r, name: r.name, latestVersion: r.latestVersion, revision: r.revision, createdAt: r.createdAt, updatedAt: r.updatedAt, archivedAt: r.archivedAt }, crosswalk, remapped, created, reused, "modelRollups.records", (existing) => canon((existing as { record: ModelRollupRecord }).record) === canon(r));
-          }
-          for (const v of rollups.versions) {
-            if (!isModelRollupVersion(v)) continue;
-            const key = versionKey(v.rollupId, v.version);
-            await putOrRemapComposite(db.modelRollupVersions, [v.rollupId, v.version], { rollupId: v.rollupId, version: v.version, version_: v, memberManifestDigest: v.memberManifestDigest, createdAt: v.createdAt }, "rollupId", "version", crosswalk, remapped, created, reused, "modelRollups.versions", key, (existing) => canon((existing as { version_: ModelRollupVersion }).version_) === canon(v));
-          }
-          break;
         }
       }
-    });
-  } catch (err) {
-    if (err instanceof ArchiveImportCancelledError) throw err;
-    // Phase failed — the transaction rolled back automatically.
-    // Other phases remain committed.
-    throw err;
-  }
-}
-
-/** Put a row or remap on collision. Returns true if created, false if reused. */
-async function putOrRemap<T>(
-  table: Table<T, string>,
-  id: string,
-  row: T,
-  crosswalk: Record<string, string>,
-  remapped: ImportCrosswalkEntry[],
-  created: string[],
-  reused: string[],
-  collection: string,
-  isEqual: (existing: T) => boolean,
-): Promise<void> {
-  const existing = await table.get(id);
-  if (existing === undefined) {
-    await table.put(row);
-    created.push(id);
-  } else if (isEqual(existing)) {
-    reused.push(id);
-  } else {
-    // Collision: remap to new ID
-    const newId = generateRemappedId(id);
-    const remappedRow = { ...row, id: newId } as unknown as T;
-    await table.put(remappedRow);
-    crosswalk[id] = newId;
-    remapped.push({ archiveId: id, localId: newId, collection });
-    created.push(newId);
-  }
-}
-
-/** Put a composite-key row or remap on collision. Uses table-specific
- *  idField/versionField to construct the new composite key on remap. */
-async function putOrRemapComposite<T>(
-  table: Table<T, [string, number]>,
-  key: [string, number],
-  row: T,
-  idField: string,
-  versionField: string,
-  crosswalk: Record<string, string>,
-  remapped: ImportCrosswalkEntry[],
-  created: string[],
-  reused: string[],
-  collection: string,
-  displayKey: string,
-  isEqual: (existing: T) => boolean,
-): Promise<void> {
-  const existing = await table.get(key);
-  if (existing === undefined) {
-    await table.put(row);
-    created.push(displayKey);
-  } else if (isEqual(existing)) {
-    reused.push(displayKey);
-  } else {
-    // Collision: remap to new ID + bumped version
-    const newId = generateRemappedId(key[0]);
-    const newVersion = key[1] + 10_000;
-    const newDisplayKey = `${newId}@${newVersion}`;
-    const remappedRow = { ...row, [idField]: newId, [versionField]: newVersion } as T;
-    await table.put(remappedRow, [newId, newVersion]);
-    // Store plain ID mapping for reference rewriting
-    crosswalk[key[0]] = newId;
-    crosswalk[displayKey] = newDisplayKey;
-    remapped.push({ archiveId: displayKey, localId: newDisplayKey, collection });
-    created.push(newDisplayKey);
-  }
-}
-
-/**
- * Apply the crosswalk to rewrite entity references after remapping.
- * Walks every entity in the archive and replaces old IDs with new IDs
- * wherever they appear as reference fields.
- */
-function applyCrosswalkToArchive(
-  archive: WorkbenchArchiveV3,
-  crosswalk: Record<string, string>,
-): void {
-  if (Object.keys(crosswalk).length === 0) return;
-
-  const remapRef = (obj: Record<string, unknown>, field: string) => {
-    const val = obj[field];
-    if (typeof val === "string" && crosswalk[val]) {
-      obj[field] = crosswalk[val];
+      break;
     }
-  };
-
-  // Task references
-  for (const v of archive.tasks.taskVersions) remapRef(v as unknown as Record<string, unknown>, "taskId");
-  for (const i of archive.tasks.taskInstances) remapRef(i as unknown as Record<string, unknown>, "taskId");
-  for (const a of archive.tasks.taskFamilyAssignments) remapRef(a as unknown as Record<string, unknown>, "taskId");
-  for (const a of archive.tasks.taskFacetAnnotations) remapRef(a as unknown as Record<string, unknown>, "taskId");
-  for (const cw of archive.tasks.taskMigrationCrosswalks) remapRef(cw as unknown as Record<string, unknown>, "taskId");
-
-  // Task family references
-  for (const a of archive.tasks.taskFamilyAssignments) remapRef(a as unknown as Record<string, unknown>, "familyId");
-  for (const r of archive.tasks.taskFamilyRelations) {
-    remapRef(r as unknown as Record<string, unknown>, "fromFamilyId");
-    remapRef(r as unknown as Record<string, unknown>, "toFamilyId");
-  }
-
-  // Task Set references
-  for (const v of archive.taskSets.versions) remapRef(v as unknown as Record<string, unknown>, "taskSetId");
-  for (const m of archive.taskSets.materializations) remapRef(m as unknown as Record<string, unknown>, "taskSetId");
-  for (const cw of archive.taskSets.ownershipCrosswalks) remapRef(cw as unknown as Record<string, unknown>, "taskSetId");
-
-  // Evidence references
-  for (const obs of archive.evidence.observations) {
-    remapRef(obs as unknown as Record<string, unknown>, "taskId");
-    remapRef(obs as unknown as Record<string, unknown>, "modelConfigurationId");
-  }
-  for (const dec of archive.evidence.evidenceDecisions) remapRef(dec as unknown as Record<string, unknown>, "observationId");
-
-  // Lab references
-  for (const v of archive.lab.recipeVersions) remapRef(v as unknown as Record<string, unknown>, "recipeId");
-  for (const v of archive.lab.poolVersions) remapRef(v as unknown as Record<string, unknown>, "poolId");
-  for (const t of archive.lab.trials) remapRef(t as unknown as Record<string, unknown>, "studyId");
-  for (const a of archive.lab.attempts) {
-    remapRef(a as unknown as Record<string, unknown>, "studyId");
-    remapRef(a as unknown as Record<string, unknown>, "fromTrialId");
-    remapRef(a as unknown as Record<string, unknown>, "toTrialId");
-  }
-  for (const o of archive.lab.observations) {
-    remapRef(o as unknown as Record<string, unknown>, "studyId");
-    remapRef(o as unknown as Record<string, unknown>, "trialId");
-  }
-
-  // Model Rollup references
-  const rollups = archive.modelRollups;
-  if (rollups) {
-    for (const v of rollups.versions) remapRef(v as unknown as Record<string, unknown>, "rollupId");
-  }
-
-  // Run references
-  for (const d of archive.runs.details) remapRef(d as unknown as Record<string, unknown>, "id");
-  for (const s of archive.runs.summaries) remapRef(s as unknown as Record<string, unknown>, "id");
-
-  // Comparison references
-  for (const index of archive.comparisons.indexes) {
-    remapRef(index as unknown as Record<string, unknown>, "runId");
-    remapRef(index as unknown as Record<string, unknown>, "taskInstanceId");
-    const binding = (index as unknown as Record<string, unknown>).taskBinding as Record<string, unknown> | undefined;
-    if (binding) remapRef(binding, "taskId");
-  }
-  for (const snap of archive.comparisons.inputSnapshots) {
-    remapRef(snap as unknown as Record<string, unknown>, "runId");
-    remapRef(snap as unknown as Record<string, unknown>, "taskId");
-    remapRef(snap as unknown as Record<string, unknown>, "taskInstanceId");
+    case "modelRollups": {
+      for (const r of archive.modelRollups?.records ?? []) {
+        if (!isModelRollupRecord(r)) continue;
+        await upsertVerified(
+          db.modelRollups,
+          r.id,
+          {
+            id: r.id,
+            record: r,
+            name: r.name,
+            latestVersion: r.latestVersion,
+            revision: r.revision,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+            archivedAt: r.archivedAt,
+          },
+          (x) => x.record,
+          r,
+          `modelRollups.records\u0000${r.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const v of archive.modelRollups?.versions ?? []) {
+        if (!isModelRollupVersion(v)) continue;
+        await upsertCompositeVerified(
+          db.modelRollupVersions,
+          [v.rollupId, v.version],
+          {
+            rollupId: v.rollupId,
+            version: v.version,
+            version_: v,
+            memberManifestDigest: v.memberManifestDigest,
+            createdAt: v.createdAt,
+          },
+          (x) => x.version_,
+          v,
+          `modelRollups.versions\u0000${versionKey(v.rollupId, v.version)}`,
+          created,
+          reused,
+        );
+      }
+      break;
+    }
+    default:
+      throw new StorageError("validation", `Unknown import phase ${phaseName}.`);
   }
 }
 
-/** Get Dexie tables for a phase. */
+/** Get the Dexie tables locked by one import phase. */
 function tablesForPhase(db: RSembleEvaluationDB, phaseName: string): Table[] {
   switch (phaseName) {
     case "runs-rubrics-suites-experiments":
-      return [db.runSummaries, db.runDetails, db.profiles, db.profileVersions, db.suites, db.experiments];
+      return [
+        db.runSummaries,
+        db.runDetails,
+        db.profiles,
+        db.profileVersions,
+        db.suites,
+        db.experiments,
+      ];
     case "tasks":
-      return [db.tasks, db.taskVersions, db.taskArtifacts, db.taskArtifactBytes, db.taskInstances, db.taskFamilies, db.taskFamilyAssignments, db.taskFamilyRelations, db.taskFacetAnnotations, db.taskMigrationCrosswalk];
+      return [
+        db.tasks,
+        db.taskVersions,
+        db.taskArtifacts,
+        db.taskArtifactBytes,
+        db.taskInstances,
+        db.taskFamilies,
+        db.taskFamilyAssignments,
+        db.taskFamilyRelations,
+        db.taskFacetAnnotations,
+        db.taskMigrationCrosswalk,
+      ];
     case "taskSets":
-      return [db.taskSets, db.taskSetVersions, db.taskSetMaterializations, db.taskSetOwnershipCrosswalk];
+      return [
+        db.taskSets,
+        db.taskSetVersions,
+        db.taskSetMaterializations,
+        db.taskSetOwnershipCrosswalk,
+      ];
     case "evidence":
-      return [db.modelConfigurations, db.observations, db.evidenceDecisions, db.evidenceIndexJobs, db.verifierOutcomes];
+      return [
+        db.modelConfigurations,
+        db.observations,
+        db.evidenceDecisions,
+        db.evidenceIndexJobs,
+        db.verifierOutcomes,
+      ];
     case "comparisons":
       return [db.comparisonResults];
     case "lab":
-      return [db.labRecipeRecords, db.labRecipeVersions, db.modelPoolRecords, db.modelPoolVersions, db.studies, db.studyTrials, db.studyAttempts, db.studyObservations, db.policyPlaybooks, db.storageMeta];
+      return [
+        db.labRecipeRecords,
+        db.labRecipeVersions,
+        db.modelPoolRecords,
+        db.modelPoolVersions,
+        db.studies,
+        db.studyTrials,
+        db.studyAttempts,
+        db.studyObservations,
+        db.policyPlaybooks,
+        db.storageMeta,
+      ];
     case "modelRollups":
       return [db.modelRollups, db.modelRollupVersions];
     default:
@@ -6970,19 +7613,6 @@ function tablesForPhase(db: RSembleEvaluationDB, phaseName: string): Table[] {
   }
 }
 
-/** Mark the disposable search index for rebuild after import. */
-async function markSearchForRebuild(db: RSembleEvaluationDB): Promise<void> {
-  // Write a storageMeta marker that the search reindexer picks up.
-  // Best-effort: if the table or key doesn't exist yet, skip silently.
-  try {
-    await db.storageMeta.put({
-      key: "search:needs-rebuild",
-      value: { at: Date.now(), reason: "archive-import" },
-    });
-  } catch {
-    // storageMeta may not be available in all database versions.
-  }
-}
 /**
  * Single-shot import dispatch: decode/validate the payload, route v1 through
  * the preserved adapter, v2 through preview + commit v2, and v3 through
@@ -7004,7 +7634,11 @@ export async function importWorkbenchArchiveAuto(
 
   if (isWorkbenchArchiveV3(payload)) {
     const preview = await previewWorkbenchArchive(db, payload, options);
-    return { format: "v3", v3: await commitPreviewWorkbenchArchiveV3(db, preview) };
+    // Production v3 path: collision-safe phased import with planned remaps.
+    return {
+      format: "v3",
+      v3: await importWorkbenchArchiveV3Phased(db, preview.payload as WorkbenchArchiveV3, options),
+    };
   }
   if (isWorkbenchArchiveV2(payload)) {
     const preview = await previewWorkbenchArchive(db, payload, options);

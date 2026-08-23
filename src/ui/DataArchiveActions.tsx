@@ -21,7 +21,7 @@ import {
   ArchiveExportCancelledError,
   ArchiveImportCancelledError,
   commitPreviewWorkbenchArchiveV2,
-  commitPreviewWorkbenchArchiveV3,
+  importWorkbenchArchiveV3Phased,
   exportWorkbenchArchive,
   exportWorkbenchArchiveV2,
   exportWorkbenchArchiveV3,
@@ -32,6 +32,7 @@ import {
   type ArchiveExportV3Progress,
   type ArchiveImportPreview,
 } from "../lib/persistence/archive";
+import type { WorkbenchArchiveV3 } from "../lib/persistence/archive-v3-types";
 
 const INVALID_ARCHIVE_MESSAGE = "The archive is invalid — nothing was imported.";
 const MAX_LISTED_ERRORS = 5;
@@ -254,9 +255,14 @@ export function DataArchiveActions(): ReactElement | null {
           `Imported ${commit.created.length} records — ${commit.reused.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
         );
       } else if (confirmed.format === "v3") {
-        const commit = await commitPreviewWorkbenchArchiveV3(db, confirmed);
+        const commit = await importWorkbenchArchiveV3Phased(
+          db,
+          confirmed.payload as WorkbenchArchiveV3,
+        );
+        const remappedNote =
+          commit.remapped.length > 0 ? ` — ${commit.remapped.length} remapped` : "";
         setResult(
-          `Imported ${commit.created.length} records — ${commit.reused.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
+          `Imported ${commit.created.length} records — ${commit.reused.length} reused${remappedNote} (${JSON.stringify(confirmed.sourceLabel)})`,
         );
       }
     } catch (err) {
@@ -438,7 +444,13 @@ export function DataArchiveActions(): ReactElement | null {
             {preview.totalEntities} {preview.totalEntities === 1 ? "record" : "records"}:{" "}
             {preview.create.length} to create, {preview.reuse.length} to reuse,{" "}
             {preview.collisions.length}{" "}
-            {preview.collisions.length === 1 ? "collision" : "collisions"}
+            {preview.format === "v3" && preview.collisions.length > 0
+              ? preview.collisions.length === 1
+                ? "planned remap"
+                : "planned remaps"
+              : preview.collisions.length === 1
+                ? "collision"
+                : "collisions"}
             {preview.invalid.length > 0
               ? `, ${preview.invalid.length} invalid (will not import)`
               : ""}
@@ -457,7 +469,9 @@ export function DataArchiveActions(): ReactElement | null {
           </ul>
           {preview.collisions.length > 0 && (
             <p className="text-text">
-              Colliding records will be left unchanged:{" "}
+              {preview.format === "v3"
+                ? "Colliding records will be imported under new IDs: "
+                : "Colliding records will be left unchanged: "}{" "}
               {preview.collisions
                 .slice(0, MAX_LISTED_ERRORS)
                 .map((c) => `${c.collection}/${c.key}`)
