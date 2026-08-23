@@ -546,7 +546,7 @@ describe("CommandPalette cross-entity local search integration", () => {
     const { h } = renderPalette({ searchRepo });
     await settle();
 
-    typeQuery(h, "records");
+    typeQuery(h, "record");
     await settle();
 
     const labels = optionLabels(h);

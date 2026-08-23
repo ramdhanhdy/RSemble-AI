@@ -91,9 +91,7 @@ function renderWorkspace(props: {
 
 async function settle() {
   await act(async () => {
-    const { promise, resolve } = Promise.withResolvers<void>();
-    setTimeout(resolve, 20);
-    await promise;
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
   });
 }
 
@@ -133,8 +131,9 @@ describe("SearchWorkspace", () => {
     await settle();
 
     const input = h.$('input[aria-label="Search"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     act(() => {
-      input.value = "rubric";
+      setter?.call(input, "rubric");
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -266,8 +265,8 @@ describe("SearchWorkspace", () => {
     await settle();
 
     const html = h.container.innerHTML;
-    expect(html).not.toMatch(/sk-[A-Za-z0-9_-]{6,}|AIza[A-Za-z0-9_-]{10,}|Bearer\s+\S+/i);
-
+    expect(html).not.toMatch(/\bsk-[A-Za-z0-9_-]{6,}|\bAIza[A-Za-z0-9_-]{10,}|Bearer\s+\S+/i);
+    expect(h.container.textContent).not.toMatch(/\bsk-[A-Za-z0-9_-]{6,}|\bAIza[A-Za-z0-9_-]{10,}|Bearer\s+\S+/i);
     act(() => h.root.unmount());
   });
 

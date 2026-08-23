@@ -1,11 +1,16 @@
 // =============================================================================
+// RSemble AI — Command Palette with Local Cross-Entity Search (spec §2, §7)
+// =============================================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { Command } from "cmdk";
 import {
+  BarChart3,
   ClipboardList,
   CornerDownLeft,
   Cpu,
+  Eye,
+  FileText,
   FlaskConical,
   Gauge,
   GitCompare,
@@ -20,6 +25,42 @@ import {
   TestTubes,
 } from "lucide-react";
 import type { WorkspaceKind } from "./useActionShortcuts";
+import { RepositoryContext } from "../lib/persistence/repository-context";
+import {
+  createSearchIndexRepository,
+  type SearchIndexRepository,
+} from "../lib/persistence/search-index-repository";
+import type { SearchHit, SearchPage } from "../lib/search/search-query";
+import type { SearchDocumentType } from "../lib/search/search-types";
+
+export const SEARCH_TYPE_LABELS: Record<SearchDocumentType, string> = {
+  task: "Tasks",
+  task_set: "Task Sets",
+  rubric: "Rubrics",
+  comparison: "Comparisons",
+  evaluation: "Evaluations",
+  fusion_study: "Fusion Studies",
+  model_configuration: "Model Configurations",
+  model_rollup: "Model Rollups",
+  observation: "Observations",
+  record: "Records",
+};
+
+export const SEARCH_TYPE_ICONS: Record<
+  SearchDocumentType,
+  typeof ListChecks
+> = {
+  task: ListChecks,
+  task_set: Layers,
+  rubric: FileText,
+  comparison: GitCompare,
+  evaluation: FlaskConical,
+  fusion_study: TestTubes,
+  model_configuration: Cpu,
+  model_rollup: BarChart3,
+  observation: Eye,
+  record: History,
+};
 
 interface CommandPaletteProps {
   open: boolean;
@@ -47,6 +88,8 @@ interface CommandPaletteProps {
   onAbortExperiment?: () => void;
   /** Focus the Records search surface: drawer at >=1024, /records below. */
   onFindRecord?: () => void;
+  /** Optional Search repository override for tests or custom providers. */
+  searchRepo?: SearchIndexRepository | null;
 }
 
 interface Command {
@@ -79,12 +122,56 @@ export function CommandPalette({
   activeExperimentId = null,
   onViewExperiment,
   onAbortExperiment,
+  searchRepo,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
+  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const { db } = useContext(RepositoryContext);
+
+  const effectiveSearchRepo = useMemo(() => {
+    if (searchRepo !== undefined) return searchRepo;
+    if (db) {
+      return createSearchIndexRepository(db);
+    }
+    return null;
+  }, [searchRepo, db]);
 
   useEffect(() => {
     if (open) setQuery("");
   }, [open]);
+
+  // Execute async search against the search index repository
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!open || !trimmed || !effectiveSearchRepo) {
+      setSearchHits([]);
+      setSearchError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchError(null);
+
+    effectiveSearchRepo
+      .search({ text: trimmed, limit: 20 })
+      .then((page: SearchPage) => {
+        if (cancelled) return;
+        setSearchHits(page.items);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setSearchHits([]);
+        setSearchError(
+          err instanceof Error ? err.message : "Search query failed",
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, query, effectiveSearchRepo]);
 
   const commands = useMemo<Command[]>(() => {
     // Child 08 §G.7: Navigate is exactly these six destinations in this
@@ -259,6 +346,17 @@ export function CommandPalette({
     return entries;
   }, [commands]);
 
+  // Group search hits by document type
+  const searchGroups = useMemo(() => {
+    const map = new Map<SearchDocumentType, SearchHit[]>();
+    for (const hit of searchHits) {
+      const list = map.get(hit.document.type) ?? [];
+      list.push(hit);
+      map.set(hit.document.type, list);
+    }
+    return map;
+  }, [searchHits]);
+
   const execute = (command: Command) => {
     if (command.disabled) return;
     onClose();
@@ -281,7 +379,7 @@ export function CommandPalette({
         <Command.Input
           value={query}
           onValueChange={setQuery}
-          placeholder="Type a command…"
+          placeholder="Type a command or search entities…"
           aria-label="Search commands"
           className="min-h-[44px] flex-1 bg-transparent font-mono text-sm text-text placeholder-text-muted outline-none"
         />
@@ -292,8 +390,12 @@ export function CommandPalette({
 
       <Command.List className="max-h-[50vh] overflow-y-auto p-2 scroll-thin">
         <Command.Empty className="px-3 py-8 text-center font-mono text-xs text-text-muted">
-          No matching commands
+          {searchError
+            ? `Search error: ${searchError}`
+            : "No matching commands or search results"}
         </Command.Empty>
+
+        {/* Static and context commands */}
         {[...groups.entries()].map(([group, items]) => (
           <Command.Group
             key={group}
@@ -312,7 +414,9 @@ export function CommandPalette({
                   className="flex min-h-[44px] w-full items-center gap-3 rounded-md px-2.5 py-2 text-left data-[selected=true]:bg-card-hover data-[disabled=true]:cursor-not-allowed data-[disabled=true]:opacity-50"
                 >
                   <Icon size={16} className="shrink-0 text-text-secondary" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-text">{command.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-text">
+                    {command.label}
+                  </span>
                   {command.hint && (
                     <span className="flex shrink-0 items-center gap-1">
                       {command.hint.map((key) => (
@@ -330,16 +434,96 @@ export function CommandPalette({
             })}
           </Command.Group>
         ))}
+
+        {/* Typed local search hit groups */}
+        {[...searchGroups.entries()].map(([type, hits]) => {
+          const Icon = SEARCH_TYPE_ICONS[type] ?? Search;
+          const groupTitle = SEARCH_TYPE_LABELS[type] ?? type;
+          return (
+            <Command.Group
+              key={`search-${type}`}
+              heading={groupTitle}
+              className="mb-1 last:mb-0 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-text-muted"
+            >
+              {hits.map((hit) => (
+                <Command.Item
+                  key={`${hit.document.type}-${hit.document.id}`}
+                  value={`${hit.document.title} ${hit.document.id} ${hit.document.subtitle} ${query}`}
+                  keywords={[
+                    hit.document.id,
+                    hit.document.title,
+                    hit.document.subtitle,
+                    ...hit.document.tokens,
+                    query,
+                    groupTitle,
+                  ]}
+                  onSelect={() => {
+                    onClose();
+                    onNavigate?.(hit.document.ownerHref);
+                  }}
+                  className="flex min-h-[44px] w-full items-center gap-3 rounded-md px-2.5 py-2 text-left data-[selected=true]:bg-card-hover"
+                >
+                  <Icon size={16} className="shrink-0 text-text-secondary" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-text">
+                      {hit.document.title}
+                    </div>
+                    {hit.document.subtitle && (
+                      <div className="truncate text-xs text-text-secondary">
+                        {hit.document.subtitle}
+                      </div>
+                    )}
+                  </div>
+                  <span className="shrink-0 rounded border border-edge bg-card px-1.5 py-0.5 font-mono text-[11px] text-text-secondary">
+                    {hit.document.id}
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          );
+        })}
+
+        {/* View all in Search route */}
+        {query.trim().length > 0 && (
+          <Command.Group
+            heading="Search"
+            className="mb-1 last:mb-0 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-text-muted"
+          >
+            <Command.Item
+              value={`View all results for "${query.trim()}" ${query}`}
+              keywords={[query, "search", "results", "view all"]}
+              onSelect={() => {
+                onClose();
+                onNavigate?.(`/search?q=${encodeURIComponent(query.trim())}`);
+              }}
+              className="flex min-h-[44px] w-full items-center gap-3 rounded-md px-2.5 py-2 text-left data-[selected=true]:bg-card-hover"
+            >
+              <Search size={16} className="shrink-0 text-accent" />
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
+                View all results for &ldquo;{query.trim()}&rdquo;
+              </span>
+              <kbd className="shrink-0 rounded-sm border border-edge bg-card px-1.5 py-0.5 font-mono text-xs text-text-muted">
+                /search
+              </kbd>
+            </Command.Item>
+          </Command.Group>
+        )}
       </Command.List>
 
       <div className="flex items-center justify-between border-t border-edge px-4 py-2 font-mono text-xs text-text-muted">
         <span className="flex items-center gap-1.5">
-          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">↑</kbd>
-          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">↓</kbd>
+          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">
+            ↑
+          </kbd>
+          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">
+            ↓
+          </kbd>
           navigate
         </span>
         <span className="flex items-center gap-1.5">
-          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">↵</kbd>
+          <kbd className="rounded-sm border border-edge bg-card px-1 py-0.5">
+            ↵
+          </kbd>
           select
         </span>
       </div>
