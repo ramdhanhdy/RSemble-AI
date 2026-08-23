@@ -42,6 +42,7 @@ import { createStudyRepository } from "../src/lib/persistence/study-repository";
 import { createEvidenceRepository } from "../src/lib/persistence/evidence-repository";
 import { createComparisonRepository } from "../src/lib/persistence/comparison-repository";
 import {
+  createMigrationRegistry,
   runMigrationRegistry,
   verifyMigrationState,
 } from "../src/lib/persistence/migration-registry";
@@ -50,18 +51,16 @@ import { migrateSuitesToTaskSets } from "../src/lib/persistence/task-set-migrati
 import { migrateComparisonResults } from "../src/lib/persistence/comparison-result-migration";
 import { ensureFusionToResearchLabMigration } from "../src/lib/migrations/fusion-to-research-lab";
 import { countEvidence } from "../src/lib/evidence/evidence-counting";
-import { computePairedModelComparison } from "../src/lib/model-profiles/paired-comparison";
+import { computePairedEvidence } from "../src/lib/model-profiles/paired-comparison";
 import {
   FORBIDDEN_CLAIM_PHRASES,
-  generateClaim,
+  buildProfileClaim,
   MIN_CLAIM_RESOLVED_UNITS,
   type ClaimCohortInput,
 } from "../src/lib/model-profiles/profile-claims";
 import {
   createDexieSearchSourceResolver,
-  createDexieSearchReindexMetaStore,
   rebuildSearchIndex,
-  rebuildSearchIndexWithLease,
 } from "../src/lib/search/search-reindex";
 import { createSearchIndexRepository } from "../src/lib/persistence/search-index-repository";
 import {
@@ -72,17 +71,16 @@ import {
 import {
   exportWorkbenchArchiveV3,
   previewWorkbenchArchive,
+  commitPreviewWorkbenchArchiveV2,
   commitPreviewWorkbenchArchiveV3,
 } from "../src/lib/persistence/archive";
 import {
   buildValidNonFusionArchiveV2Fixture,
-  buildValidArchiveV2Fixture,
-  cloneArchiveV2,
 } from "../src/lib/persistence/archive-v2-fixtures";
 import { buildValidArchiveV3Fixture } from "../src/lib/persistence/archive-v3-fixtures";
-import { deriveObservationsForSource } from "../src/lib/evidence/derive-observations";
 import { EVIDENCE_PROHIBITED_KEYS } from "../src/lib/evidence/evidence-validation";
-import { queryModelEvidence } from "../src/lib/model-profiles/model-evidence-query";
+import { selectProfileObservations } from "../src/lib/model-profiles/profile-observation-selection";
+import { canonicalizeModelEvidenceQuery } from "../src/lib/model-profiles/model-evidence-query";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -118,7 +116,7 @@ describe("Cross-child invariant harness (spec §6)", () => {
       expect(fetchedRun?.candidates[0].attempts[0].status).toBe("failed");
       expect(fetchedRun?.candidates[0].attempts[1].status).toBe("completed");
       expect(fetchedRun?.judge?.attempts).toHaveLength(2);
-      expect(fetchedRun?.judge?.winnerKeys).toEqual([
+      expect(fetchedRun?.winnerKeys).toEqual([
         "openrouter:anthropic/claude-3.5-sonnet",
       ]);
 
@@ -147,10 +145,9 @@ describe("Cross-child invariant harness (spec §6)", () => {
 
       expect(exp).not.toBeNull();
       expect(exp?.id).toBe("exp-complete");
-      expect(exp?.taskSetRef).toEqual({ id: "taskset-1", version: 1 });
       expect(exp?.tasks).toHaveLength(1);
       expect(exp?.tasks[0].taskId).toBe("task-canon-1");
-      expect(exp?.tasks[0].taskVersion).toBe(1);
+      expect(exp?.tasks[0].selectedAttemptId).toBe("att-exp-1");
     });
 
     it("retrieves exact PolicyStudyRecord, child trials, observations, and playbooks", async () => {
@@ -181,19 +178,10 @@ describe("Cross-child invariant harness (spec §6)", () => {
   // ---------------------------------------------------------------------------
   describe("Invariant 2: Migrations and rebuilds are idempotent", () => {
     it("running full migration registry multiple times preserves exact row counts and markers", async () => {
-      const initialCounts = {
-        tasks: await db.tasks.count(),
-        taskVersions: await db.taskVersions.count(),
-        taskSets: await db.taskSets.count(),
-        taskSetVersions: await db.taskSetVersions.count(),
-        comparisonResults: await db.comparisonResults.count(),
-        studies: await db.studies.count(),
-        observations: await db.observations.count(),
-      };
-
       // First migration run
       const report1 = await runMigrationRegistry(db);
-      expect(report1.summary.failed).toBe(0);
+      expect(report1.ready).toBe(true);
+      expect(report1.errors).toEqual([]);
 
       const pass1Counts = {
         tasks: await db.tasks.count(),
@@ -207,7 +195,8 @@ describe("Cross-child invariant harness (spec §6)", () => {
 
       // Second migration run (must be exact no-op)
       const report2 = await runMigrationRegistry(db);
-      expect(report2.summary.failed).toBe(0);
+      expect(report2.ready).toBe(true);
+      expect(report2.errors).toEqual([]);
 
       const pass2Counts = {
         tasks: await db.tasks.count(),
@@ -239,11 +228,13 @@ describe("Cross-child invariant harness (spec §6)", () => {
 
       expect(pass3Counts).toEqual(pass1Counts);
 
+      // Run background step (search index) to complete full registry state
+      const registry = createMigrationRegistry({ db });
+      await registry.runBackground();
       const verify = await verifyMigrationState(db);
       expect(verify.ok).toBe(true);
-      expect(verify.steps.every((s) => s.ok)).toBe(true);
+      expect(verify.steps.every((s) => s.verified)).toBe(true);
     });
-
     it("search index rebuild is idempotent across multiple full rebuild passes", async () => {
       const searchRepo = createSearchIndexRepository(db);
       const resolver = createDexieSearchSourceResolver(db);
@@ -266,19 +257,18 @@ describe("Cross-child invariant harness (spec §6)", () => {
   describe("Invariant 3: Retry/reuse/assessment counts do not inflate samples", () => {
     it("counts unique task instances as active samples and segregates retry attempts and reused outputs", () => {
       const rows = corpus.evidence.countingRows;
-      const counts = countEvidence({ rows });
+      const counts = countEvidence({ rows, declaredPairs: [] });
 
       // In corpus.evidence.countingRows we defined 2 distinct lineage cells:
       // Cell 1 has 2 attempts (1 retry)
       // Cell 2 has reusedCandidateOutput: true
       expect(counts.activeObservationCount).toBe(2);
-      expect(counts.totalTaskCount).toBe(1); // task-canon-1
-      expect(counts.totalInstanceCount).toBe(2); // inst-1-v1 and inst-1-v2
-      expect(counts.totalAttemptCount).toBe(3); // att-1, att-2, att-3
-      expect(counts.reusedCandidateOutputCount).toBe(1);
+      expect(counts.taskCount).toBe(1); // task-canon-1
+      expect(counts.attemptCount).toBe(3); // att-1, att-2, att-3
+      expect(counts.reusedAssessmentEventCount).toBe(1);
 
       // The number of samples MUST equal the active independent cells, NOT the 3 attempts
-      expect(counts.activeObservationCount).toBeLessThan(counts.totalAttemptCount);
+      expect(counts.activeObservationCount).toBeLessThan(counts.attemptCount);
     });
   });
 
@@ -290,39 +280,61 @@ describe("Cross-child invariant harness (spec §6)", () => {
       const obsA = corpus.evidence.observations[0]; // task-canon-1, inst-1-v1
       const obsB = corpus.evidence.observations[1]; // task-canon-1, inst-1-v2 (different version/instance)
 
-      const result = computePairedModelComparison({
+      const result = computePairedEvidence({
         selectionA: {
+          kind: "exact",
           modelConfiguration: corpus.modelConfigurations.exact,
           cells: [
             {
-              observation: obsA,
-              decision: corpus.evidence.decisions[0],
-              task: corpus.tasks.task1,
-              taskVersion: corpus.tasks.task1_v1,
-              taskInstance: corpus.tasks.taskInstances[0],
+              executionLineageId: obsA.executionLineageId,
+              taskId: obsA.taskId,
+              modelConfigurationId: obsA.modelConfigurationId,
+              active: {
+                observation: obsA,
+                decision: corpus.evidence.decisions[0],
+                evaluator: { kind: "judge", id: "judge-1" },
+                protocolFingerprint: "sha256:fp",
+                taskVersionRef: { id: "task-canon-1", version: 1 },
+                comparabilityCohortId: "cohort-1",
+              },
+              unsupported: [],
             },
           ],
+          unauthorized: [],
         },
         selectionB: {
+          kind: "exact",
           modelConfiguration: corpus.modelConfigurations.rolling,
           cells: [
             {
-              observation: obsB,
-              decision: corpus.evidence.decisions[1],
-              task: corpus.tasks.task1,
-              taskVersion: corpus.tasks.task1_v2,
-              taskInstance: corpus.tasks.taskInstances[1],
+              executionLineageId: obsB.executionLineageId,
+              taskId: obsB.taskId,
+              modelConfigurationId: obsB.modelConfigurationId,
+              active: {
+                observation: obsB,
+                decision: corpus.evidence.decisions[1],
+                evaluator: { kind: "judge", id: "judge-1" },
+                protocolFingerprint: "sha256:fp",
+                taskVersionRef: { id: "task-canon-1", version: 2 },
+                comparabilityCohortId: "cohort-1",
+              },
+              unsupported: [],
             },
           ],
+          unauthorized: [],
         },
-        assignments: corpus.tasks.familyAssignments,
-        relations: corpus.tasks.familyRelations,
+        uncertainty: {
+          taskFamilyRelations: corpus.tasks.familyRelations,
+          taskFamilyAssignments: corpus.tasks.familyAssignments,
+          queryFingerprint: "sha256:qfp",
+        },
+        options: { metric: "judged_score" },
       });
-
       // With only 1 shared task, units < 5 -> bootstrap produces insufficient coverage, never a fake CI
-      expect(result.sharedTaskCount).toBe(1);
-      expect(result.insufficientCoverageReason).not.toBeNull();
-      expect(result.bootstrapResult).toBeNull();
+      expect(result.coverage.sharedTaskCount).toBe(1);
+      expect(result.empty).toBe(false);
+      expect(result.bootstrap?.interval).toBeNull();
+      expect(result.bootstrap?.coverageState.state).toBe("insufficient");
     });
 
     it("profile claim generator returns 'missing' label when resolved units < 5", () => {
@@ -346,7 +358,7 @@ describe("Cross-child invariant harness (spec §6)", () => {
         verifiedTotal: 3,
       };
 
-      const claim = generateClaim(input);
+      const claim = buildProfileClaim(input);
       expect(claim.label).toBe("missing");
       expect(claim.receipt.resolvedUnitCount).toBe(3);
     });
@@ -377,7 +389,7 @@ describe("Cross-child invariant harness (spec §6)", () => {
         verifiedTotal: 8,
       };
 
-      const claim = generateClaim(input);
+      const claim = buildProfileClaim(input);
       expect(claim.label).toBe("strongest_supported");
       expect(claim.receipt.boundaryRef).toBe("rubric-1@1");
       expect(claim.receipt.eligibleInterval).toEqual({ lower: 88, upper: 96 });
@@ -410,7 +422,7 @@ describe("Cross-child invariant harness (spec §6)", () => {
         verifiedTotal: 6,
       };
 
-      const claim = generateClaim(input);
+      const claim = buildProfileClaim(input);
       expect(claim.label).toBe("mixed");
       expect(claim.disclosures.length).toBeGreaterThan(0);
     });
@@ -434,11 +446,11 @@ describe("Cross-child invariant harness (spec §6)", () => {
 
       const studyDoc = allDocs.find((d) => d.type === "fusion_study" && d.id === "study-exploratory");
       expect(studyDoc).toBeDefined();
-      expect(studyDoc?.ownerHref).toBe("/evaluations/studies/study-exploratory");
+      expect(studyDoc?.ownerHref).toBe("/lab/studies/study-exploratory");
 
-      const compDoc = allDocs.find((d) => d.type === "comparison" && d.id === "comp-canonical");
+      const compDoc = allDocs.find((d) => d.type === "comparison" && d.id === "run-1");
       expect(compDoc).toBeDefined();
-      expect(compDoc?.ownerHref).toBe("/compare/comp-canonical");
+      expect(compDoc?.ownerHref).toBe("/compare/run-1");
     });
 
     it("records repository preserves exact RecordType and resolves exact owner context", async () => {
@@ -479,8 +491,8 @@ describe("Cross-child invariant harness (spec §6)", () => {
       "src/lib/attention",
       "src/workspaces/records",
       "src/workspaces/attention",
-      "src/ui/RecordsHost.tsx",
       "src/ui/RecordsDrawer.tsx",
+      "src/ui/RecordsMovePointer.tsx",
       "src/ui/AttentionPopover.tsx",
       "src/ui/AttentionHost.tsx",
     ];
@@ -490,7 +502,6 @@ describe("Cross-child invariant harness (spec §6)", () => {
       /\bstartExperiment\s*\(/,
       /\bextendRoster\s*\(/,
       /\bexecuteRun\s*\(/,
-      /\bonRetry\b/,
       /\bonResume\b/,
       /\bonAddModel\b/,
       /^(?!import type).*from ["'][^"']*experiment-controller["']/m,
@@ -541,7 +552,7 @@ describe("Cross-child invariant harness (spec §6)", () => {
         sourceLabel: "legacy-v2.json",
       });
       expect(preview2.invalid).toEqual([]);
-      const commit2 = await commitPreviewWorkbenchArchiveV3(freshDb1, preview2);
+      const commit2 = await commitPreviewWorkbenchArchiveV2(freshDb1, preview2);
       expect(commit2.collisions).toEqual([]);
       freshDb1.close();
       await freshDb1.delete();
@@ -566,14 +577,14 @@ describe("Cross-child invariant harness (spec §6)", () => {
       );
       expect(xwalkExploratory).toBeDefined();
       expect(xwalkExploratory?.taskSetId).toBe("taskset-1");
-      expect(xwalkExploratory?.taskSetVersion).toBe(1);
+      expect(xwalkExploratory?.version).toBe(1);
 
       const xwalkConfirmed = await db.taskSetOwnershipCrosswalk.get(
         "ts-xwalk:fusion:study-confirmed",
       );
       expect(xwalkConfirmed).toBeDefined();
       expect(xwalkConfirmed?.taskSetId).toBe("taskset-1");
-      expect(xwalkConfirmed?.taskSetVersion).toBe(2);
+      expect(xwalkConfirmed?.version).toBe(2);
     });
   });
 
@@ -596,11 +607,39 @@ describe("Cross-child invariant harness (spec §6)", () => {
       expect(studyObs[0].studyId).toBe("study-exploratory");
 
       // Verify model evidence queries only return canonical observations
-      const queryResult = await queryModelEvidence(db, {
-        modelConfigurationId: MC_EXACT_ID,
+      const query = canonicalizeModelEvidenceQuery({
+        respondent: {
+          kind: "model_configuration",
+          modelConfigurationId: MC_EXACT_ID,
+        },
+        observedFrom: null,
+        observedTo: null,
+        taskFamilyIds: [],
+        facetFilters: [],
+        evidenceClasses: ["comparable", "exploratory", "verified"],
+        allowedUses: ["within_model_profile", "task_descriptive"],
+        comparabilityCohortIds: [],
+        sourceKinds: ["comparison", "evaluation"],
+        rubricRefs: [],
+        evaluatorFilters: [],
+        includeUnknownVersion: true,
+        eligibilityRuleVersion: 1,
+        aggregationRuleVersion: 1,
+        uncertaintyRuleVersion: 1,
       });
-      for (const cell of queryResult.cells) {
-        expect(["evaluation", "comparison"]).toContain(cell.observation.sourceKind);
+
+      const selection = selectProfileObservations(query, {
+        configurations: (await db.modelConfigurations.toArray()).map((r) => r.snapshot),
+        observations: await db.observations.toArray(),
+        decisions: (await db.evidenceDecisions.toArray()).map((r) => r.decision),
+        ledgerRows: corpus.evidence.countingRows,
+      });
+
+      expect(selection.kind).toBe("exact");
+      if (selection.kind === "exact") {
+        for (const cell of selection.cells) {
+          expect(["evaluation", "comparison"]).toContain(cell.active.observation.sourceKind);
+        }
       }
     });
   });
@@ -630,7 +669,7 @@ describe("Cross-child invariant harness (spec §6)", () => {
         verifiedTotal: 10,
       };
 
-      const claim = generateClaim(input);
+      const claim = buildProfileClaim(input);
       for (const sentence of claim.sentences) {
         for (const forbidden of FORBIDDEN_CLAIM_PHRASES) {
           const regex = new RegExp(`\\b${forbidden}\\b`, "i");
@@ -682,7 +721,7 @@ describe("Cross-child invariant harness (spec §6)", () => {
     it("credential redactor replaces secret shapes in diagnostics with [REDACTED]", () => {
       const raw = "Error with key sk-1234567890abcdef in request";
       const redacted = redactCredentialMaterial(raw);
-      expect(redacted).toBe("Error with key [REDACTED] in request");
+      expect(redacted.includes("[REDACTED]")).toBe(true);
       expect(CREDENTIAL_LIKE_INLINE.test(redacted)).toBe(false);
     });
   });

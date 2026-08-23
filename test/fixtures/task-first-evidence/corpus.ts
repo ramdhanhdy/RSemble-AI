@@ -20,7 +20,6 @@
 
 import type {
   ComparisonResultIndex,
-  ComparisonTaskBinding,
 } from "../../../src/lib/compare/comparison-result-types";
 import type {
   EvaluationRubric,
@@ -229,7 +228,6 @@ export async function buildDeterministicCorpus(
   facet1.facetId = "engineering";
   facet1.value = "debugging";
 
-  const crosswalk1 = v2fx.makeCrosswalk("task-canon-1", 1);
 
   await db.tasks.put(v2fx.taskRecordRow(task1));
   await db.tasks.put(v2fx.taskRecordRow(task2));
@@ -240,8 +238,8 @@ export async function buildDeterministicCorpus(
   await db.taskArtifacts.put(v2fx.taskArtifactRow(artifact2));
   await db.taskArtifacts.put(v2fx.taskArtifactRow(artifact3));
   await db.taskArtifactBytes.put(v2fx.taskArtifactBytesRow("art-1", artifactBytes1));
-  await db.taskArtifactBytes.put(v2fx.taskArtifactBytesRow("art-2", artifactBytes2));
-  await db.taskArtifactBytes.put(v2fx.taskArtifactBytesRow("art-3", artifactBytes3));
+  const crosswalk1 = v2fx.makeCrosswalk("task-canon-1", 1);
+  crosswalk1.legacyScopeKey = "legacy:suite-1:task-1";
   await db.taskInstances.put(v2fx.taskInstanceRow(inst1_v1));
   await db.taskInstances.put(v2fx.taskInstanceRow(inst1_v2));
   await db.taskInstances.put(v2fx.taskInstanceRow(inst2_v1));
@@ -263,11 +261,15 @@ export async function buildDeterministicCorpus(
   taskSet1_v1.name = "Frontend Reliability v1";
   taskSet1_v1.members = [
     {
-      taskId: "task-canon-1",
-      version: 1,
+      id: "member-1",
+      taskVersionRef: { taskId: "task-canon-1", version: 1 },
       order: 0,
+      role: "organic",
       stratum: "core",
-      enabled: true,
+      weight: 1,
+      rubricOverrideRef: null,
+      executionOverrides: null,
+      unresolved: null,
     },
   ];
 
@@ -275,151 +277,140 @@ export async function buildDeterministicCorpus(
   taskSet1_v2.name = "Frontend Reliability v2";
   taskSet1_v2.members = [
     {
-      taskId: "task-canon-1",
-      version: 2,
+      id: "member-1",
+      taskVersionRef: { taskId: "task-canon-1", version: 2 },
       order: 0,
+      role: "organic",
       stratum: "core",
-      enabled: true,
+      weight: 1,
+      rubricOverrideRef: null,
+      executionOverrides: null,
+      unresolved: null,
     },
     {
-      taskId: "task-canon-2",
-      version: 1,
+      id: "member-2",
+      taskVersionRef: { taskId: "task-canon-2", version: 1 },
       order: 1,
+      role: "organic",
       stratum: "challenger",
-      enabled: true,
+      weight: 1,
+      rubricOverrideRef: null,
+      executionOverrides: null,
+      unresolved: null,
     },
   ];
-
-  const mat1 = v2fx.makeTaskSetMaterialization("mat-1", "taskset-1", 1);
-
-  await db.taskSets.put(v2fx.taskSetRecordRow(taskSet1));
-  await db.taskSetVersions.put(v2fx.taskSetVersionRow(taskSet1_v1));
-  await db.taskSetVersions.put(v2fx.taskSetVersionRow(taskSet1_v2));
-  await db.taskSetMaterializations.put(v2fx.taskSetMaterializationRow(mat1));
-
   // 4. Model Configurations: exact, rolling, partial
   const mcExact = v2fx.makeModelConfiguration(MC_EXACT_ID);
   mcExact.providerId = "openrouter";
-  mcExact.modelId = "anthropic/claude-3.5-sonnet";
-  mcExact.label = "Claude 3.5 Sonnet (2024-10-22)";
-  mcExact.identityCompleteness = "exact";
+  mcExact.requestedModel = "anthropic/claude-3.5-sonnet";
+  mcExact.resolvedModel = "anthropic/claude-3.5-sonnet-20241022";
   mcExact.resolvedVersion = "20241022";
+  mcExact.identityCompleteness = "exact";
 
   const mcRolling = v2fx.makeModelConfiguration(MC_ROLLING_ID);
   mcRolling.providerId = "openai";
-  mcRolling.modelId = "gpt-4o";
-  mcRolling.label = "GPT-4o (rolling)";
-  mcRolling.identityCompleteness = "rolling_alias";
+  mcRolling.requestedModel = "gpt-4o";
+  mcRolling.resolvedModel = "gpt-4o";
   mcRolling.resolvedVersion = null;
+  mcRolling.identityCompleteness = "rolling_alias";
 
   const mcPartial = v2fx.makeModelConfiguration(MC_PARTIAL_ID);
   mcPartial.providerId = "custom";
-  mcPartial.modelId = "custom-agent";
-  mcPartial.label = "Custom Agent";
-  mcPartial.identityCompleteness = "partial";
+  mcPartial.requestedModel = "custom-agent";
+  mcPartial.resolvedModel = null;
   mcPartial.resolvedVersion = null;
+  mcPartial.identityCompleteness = "partial";
 
   await db.modelConfigurations.put(v2fx.modelConfigurationRow(mcExact));
   await db.modelConfigurations.put(v2fx.modelConfigurationRow(mcRolling));
   await db.modelConfigurations.put(v2fx.modelConfigurationRow(mcPartial));
 
-  // 5. Runs & Details
   const run1 = v2fx.makeRunDetail("run-1");
-  run1.title = "Task-1 Execution";
-  run1.source = {
-    kind: "experiment",
-    experimentId: "exp-complete",
-    taskId: "task-canon-1",
-  };
+  run1.source = { kind: "adhoc" };
 
   const runAdHoc = v2fx.makeRunDetail("run-adhoc");
   runAdHoc.title = "Ad-hoc Comparison Execution";
-  runAdHoc.source = {
-    kind: "adhoc",
-    comparisonId: "comp-adhoc",
-  };
+  runAdHoc.source = { kind: "adhoc" };
 
   const runRetry = v2fx.makeRunDetail("run-retry");
   runRetry.title = "Retry Execution on State Machine";
+  runRetry.source = { kind: "adhoc" };
   runRetry.candidates = [
     {
+      candidateId: "c-1",
+      slotId: "slot-1",
       modelKey: "openrouter:anthropic/claude-3.5-sonnet",
-      modelId: "anthropic/claude-3.5-sonnet",
       providerId: "openrouter",
-      status: "completed",
-      durationMs: 1200,
+      model: "anthropic/claude-3.5-sonnet",
+      slug: "claude-3.5-sonnet",
+      acceptedAttemptId: "att-2",
       attempts: [
         {
           attemptId: "att-1",
-          attemptNumber: 1,
+          messages: [{ role: "user", content: "Solve state machine" }],
+          startedAt: 1000,
+          finishedAt: 1400,
           status: "failed",
-          error: "Rate limit exceeded",
-          durationMs: 400,
-          response: null,
-          tokenUsage: { prompt: 10, completion: 0, total: 10 },
-          costUsd: 0,
+          output: null,
+          tokensIn: 10,
+          tokensOut: 0,
+          error: {
+            message: "Rate limit exceeded",
+          },
         },
         {
           attemptId: "att-2",
-          attemptNumber: 2,
+          messages: [{ role: "user", content: "Solve state machine" }],
+          startedAt: 1400,
+          finishedAt: 2200,
           status: "completed",
+          output: "Fixed solution with lease validation",
+          tokensIn: 100,
+          tokensOut: 50,
           error: null,
-          durationMs: 800,
-          response: { text: "Fixed solution", timingMs: 800 },
-          tokenUsage: { prompt: 100, completion: 50, total: 150 },
-          costUsd: 0.002,
         },
       ],
-      output: "Fixed solution",
-      tokenUsage: { prompt: 100, completion: 50, total: 150 },
-      costUsd: 0.002,
-      error: null,
     },
   ];
   runRetry.judge = {
-    status: "completed",
-    winnerKeys: ["openrouter:anthropic/claude-3.5-sonnet"],
-    rankings: [
-      {
-        modelKey: "openrouter:anthropic/claude-3.5-sonnet",
-        rank: 1,
-        score: 95,
-        confidence: "high",
-        reasoning: "Correct fence validation",
-      },
-    ],
-    explanation: "Winning implementation preserves lease state.",
+    status: "idle",
+    acceptedAttemptId: null,
+    report: null,
+    consensus: null,
     attempts: [
       {
         attemptId: "judge-att-1",
-        attemptNumber: 1,
+        providerId: "openrouter",
+        model: "openai/gpt-4o",
+        instruction: "Evaluate correctness",
+        messages: [{ role: "user", content: "Judge attempt 1" }],
+        blindLabelToCandidateId: { A: "c-1" },
+        candidateAttemptIdsByCandidateId: { "c-1": "att-1" },
+        startedAt: 2200,
+        finishedAt: 2400,
         status: "failed",
-        error: "Malformed JSON response",
-        durationMs: 200,
-        result: null,
+        error: { message: "Candidate output is null" },
+        report: null,
+        consensus: null,
       },
       {
         attemptId: "judge-att-2",
-        attemptNumber: 2,
+        providerId: "openrouter",
+        model: "openai/gpt-4o",
+        instruction: "Evaluate correctness",
+        messages: [{ role: "user", content: "Judge attempt 2" }],
+        blindLabelToCandidateId: { A: "c-1" },
+        candidateAttemptIdsByCandidateId: { "c-1": "att-2" },
+        startedAt: 2400,
+        finishedAt: 2850,
         status: "completed",
         error: null,
-        durationMs: 450,
-        result: {
-          winnerKeys: ["openrouter:anthropic/claude-3.5-sonnet"],
-          rankings: [
-            {
-              modelKey: "openrouter:anthropic/claude-3.5-sonnet",
-              rank: 1,
-              score: 95,
-              confidence: "high",
-              reasoning: "Correct fence validation",
-            },
-          ],
-          explanation: "Winning implementation preserves lease state.",
-        },
+        report: null,
+        consensus: null,
       },
     ],
   };
+  runRetry.winnerKeys = ["openrouter:anthropic/claude-3.5-sonnet"];
 
   const run1Summary = v2fx.makeRunSummary("run-1");
   const runAdHocSummary = v2fx.makeRunSummary("run-adhoc");
@@ -428,15 +419,14 @@ export async function buildDeterministicCorpus(
   const legacySummaryOnly: LegacyRunSummary = {
     id: "run-legacy-1",
     kind: "legacy",
-    title: "Historical Run 2025",
+    schemaVersion: "1-import",
     createdAt: CORPUS_DETERMINISTIC_NOW - 100_000,
+    taskExcerpt: "Historical run prompt summary",
     modelKeys: ["openai:gpt-4"],
-    mode: "eval",
-    status: "completed",
-    modelCount: 1,
-    hasJudge: true,
-    hasFusion: false,
-    durationMs: 2500,
+    winnerKeys: ["openai:gpt-4"],
+    scoresByModelKey: { "openai:gpt-4": 88 },
+    detailAvailable: false,
+    searchText: "Historical Run 2025 openai:gpt-4",
   };
 
   await db.runDetails.put(v2fx.runDetailRow(run1));
@@ -447,56 +437,70 @@ export async function buildDeterministicCorpus(
   await db.runSummaries.put(v2fx.runSummaryRow(runAdHocSummary));
   await db.runSummaries.put(v2fx.runSummaryRow(runRetrySummary));
   await db.runSummaries.put({
-    id: legacySummaryOnly.id,
     kind: "legacy",
-    createdAt: legacySummaryOnly.createdAt,
-    modelKeys: legacySummaryOnly.modelKeys,
-    mode: legacySummaryOnly.mode,
-    status: legacySummaryOnly.status,
     summary: legacySummaryOnly,
-    revision: 1,
+    id: legacySummaryOnly.id,
+    revision: 0,
+    createdAt: legacySummaryOnly.createdAt,
+    completedAt: null,
+    status: null,
+    mode: null,
+    sourceKind: "adhoc",
+    sourceProtocolFingerprint: null,
+    sourceExperimentTaskAttemptId: null,
+    modelKeys: legacySummaryOnly.modelKeys,
   });
-
   // 6. Suites & Experiments
   const suite1 = v2fx.makeSuite("suite-1");
   suite1.name = "Legacy Suite 1";
 
   const expComplete = v2fx.makeExperiment("exp-complete", "suite-1");
   expComplete.status = "completed";
-  expComplete.taskSetRef = { id: "taskset-1", version: 1 };
   expComplete.tasks = [
     {
       taskId: "task-canon-1",
-      taskVersion: 1,
-      order: 0,
-      runs: [{ runId: "run-1", modelKey: "openrouter:anthropic/claude-3.5-sonnet", status: "completed" }],
-      status: "completed",
+      selectedAttemptId: "att-exp-1",
+      attempts: [
+        {
+          id: "att-exp-1",
+          runId: "run-1",
+          trial: 1,
+          status: "completed",
+          startedAt: 1000,
+          finishedAt: 2000,
+          error: null,
+        },
+      ],
     },
   ];
 
   const expIncomplete = v2fx.makeExperiment("exp-incomplete", "suite-1");
   expIncomplete.status = "running";
-  expIncomplete.taskSetRef = { id: "taskset-1", version: 2 };
   expIncomplete.tasks = [
     {
       taskId: "task-canon-1",
-      taskVersion: 2,
-      order: 0,
-      runs: [{ runId: "run-retry", modelKey: "openrouter:anthropic/claude-3.5-sonnet", status: "completed" }],
-      status: "completed",
+      selectedAttemptId: "att-exp-2",
+      attempts: [
+        {
+          id: "att-exp-2",
+          runId: "run-retry",
+          trial: 1,
+          status: "completed",
+          startedAt: 1000,
+          finishedAt: 2000,
+          error: null,
+        },
+      ],
     },
     {
       taskId: "task-canon-2",
-      taskVersion: 1,
-      order: 1,
-      runs: [],
-      status: "pending",
+      selectedAttemptId: null,
+      attempts: [],
     },
   ];
 
   const expRosterExtension = v2fx.makeExperiment("exp-roster-ext", "suite-1");
   expRosterExtension.status = "completed";
-  expRosterExtension.taskSetRef = { id: "taskset-1", version: 1 };
 
   await db.suites.put(v2fx.suiteRow(suite1));
   await db.experiments.put(v2fx.experimentRow(expComplete));
@@ -506,7 +510,7 @@ export async function buildDeterministicCorpus(
   // 7. Comparisons: adhoc, canonical, withRetry
   const compSnapRef = "snap:sha256:" + "d".repeat(64);
 
-  const compAdHoc = v2fx.makeComparisonIndex("comp-adhoc", {
+  const compAdHoc = v2fx.makeComparisonIndex("run-adhoc", {
     taskBinding: { kind: "ad_hoc", inputSnapshotRef: compSnapRef },
     title: "Ad-hoc Comparison 1",
     runId: "run-adhoc",
@@ -514,7 +518,7 @@ export async function buildDeterministicCorpus(
     mode: "rank",
   });
 
-  const compCanonical = v2fx.makeComparisonIndex("comp-canonical", {
+  const compCanonical = v2fx.makeComparisonIndex("run-1", {
     taskBinding: { kind: "canonical", taskId: "task-canon-1", taskVersion: 1 },
     title: "Canonical Task Comparison",
     runId: "run-1",
@@ -522,7 +526,7 @@ export async function buildDeterministicCorpus(
     mode: "rank",
   });
 
-  const compWithRetry = v2fx.makeComparisonIndex("comp-retry", {
+  const compWithRetry = v2fx.makeComparisonIndex("run-retry", {
     taskBinding: { kind: "canonical", taskId: "task-canon-1", taskVersion: 2 },
     title: "Comparison With Retry Lineage",
     runId: "run-retry",
@@ -536,36 +540,48 @@ export async function buildDeterministicCorpus(
 
   // 8. Evidence Observations, Decisions, Verifier Outcomes, Counting Rows
   const obs1 = v2fx.makeEvidenceObservation(MC_EXACT_ID, {
-    id: "obs-canon-1",
     sourceKind: "evaluation",
-    sourceResultId: "exp-complete",
+    sourceResultId: "run-1",
     taskId: "task-canon-1",
     taskVersion: 1,
     taskInstanceId: "inst-1-v1",
     observedAt: CORPUS_DETERMINISTIC_NOW,
-    evidenceClass: "verified",
+    outcome: {
+      judgeAccepted: true,
+      overallScore: 92,
+      criterionValues: [{ criterionId: "crit-1", value: 92 }],
+      verifierPassed: null,
+    },
   });
 
   const obs2 = v2fx.makeEvidenceObservation(MC_ROLLING_ID, {
-    id: "obs-canon-2",
     sourceKind: "evaluation",
-    sourceResultId: "exp-incomplete",
+    sourceResultId: "run-retry",
     taskId: "task-canon-1",
     taskVersion: 2,
     taskInstanceId: "inst-1-v2",
     observedAt: CORPUS_DETERMINISTIC_NOW + 1000,
-    evidenceClass: "judged",
+    outcome: {
+      judgeAccepted: true,
+      overallScore: 88,
+      criterionValues: [{ criterionId: "crit-1", value: 88 }],
+      verifierPassed: null,
+    },
   });
 
   const obs3 = v2fx.makeEvidenceObservation(MC_EXACT_ID, {
-    id: "obs-canon-3",
     sourceKind: "comparison",
-    sourceResultId: "comp-canonical",
+    sourceResultId: "run-1",
     taskId: "task-canon-1",
     taskVersion: 1,
     taskInstanceId: "inst-1-v1",
     observedAt: CORPUS_DETERMINISTIC_NOW + 2000,
-    evidenceClass: "judged",
+    outcome: {
+      judgeAccepted: true,
+      overallScore: 95,
+      criterionValues: [{ criterionId: "crit-1", value: 95 }],
+      verifierPassed: null,
+    },
   });
 
   const dec1 = v2fx.makeEligibilityDecision(obs1.id);
@@ -573,16 +589,16 @@ export async function buildDeterministicCorpus(
 
   const dec2 = v2fx.makeEligibilityDecision(obs2.id);
   dec2.status = "provisional";
-  dec2.reasons = ["rolling_alias_version_windowed"];
+  dec2.reasonCodes = ["model_version_unreported"];
 
   const dec3 = v2fx.makeEligibilityDecision(obs3.id);
   dec3.status = "eligible";
 
-  const vo1 = v2fx.makeExecutedVerifierOutcome("run-1", "task-canon-1", "openrouter:anthropic/claude-3.5-sonnet");
-  vo1.verifierPassed = true;
+  const vo1 = v2fx.makeExecutedVerifierOutcome("run-1", "task-canon-1", "openrouter:m1");
+  vo1.passed = true;
 
-  const vo2 = v2fx.makeExecutedVerifierOutcome("run-retry", "task-canon-1", "openrouter:anthropic/claude-3.5-sonnet");
-  vo2.verifierPassed = false;
+  const vo2 = v2fx.makeExecutedVerifierOutcome("run-retry", "task-canon-1", "openrouter:m1");
+  vo2.passed = false;
 
   await db.observations.put(v2fx.evidenceObservationRow(obs1));
   await db.observations.put(v2fx.evidenceObservationRow(obs2));
@@ -592,7 +608,6 @@ export async function buildDeterministicCorpus(
   await db.evidenceDecisions.put(v2fx.evidenceDecisionRow(dec3));
   await db.verifierOutcomes.put(v2fx.verifierOutcomeRow(vo1));
   await db.verifierOutcomes.put(v2fx.verifierOutcomeRow(vo2));
-
   const countingRows: EvidenceLedgerRow[] = [
     {
       lineageCellKey: "task-canon-1:1:inst-1-v1:mc:exact",
@@ -631,21 +646,26 @@ export async function buildDeterministicCorpus(
   const studyExploratory = v3fx.makePolicyStudyRecord("study-exploratory");
   studyExploratory.title = "Lease Recovery Policy Exploration";
   studyExploratory.claimLevel = "exploratory";
+  studyExploratory.reportRef = "study-exploratory";
   studyExploratory.definition.workload = {
     taskSetId: "taskset-1",
     version: 1,
     manifestDigest: DIGEST_A,
   };
+  studyExploratory.definitionFingerprint = fingerprintStudyValue(studyExploratory.definition);
 
   const studyConfirmed = v3fx.makePolicyStudyRecord("study-confirmed");
   studyConfirmed.title = "Lease Recovery Policy Confirmation";
   studyConfirmed.claimLevel = "confirmed";
   studyConfirmed.confirmationOf = "study-exploratory";
+  studyConfirmed.reportRef = "study-confirmed";
   studyConfirmed.definition.workload = {
     taskSetId: "taskset-1",
     version: 2,
     manifestDigest: DIGEST_B,
   };
+  studyConfirmed.definition.claimPlan = "confirmation";
+  studyConfirmed.definitionFingerprint = fingerprintStudyValue(studyConfirmed.definition);
 
   const trial1 = v3fx.makePolicyStudyTrial("trial-1", "study-exploratory");
   const trial2 = v3fx.makeStudyTrialSuccessor("trial-2", "study-exploratory");
@@ -655,11 +675,21 @@ export async function buildDeterministicCorpus(
 
   const playbook1 = v3fx.makePolicyReportPayload("study-exploratory");
   const playbookRow1: PolicyPlaybookRow = {
-    id: "pb-study-exploratory",
+    id: "study-exploratory",
     studyId: "study-exploratory",
     definitionFingerprint: studyExploratory.definitionFingerprint,
     digest: `sha256:pb1`,
     playbook: playbook1,
+    createdAt: CORPUS_DETERMINISTIC_NOW,
+  };
+
+  const playbook2 = v3fx.makePolicyReportPayload("study-confirmed");
+  const playbookRow2: PolicyPlaybookRow = {
+    id: "study-confirmed",
+    studyId: "study-confirmed",
+    definitionFingerprint: studyConfirmed.definitionFingerprint,
+    digest: `sha256:pb2`,
+    playbook: playbook2,
     createdAt: CORPUS_DETERMINISTIC_NOW,
   };
 
@@ -758,37 +788,18 @@ export async function buildDeterministicCorpus(
     finishedAt: studyObs1.finishedAt,
   });
   await db.policyPlaybooks.put(playbookRow1);
-
+  await db.policyPlaybooks.put(playbookRow2);
   // 10. Task Set Ownership Crosswalks
-  const xwalkExploratory: TaskSetOwnershipCrosswalkRow = {
-    key: "ts-xwalk:fusion:study-exploratory",
-    kind: "fusion-owner",
-    legacyId: "study-exploratory",
-    taskSetId: "taskset-1",
-    taskSetVersion: 1,
-    taskSetManifestDigest: DIGEST_A,
-    createdAt: CORPUS_DETERMINISTIC_NOW,
-  };
+  const xwalkSuite = v2fx.makeSuiteManifestCrosswalk("taskset-1", DIGEST_A);
+  const xwalkExploratory = v2fx.makeFusionOwnerCrosswalk("study-exploratory", "taskset-1");
+  const xwalkConfirmed = v2fx.makeFusionOwnerCrosswalk("study-confirmed", "taskset-1");
+  xwalkConfirmed.version = 2;
+  if (xwalkConfirmed.suiteRef) xwalkConfirmed.suiteRef.suiteVersion = 2;
+  const xwalkExpOwner = v2fx.makeExperimentOwnerCrosswalk("exp-complete", "suite-1");
 
-  const xwalkConfirmed: TaskSetOwnershipCrosswalkRow = {
-    key: "ts-xwalk:fusion:study-confirmed",
-    kind: "fusion-owner",
-    legacyId: "study-confirmed",
-    taskSetId: "taskset-1",
-    taskSetVersion: 2,
-    taskSetManifestDigest: DIGEST_B,
-    createdAt: CORPUS_DETERMINISTIC_NOW,
-  };
-
-  const xwalkExpOwner: TaskSetOwnershipCrosswalkRow = {
-    key: "ts-xwalk:exp-owner:exp-complete",
-    kind: "experiment-owner",
-    legacyId: "exp-complete",
-    taskSetId: "taskset-1",
-    taskSetVersion: 1,
-    taskSetManifestDigest: DIGEST_A,
-    createdAt: CORPUS_DETERMINISTIC_NOW,
-  };
+  await db.taskSetOwnershipCrosswalk.put(xwalkSuite);
+  await db.taskSetOwnershipCrosswalk.put(xwalkExploratory);
+  await db.taskSetOwnershipCrosswalk.put(xwalkConfirmed);
   // Store cutover receipt
   const receipt = createDeterministicReceipt({
     generatedAt: CORPUS_DETERMINISTIC_NOW,
@@ -810,7 +821,7 @@ export async function buildDeterministicCorpus(
       studyTrials: 2,
       studyAttempts: 1,
       studyObservations: 1,
-      policyPlaybooks: 1,
+      policyPlaybooks: 2,
     },
     discardedCounts: {
       fusionRecipes: 0,
