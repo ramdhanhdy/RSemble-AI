@@ -146,9 +146,36 @@ describe("DataDiagnostics — reporting", () => {
 
   it("shows source and derived index counts for canonical entity types", async () => {
     const db = await openDb();
-    await db.tasks.put({ id: "task-1" });
-    await db.tasks.put({ id: "task-2" });
-    await db.taskSets.put({ id: "ts-1" });
+    await db.tasks.put({
+      id: "task-1",
+      record: {},
+      latestVersion: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: null,
+      origin: "test",
+      revision: 0,
+    });
+    await db.tasks.put({
+      id: "task-2",
+      record: {},
+      latestVersion: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: null,
+      origin: "test",
+      revision: 0,
+    });
+    await db.taskSets.put({
+      id: "ts-1",
+      record: {},
+      latestVersion: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      archivedAt: null,
+      origin: "test",
+      revision: 0,
+    });
     await db.searchDocuments.put({
       type: "task",
       id: "task-1",
@@ -178,7 +205,7 @@ describe("DataDiagnostics — reporting", () => {
   it("reports unresolved crosswalks and orphan references with safe ids and types", async () => {
     const db = await openDb();
     // Valid crosswalk: target version exists → not an orphan.
-    await db.taskVersions.put({ taskId: "task-ok", version: 1 });
+    await db.taskVersions.put({ taskId: "task-ok", version: 1, version_: {}, createdAt: 1 });
     await db.taskMigrationCrosswalk.put({
       legacyScopeKey: "suite::v1::task-ok::digest",
       taskId: "task-ok",
@@ -203,17 +230,25 @@ describe("DataDiagnostics — reporting", () => {
     const db = await openDb();
     await db.evidenceIndexJobs.put({
       sourceResultId: "run-1",
-      sourceKind: "run",
+      sourceKind: "comparison",
       status: "complete",
       ruleVersion: 1,
+      sourceRevision: 0,
       updatedAt: 1,
+      errorKind: null,
+      errorMessage: null,
+      summary: null,
     });
     await db.evidenceIndexJobs.put({
       sourceResultId: "run-2",
-      sourceKind: "run",
+      sourceKind: "comparison",
       status: "queued",
       ruleVersion: 1,
+      sourceRevision: 0,
       updatedAt: 2,
+      errorKind: null,
+      errorMessage: null,
+      summary: null,
     });
     const h = renderDiagnostics(db);
     await settle();

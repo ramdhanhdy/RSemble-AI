@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Stethoscope } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { isRecordType, type RecordStatus } from "../lib/records/record-reference";
 import { useRecordsRepository } from "../lib/persistence/repository-context";
@@ -133,6 +133,13 @@ export function RecordsWorkspace({
           />
         </div>
         <div id="import-data" className="shrink-0 border-t border-edge px-3 py-2">
+          <Link
+            to="/records/diagnostics"
+            className="motion-state mb-2 flex min-h-[44px] items-center gap-1.5 rounded-md px-2 text-sm text-text-secondary hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Stethoscope size={16} aria-hidden="true" />
+            Data diagnostics
+          </Link>
           <DataArchiveActions />
         </div>
       </div>
@@ -154,6 +161,13 @@ export function RecordsWorkspace({
           />
         </div>
         <div id="import-data" className="shrink-0 border-t border-edge px-3 py-2">
+          <Link
+            to="/records/diagnostics"
+            className="motion-state mb-2 flex min-h-[44px] items-center gap-1.5 rounded-md px-2 text-sm text-text-secondary hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Stethoscope size={16} aria-hidden="true" />
+            Data diagnostics
+          </Link>
           <DataArchiveActions />
         </div>
       </div>

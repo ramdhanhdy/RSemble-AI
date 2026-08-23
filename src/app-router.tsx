@@ -42,6 +42,9 @@ const RunsWorkspace = lazy(() =>
 const RecordsWorkspace = lazy(() =>
   import("./workspaces/RecordsWorkspace").then((m) => ({ default: m.RecordsWorkspace })),
 );
+const DataDiagnostics = lazy(() =>
+  import("./workspaces/records/DataDiagnostics").then((m) => ({ default: m.DataDiagnostics })),
+);
 const EvaluationsWorkspace = lazy(() =>
   import("./workspaces/EvaluationsWorkspace").then((m) => ({ default: m.EvaluationsWorkspace })),
 );
@@ -148,6 +151,9 @@ export function AppRoutes({
         path="/records"
         element={withSuspense(<RecordsWorkspace onOpenInCompare={onOpenInCompare} />)}
       />
+      {/* Diagnostics must rank above the dynamic :recordType segment so the
+          static path always resolves to the diagnostics surface. */}
+      <Route path="/records/diagnostics" element={withSuspense(<DataDiagnostics />)} />
       <Route
         path="/records/:recordType/:recordId"
         element={withSuspense(<RecordsWorkspace onOpenInCompare={onOpenInCompare} />)}
