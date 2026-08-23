@@ -28,7 +28,8 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "test:coverage": "vitest run --coverage",
-    "qa:model-evidence-profiles-production": "node scripts/qa-model-evidence-profiles-production.mjs"
+    "qa:model-evidence-profiles-production": "node scripts/qa-model-evidence-profiles-production.mjs",
+    "qa:task-first-performance": "node scripts/qa-task-first-performance.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
