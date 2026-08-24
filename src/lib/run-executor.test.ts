@@ -17,7 +17,7 @@ import {
   type FrozenJudgeRetryRequest,
   type FrozenFusionRequest,
 } from "./run-executor";
-import { HOLISTIC_EVALUATION } from "./evaluations/evaluation-profile-adhoc";
+import { HOLISTIC_EVALUATION } from "./evaluations/evaluation-rubric-adhoc";
 
 // ---------------------------------------------------------------------------
 // Mocks

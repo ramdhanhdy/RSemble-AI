@@ -1,0 +1,198 @@
+{
+  "generatedAt": "2026-08-23T22:09:26.485Z",
+  "environment": {
+    "os": "Windows_NT 10.0.26200 (win32)",
+    "arch": "x64",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "totalMemoryMb": 16005,
+    "freeMemoryMb": 729,
+    "node": "v25.9.0",
+    "pid": 13248
+  },
+  "spec": "docs/specs/archive/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
+  "harness": "qa-task-first-workbench",
+  "status": "not_executed",
+  "reason": "Dry-run / receipt-only flag passed",
+  "matrix": {
+    "specReference": "docs/specs/archive/task-first-evidence-workbench/10-retrieval-and-hardening/retrieval-and-hardening-spec.md §8, §9",
+    "declaredViewports": [
+      {
+        "name": "Desktop 1440",
+        "width": 1440,
+        "height": 900,
+        "scale": 1,
+        "mobile": false
+      },
+      {
+        "name": "Laptop/Tablet Landscape 1024",
+        "width": 1024,
+        "height": 768,
+        "scale": 1,
+        "mobile": false
+      },
+      {
+        "name": "Tablet Portrait 768",
+        "width": 768,
+        "height": 1024,
+        "scale": 1,
+        "mobile": true
+      },
+      {
+        "name": "Mobile Phone 390",
+        "width": 390,
+        "height": 844,
+        "scale": 1,
+        "mobile": true
+      }
+    ],
+    "declaredAccessibilityConditions": [
+      {
+        "name": "200% Zoom",
+        "scale": 2,
+        "condition": "zero horizontal document overflow, touch/click targets preserved"
+      },
+      {
+        "name": "Reduced Motion",
+        "emulation": "prefers-reduced-motion: reduce",
+        "condition": "css transitions/animations instant/disabled"
+      },
+      {
+        "name": "Keyboard Only",
+        "condition": "tab-walk interactive reachability, :focus-visible indicators, Escape dismissals"
+      },
+      {
+        "name": "Screen Reader Semantics",
+        "condition": "landmarks (<header>, <main>, <nav>, role='region'), real <table> with <th scope>"
+      }
+    ],
+    "declaredStates": [
+      "new (fresh empty collections)",
+      "legacy (v1/v2 imported records)",
+      "migration (in-flight inspection, complete discard/convert receipt)",
+      "error (not-found, corrupt crosswalk, unknown version refusal)",
+      "loading / partial (streamed chunks, skeleton fallbacks)",
+      "storage-full (quota simulated refusal, non-destructive repair)"
+    ],
+    "declaredRoutes": {
+      "primary": [
+        "/compare",
+        "/compare/results/:comparisonId",
+        "/evaluations",
+        "/evaluations/sets",
+        "/evaluations/sets/new",
+        "/evaluations/sets/:taskSetId",
+        "/evaluations/sets/:taskSetId/versions/:version",
+        "/evaluations/sets/:taskSetId/tasks/:taskId",
+        "/evaluations/rubrics",
+        "/evaluations/rubrics/:rubricId",
+        "/evaluations/rubrics/:rubricId/versions/:version",
+        "/evaluations/results/:evaluationExecutionId",
+        "/lab",
+        "/lab/recipes",
+        "/lab/recipes/:recipeId/versions/:version",
+        "/lab/model-pools",
+        "/lab/model-pools/:poolId/versions/:version",
+        "/lab/studies/:studyId",
+        "/models",
+        "/models/:modelConfigurationId",
+        "/models/:modelConfigurationId/evidence/:observationId",
+        "/models/rollups/:rollupId/versions/:version"
+      ],
+      "secondary": [
+        "/records",
+        "/records/diagnostics",
+        "/records/:recordType/:recordId",
+        "/attention",
+        "/search",
+        "/runs",
+        "/runs/:runId",
+        "/tasks",
+        "/tasks/new",
+        "/tasks/:taskId",
+        "/tasks/:taskId/versions/:version"
+      ],
+      "canonicalAndRetiredFusion": [
+        "/evaluations/:suiteId/fusion/:studyId (retired static notice)",
+        "/lab/studies/:studyId (canonical policy study route)",
+        "/evaluations/sets/:taskSetId (canonical task set route)"
+      ]
+    },
+    "declaredProbes": [
+      "deterministic_fixture_integrity",
+      "e_drive_containment_policy",
+      "zero_paid_provider_egress_contract",
+      "secret_probe_sanitization_contract",
+      "responsive_ladder_coverage",
+      "accessibility_conditions_coverage",
+      "primary_and_secondary_routes_coverage"
+    ]
+  },
+  "corpusSummary": {
+    "runSummaries": 5,
+    "runDetails": 5,
+    "comparisonResults": 2,
+    "tasks": 2,
+    "taskVersions": 2,
+    "taskSets": 1,
+    "taskSetVersions": 1,
+    "rubrics": 1,
+    "modelConfigurations": 2,
+    "observations": 2,
+    "labRecipes": 1,
+    "modelPools": 1,
+    "studies": 1,
+    "searchDocuments": 6
+  },
+  "probes": [
+    {
+      "name": "deterministic_fixture_integrity",
+      "pass": null,
+      "not_executed": true,
+      "description": "Corpus entities strictly adhere to schema v15 shape"
+    },
+    {
+      "name": "e_drive_containment_policy",
+      "pass": null,
+      "not_executed": true,
+      "description": "All QA paths, caches, profiles, and dumps contained on E:"
+    },
+    {
+      "name": "zero_paid_provider_egress_contract",
+      "pass": null,
+      "not_executed": true,
+      "description": "Mock network egress gate intercepts all external AI endpoints"
+    },
+    {
+      "name": "secret_probe_sanitization_contract",
+      "pass": null,
+      "not_executed": true,
+      "description": "Credential tokens in error fields redacted before UI rendering"
+    },
+    {
+      "name": "responsive_ladder_coverage",
+      "pass": null,
+      "not_executed": true,
+      "description": "All 4 viewports (1440, 1024, 768, 390) registered and probed"
+    },
+    {
+      "name": "accessibility_conditions_coverage",
+      "pass": null,
+      "not_executed": true,
+      "description": "200% zoom, reduced motion, keyboard-only, and semantic landmarks registered"
+    },
+    {
+      "name": "primary_and_secondary_routes_coverage",
+      "pass": null,
+      "not_executed": true,
+      "description": "All 22 primary, 11 secondary, and 3 canonical/retired fusion routes covered"
+    }
+  ],
+  "summary": {
+    "totalProbes": 7,
+    "passedProbes": 0,
+    "failedProbes": 0,
+    "notExecutedProbes": 7,
+    "verdict": "RECEIPT_ONLY"
+  }
+}

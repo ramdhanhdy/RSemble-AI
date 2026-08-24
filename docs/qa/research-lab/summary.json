@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-08-19T01:14:19.076Z",
+  "baseUrl": "http://127.0.0.1:5199/",
+  "stages": {
+    "vitestProbes": {
+      "ok": true,
+      "exitCode": 0,
+      "outputTail": "\n RUN  v4.1.10 E:/2026/RSemble-AI\n\n\n Test Files  6 passed (6)\n      Tests  62 passed (62)\n   Start at  08:14:19\n   Duration  4.38s (transform 2.32s, setup 416ms, import 5.67s, tests 3.79s, environment 506ms)\n\n(node:23200) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:31736) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:17624) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:2540) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:14076) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n(node:26516) Warning: `--localstorage-file` was provided without a valid path\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    "fusionAccounting": {
+      "ok": true,
+      "exitCode": 0,
+      "outputTail": "  lib/evaluations/experiment-controller.test.ts — 4 fusion hit(s)\n  lib/evaluations/experiment-repair.test.ts — 1 fusion hit(s)\n  lib/evaluations/experiment-roster-extension.test.ts — 1 fusion hit(s)\n  lib/evaluations/fusion-confirmation.test.ts — 6 fusion hit(s)\n  lib/evaluations/fusion-recipes.test.ts — 6 fusion hit(s)\n  lib/evaluations/fusion-study-controller.test.ts — 4 fusion hit(s)\n  lib/evaluations/fusion-study-types.test.ts — 5 fusion hit(s)\n  lib/evaluations/fusion-study-validation.test.ts — 3 fusion hit(s)\n  lib/evaluations/fusion-study.integration.test.ts — 11 fusion hit(s)\n  lib/evaluations/policy-runner.test.ts — 1 fusion hit(s)\n  lib/compare/playbook-execution.test.ts — 16 fusion hit(s)\n  lib/compare/pre-call-persistence.test.ts — 1 fusion hit(s)\n\n## UNEXPLAINED (must be empty) (0)\n  (none)\n\n## FORBIDDEN in product code (must be empty — REV-6 regression) (0)\n  (none)\n\nPASS: every remaining Fusion hit is classified; no forbidden phenotype present in product code."
+    },
+    "browserMatrix": {
+      "ok": true,
+      "surfaces": 18,
+      "probes": 97,
+      "longTasks": {
+        "budgetMs": 1000,
+        "count": 1,
+        "maxDurationMs": 62
+      },
+      "consoleErrorCount": 0,
+      "migrationBlocked": {
+        "shellRendered": true,
+        "bodySnippet": "RSemble AI\nCompare\nRuns\nEvaluations\nLive\n⌘\nK\nPolicy Studies\n0\nFusion Recipes\n0\nModel Pools\n0\n\nRESEARCH LAB\n\nPolicy Studies\n0 studies\nNew Policy Study\nNo policy studies yet\n\nA Policy Study pins an exac",
+        "newConsoleErrors": 0
+      },
+      "playbookPreflight": {
+        "open": true,
+        "snippet": "RSemble AI\nCompare\nRuns\nEvaluations\nLive\n⌘\nK\nFINISH\nRun with playbook\nRank\nFuse\n01\nCOMMAND\n\nDefine your task, select models, choose a judge, and set evaluation criteria.\n\nTASK\nATTACH\nTRY AN EXAMPLE\n~0 tokens\nMODELS · 2 selected\nAdd model\nGLM 5.2\nOPENROUTER\n‎z-ai/glm-5.2\n$0.49/M\n·\n— no history yet\nTe",
+        "focusTrapHeld": true,
+        "escapeClosed": true,
+        "focusAfterEscape": "BODY"
+      }
+    }
+  },
+  "matrix": null
+}

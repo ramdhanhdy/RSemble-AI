@@ -2,7 +2,7 @@
 // Slice 5 — Run → Compare config preload (runConfigFromRecord) unit tests.
 //
 // Verifies the honest-preload contract: the frozen command-pane config is
-// derived EXACTLY from what the record stores (task, resolved profile,
+// derived EXACTLY from what the record stores (task, resolved rubric,
 // candidate roster, judge target from the accepted attempt, reasoning
 // policy) and never fabricates anything the record does not contain.
 // =============================================================================
@@ -213,7 +213,7 @@ describe("runConfigFromRecord — honest preload (Slice 5 G2)", () => {
     expect(config.slots.every((s) => s.enabled)).toBe(true);
   });
 
-  it("resolves a profile-kind evaluation with the persisted snapshot when the record used a profile", () => {
+  it("resolves a rubric-kind evaluation with the persisted snapshot when the record used a rubric", () => {
     const record = makeRecord({
       evaluation: {
         profile: {
@@ -237,7 +237,7 @@ describe("runConfigFromRecord — honest preload (Slice 5 G2)", () => {
     });
   });
 
-  it("falls back to holistic evaluation when the record has no profile", () => {
+  it("falls back to holistic evaluation when the record has no rubric", () => {
     const config = runConfigFromRecord(makeRecord());
     expect(config.evaluation).toEqual({ kind: "holistic" });
   });

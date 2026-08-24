@@ -1,12 +1,14 @@
 // =============================================================================
-// WorkspaceNav — desktop primary navigation (Compare · Runs · Evaluations).
-// See UI.md §2 and spec §5.2. Rendered inside the Header at md+ (>=768px).
-// Real links with aria-current="page" on the active route. The active state
-// uses the cyan accent sparingly per DESIGN.md.
+// WorkspaceNav — desktop primary navigation (Compare · Evaluations · Lab ·
+// Models). Child 08 spec §G.5: the four meaning-ordered destinations are the
+// only primary navigation; Runs lives on as the Records utility and legacy
+// routes. Real links with aria-current="page" on the active route; the active
+// item adds a static 2px bottom accent bar (non-hue-only signal). No sliding
+// indicator, no Records entry — Records is secondary chrome (§C.2).
 // =============================================================================
 
 import { NavLink } from "react-router-dom";
-import { GitCompare, History, FlaskConical, type LucideIcon } from "lucide-react";
+import { Cpu, FlaskConical, GitCompare, TestTubes, type LucideIcon } from "lucide-react";
 
 interface WorkspaceLink {
   to: string;
@@ -16,8 +18,9 @@ interface WorkspaceLink {
 
 const WORKSPACES: readonly WorkspaceLink[] = [
   { to: "/compare", label: "Compare", icon: GitCompare },
-  { to: "/runs", label: "Runs", icon: History },
   { to: "/evaluations", label: "Evaluations", icon: FlaskConical },
+  { to: "/lab", label: "Lab", icon: TestTubes },
+  { to: "/models", label: "Models", icon: Cpu },
 ] as const;
 
 export function WorkspaceNav() {
@@ -30,7 +33,9 @@ export function WorkspaceNav() {
           aria-current="page"
           className={({ isActive }) =>
             `flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors duration-150 ${
-              isActive ? "text-accent" : "text-text-secondary hover:bg-panel hover:text-text"
+              isActive
+                ? "text-accent shadow-[inset_0_-2px_0_0_#00e5ff]"
+                : "text-text-secondary hover:bg-panel hover:text-text"
             }`
           }
         >

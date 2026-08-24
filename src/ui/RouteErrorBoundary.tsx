@@ -3,7 +3,7 @@
 // error inside a routed workspace without unmounting the root app.
 //
 // Plan 008 Workstream B: route-level lazy chunks (Runs, Evaluations, suites,
-// profiles, fusion study, experiment detail) load on first navigation. If a
+// rubrics, fusion study, experiment detail) load on first navigation. If a
 // chunk fails to load (transient network) or a routed workspace throws during
 // render, a boundary at the top of the routed area keeps the Compare reducer,
 // controllers, repositories, and executor/experiment state mounted above it

@@ -18,7 +18,7 @@ import type {
   JudgeComparison,
 } from "../studio-data";
 import { isUsableCandidate } from "../lib/pipeline";
-import { formatCandidateScoreDisplay } from "../lib/evaluations/evaluation-profile";
+import { formatCandidateScoreDisplay } from "../lib/evaluations/evaluation-rubric";
 import { FailedCandidates } from "./FailedCandidates";
 import { CandidateAnswer } from "./CandidateAnswer";
 import { BrandAvatar } from "./brand-icons";

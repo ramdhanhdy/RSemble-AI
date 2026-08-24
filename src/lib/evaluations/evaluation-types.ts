@@ -79,25 +79,56 @@ export interface RequirementGroup {
   mode: "ALL"; // only mode in v1; MEAN is deferred
 }
 
-export interface EvaluationProfile {
+/**
+ * Optional authored criterion-to-facet mapping (rubric-terminology spec §5.3).
+ *
+ * Disclosed evidence metadata only — never consumed by scoring math, never
+ * used to infer mappings, and never used to authorize model-profile
+ * aggregation. Child 06 decides how authored mappings are consumed. The
+ * field may remain empty; unmapped criteria stay visible and cannot silently
+ * power facet-level claims.
+ */
+export interface CriterionFacetMapping {
+  criterionId: string;
+  facetId: string;
+  mappingKind: "direct" | "supporting";
+  source: "authored" | "imported";
+}
+
+/**
+ * Canonical scoring rubric: an immutable versioned set of criteria (graded,
+ * binary, or legacy 1/3/5) plus optional requirement groups and compliance
+ * influence. This is the canonical domain name for the scoring object
+ * historically called an "evaluation profile". Persisted field and store names
+ * (`evaluationProfileId`, `profiles`, `profileVersions`) are frozen and
+ * unchanged; only the domain type name is canonicalized.
+ */
+export interface EvaluationRubric {
   id: string;
   version: number;
   name: string;
   description: string;
   judgeInstruction: string;
   criteria: EvaluationCriterion[];
-  /** Binary requirement groups; absent for legacy/graded-only profiles. */
+  /** Binary requirement groups; absent for legacy/graded-only rubrics. */
   requirementGroups?: RequirementGroup[];
   /** Compliance influence (lambda) in [0,1], default 1.0. "Maximum number of
    *  ranking points that failing all ordinary compliance requirements may cost." */
   complianceInfluence?: number;
+  /** Optional authored criterion-to-facet mapping metadata (spec §5.3).
+   *  Disclosed evidence metadata — never consumed by scoring math. May remain
+   *  empty; child 06 decides how authored mappings are consumed. */
+  facetMappings?: CriterionFacetMapping[];
   createdAt: number;
   updatedAt: number;
 }
 
-export type EvaluationProfileSnapshot = EvaluationProfile;
+/** Canonical alias for a rubric snapshot embedded in run/experiment provenance. */
+export type RubricSnapshot = EvaluationRubric;
 
-export interface ProfileRecord {
+/** Canonical persisted rubric record. Mutable archive state lives here; the
+ *  immutable rubric versions are stored separately. */
+export interface RubricRecord {
   id: string;
   revision: number;
   latestVersion: number;
@@ -106,13 +137,33 @@ export interface ProfileRecord {
   archivedAt: number | null;
 }
 
-export interface EvaluationProfileRef {
+/** Canonical reference to an immutable rubric version. */
+export interface RubricVersionRef {
   id: string;
   version: number;
 }
 
+// --- Legacy aliases (deprecated) ---------------------------------------------
+// Canonical names above are the primary domain surface. The legacy names below
+// remain importable from this module only because `evaluation-repository.ts`
+// (migrated in a later task) still references them; new domain code MUST import
+// the canonical names. The explicit deprecated re-export surface lives in
+// `rubric-compat.ts`. Remove these aliases once all consumers migrate.
+
+/** @deprecated Use `EvaluationRubric`. Legacy alias for the scoring rubric. */
+export type EvaluationProfile = EvaluationRubric;
+
+/** @deprecated Use `RubricSnapshot`. Legacy alias for a rubric snapshot. */
+export type EvaluationProfileSnapshot = RubricSnapshot;
+
+/** @deprecated Use `RubricRecord`. Legacy alias for a persisted rubric record. */
+export type ProfileRecord = RubricRecord;
+
+/** @deprecated Use `RubricVersionRef`. Legacy alias for a rubric version ref. */
+export type EvaluationProfileRef = RubricVersionRef;
+
 export type EvaluationSelection =
-  { kind: "holistic" } | { kind: "profile"; profile: EvaluationProfileRef };
+  { kind: "holistic" } | { kind: "profile"; profile: RubricVersionRef };
 
 export type TaskEvaluationSelection = { kind: "inherit" } | EvaluationSelection;
 
@@ -239,7 +290,7 @@ export interface ExperimentSnapshot {
   defaultEvaluation: EvaluationSelection;
   /** Optional for imported pre-policy snapshots. */
   reasoningPolicy?: ReasoningPolicy;
-  profiles: EvaluationProfileSnapshot[];
+  profiles: RubricSnapshot[];
   protocolFingerprint: string;
   createdAt: number;
 }
@@ -267,6 +318,9 @@ export interface ExperimentRecord {
   /** Append-only model-addition history (spec §6.5); absent for records
    *  created before roster extension existed. */
   rosterExtensions?: ExperimentRosterExtension[];
+  /** Durable Task Set materialization this experiment was created from.
+   *  Written at create time only; used for fail-closed replay detection. */
+  materializationId?: string;
 }
 
 // --- Experiment task orchestration inputs -------------------------------------
@@ -333,6 +387,12 @@ const PROHIBITED_KEYS: ReadonlySet<string> = new Set([
   "password",
   "env",
 ]);
+
+/** String values that must never appear in an authored identifier field —
+ *  matches the credential-shape check used for roster-extension model keys
+ *  (see `experiment-roster-extension.ts`). Used to reject secret-shaped
+ *  criterion/facet mapping values before they are persisted. */
+const CREDENTIAL_LIKE_VALUE = /^(sk-|AIza|Bearer\s)/i;
 
 function isString(v: unknown): v is string {
   return typeof v === "string";
@@ -472,7 +532,21 @@ export function isRequirementGroup(v: unknown): v is RequirementGroup {
   return true;
 }
 
-export function isEvaluationProfile(v: unknown): v is EvaluationProfile {
+/** Structural guard for a single CriterionFacetMapping (spec §5.3).
+ *  Checks field types and enum values only; cross-field references
+ *  (criterionId ∈ rubric.criteria, duplicate tuples, secret-shaped values)
+ *  are enforced by `isEvaluationRubric` / `validateRubric`, which have the
+ *  rubric context required to evaluate them. */
+export function isCriterionFacetMapping(v: unknown): v is CriterionFacetMapping {
+  if (!isRecord(v)) return false;
+  if (!isNonEmptyString(v.criterionId)) return false;
+  if (!isNonEmptyString(v.facetId)) return false;
+  if (v.mappingKind !== "direct" && v.mappingKind !== "supporting") return false;
+  if (v.source !== "authored" && v.source !== "imported") return false;
+  return true;
+}
+
+export function isEvaluationRubric(v: unknown): v is EvaluationRubric {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
   if (!isNumber(v.version)) return false;
@@ -541,20 +615,49 @@ export function isEvaluationProfile(v: unknown): v is EvaluationProfile {
     }
   }
 
+  // Validate optional criterion-to-facet mappings (spec §5.3). Disclosed
+  // evidence metadata only — never consumed by scoring math. The runtime
+  // guard enforces the same invariants as `validateRubric` so an imported
+  // rubric carrying malformed mappings cannot silently pass the guard.
+  if (v.facetMappings !== undefined) {
+    if (!Array.isArray(v.facetMappings) || !v.facetMappings.every(isCriterionFacetMapping)) {
+      return false;
+    }
+    const criterionIds = new Set(v.criteria.map((c) => c.id));
+    const seen = new Set<string>();
+    for (const m of v.facetMappings) {
+      // Missing criterion: criterionId must reference an existing criterion.
+      if (!criterionIds.has(m.criterionId)) return false;
+      // Missing facet: facetId must be non-empty (structural guard already
+      // enforces this; kept defensive against future relaxation).
+      if (!m.facetId) return false;
+      // Duplicate mapping: the same (criterionId, facetId, mappingKind) tuple
+      // may not appear twice.
+      const key = `${m.criterionId}\u{1F}/${m.facetId}\u{1F}/${m.mappingKind}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      // Prohibited/secret-shaped values: authored identifiers must never look
+      // like credentials (matches the roster-extension credential check).
+      if (CREDENTIAL_LIKE_VALUE.test(m.criterionId) || CREDENTIAL_LIKE_VALUE.test(m.facetId)) {
+        return false;
+      }
+    }
+  }
+
   if (!isNumber(v.createdAt)) return false;
   if (!isNumber(v.updatedAt)) return false;
   if (hasProhibitedKeys(v)) return false;
   return true;
 }
 
-export function isEvaluationProfileRef(v: unknown): v is EvaluationProfileRef {
+export function isRubricVersionRef(v: unknown): v is RubricVersionRef {
   return isRecord(v) && isNonEmptyString(v.id) && isNumber(v.version);
 }
 
 export function isEvaluationSelection(v: unknown): v is EvaluationSelection {
   if (!isRecord(v)) return false;
   if (v.kind === "holistic") return true;
-  if (v.kind === "profile") return isEvaluationProfileRef(v.profile);
+  if (v.kind === "profile") return isRubricVersionRef(v.profile);
   return false;
 }
 
@@ -565,7 +668,7 @@ export function isTaskEvaluationSelection(v: unknown): v is TaskEvaluationSelect
   return isEvaluationSelection(v);
 }
 
-export function isProfileRecord(v: unknown): v is ProfileRecord {
+export function isRubricRecord(v: unknown): v is RubricRecord {
   if (!isRecord(v)) return false;
   if (!isNonEmptyString(v.id)) return false;
   if (!isNumber(v.revision)) return false;
@@ -577,6 +680,22 @@ export function isProfileRecord(v: unknown): v is ProfileRecord {
   if (hasProhibitedKeys(v)) return false;
   return true;
 }
+
+// --- Legacy guard aliases (deprecated) ---------------------------------------
+// Canonical guards above are the primary surface. The legacy aliases below
+// remain importable here only because `evaluation-repository.ts` (migrated in
+// a later task) still imports them; this is the documented migration window
+// authorized by the rubric-terminology spec. The explicit deprecated re-export
+// surface lives in `rubric-compat.ts`. Remove once all consumers migrate.
+
+/** @deprecated Use `isEvaluationRubric`. Legacy alias for the rubric guard. */
+export const isEvaluationProfile = isEvaluationRubric;
+
+/** @deprecated Use `isRubricVersionRef`. Legacy alias for the version-ref guard. */
+export const isEvaluationProfileRef = isRubricVersionRef;
+
+/** @deprecated Use `isRubricRecord`. Legacy alias for the record guard. */
+export const isProfileRecord = isRubricRecord;
 
 // --- Model slot / critic ref --------------------------------------------------
 
@@ -753,7 +872,7 @@ export function isExperimentSnapshot(v: unknown): v is ExperimentSnapshot {
   if (!isCriticRef(v.defaultJudge)) return false;
   if (!isEvaluationSelection(v.defaultEvaluation)) return false;
   if (v.reasoningPolicy !== undefined && !isReasoningPolicy(v.reasoningPolicy)) return false;
-  if (!Array.isArray(v.profiles) || !v.profiles.every(isEvaluationProfile)) return false;
+  if (!Array.isArray(v.profiles) || !v.profiles.every(isEvaluationRubric)) return false;
   if (!isNonEmptyString(v.protocolFingerprint)) return false;
   if (!isNumber(v.createdAt)) return false;
   return true;
@@ -776,6 +895,7 @@ export function isExperimentRecord(v: unknown): v is ExperimentRecord {
   if (!isNumber(v.updatedAt)) return false;
   if (v.rosterExtensions !== undefined && !hasValidRosterExtensionHistory(v.rosterExtensions))
     return false;
+  if (v.materializationId !== undefined && !isNonEmptyString(v.materializationId)) return false;
   if (hasProhibitedKeys(v)) return false;
   return true;
 }

@@ -23,7 +23,7 @@ import {
   rankValueFromResults,
   rankScoreOf,
   isFloored,
-} from "../../lib/evaluations/evaluation-profile";
+} from "../../lib/evaluations/evaluation-rubric";
 import { inputUsageLabel } from "../../lib/cost";
 import { StatusMark, type StatusMarkStatus } from "../../ui/StatusMark";
 import { CompactModelLabel } from "../../ui/CompactModelLabel";
@@ -31,12 +31,16 @@ import { formatRunDetail, formatRelativeTime, type DetailSection } from "./run-v
 import { Markdown } from "../../ui/Markdown";
 import { runConfigFromRecord, type RunConfigPreload } from "../../lib/runs/run-config-preload";
 import { CopyLinkButton } from "./CopyLinkButton";
+import { HONESTY_COPY } from "../../ui/honesty-copy";
 
 export function RunDetail({
   record,
   focusCandidateId,
   focusJudgeAttemptId,
   onOpenInCompare,
+  copyHref,
+  ownerHref,
+  ownerActionLabel,
 }: {
   record: RunRecordV2 | null;
   /** Deep-linked immutable candidate id (`?candidate=`). When present and
@@ -48,6 +52,13 @@ export function RunDetail({
   /** Run Detail → Open in Compare (Slice 5). Optional; wired by the root
    *  shell, omitted in route-only test renders. */
   onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+  /** Canonical deep-link route copied even when this detail loaded via /runs. */
+  copyHref?: string;
+  /** §L.1 owning-context opener for exact runs whose owner is NOT Compare —
+   *  e.g. "Open evaluation" / "Open study". Absent (never disabled) when the
+   *  owner is unknown or when the Compare handoff below already covers it. */
+  ownerHref?: string | null;
+  ownerActionLabel?: string;
 }) {
   const vm = formatRunDetail(record);
 
@@ -98,6 +109,9 @@ export function RunDetail({
                   section={section}
                   record={record}
                   onOpenInCompare={onOpenInCompare}
+                  copyHref={copyHref}
+                  ownerHref={ownerHref}
+                  ownerActionLabel={ownerActionLabel}
                 />
               );
             case "timeline":
@@ -146,6 +160,9 @@ function HeaderSection({
   section,
   record,
   onOpenInCompare,
+  copyHref,
+  ownerHref,
+  ownerActionLabel,
 }: {
   section: {
     title?: string;
@@ -164,6 +181,9 @@ function HeaderSection({
   };
   record: RunRecordV2;
   onOpenInCompare?: (runId: string, config: RunConfigPreload) => void;
+  copyHref?: string;
+  ownerHref?: string | null;
+  ownerActionLabel?: string;
 }) {
   const startedAt = section.startedAt ?? record.createdAt;
   const hasCompletion = section.completedAt !== null && section.completedAt !== undefined;
@@ -179,7 +199,11 @@ function HeaderSection({
           {record.mode}
         </span>
       </div>
-      <h2 className="text-lg font-semibold leading-snug text-text">
+      <h2
+        data-detail-heading=""
+        tabIndex={-1}
+        className="text-lg font-semibold leading-snug text-text focus:outline-none"
+      >
         {section.title ?? record.task.title}
       </h2>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-text-muted">
@@ -232,18 +256,35 @@ function HeaderSection({
         config in Compare (honest S-class preload — never copies results or
         fabricates lineage) and copy the deep link. */}
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        {onOpenInCompare && (
-          <button
-            type="button"
-            data-action="open-in-compare"
-            onClick={() => onOpenInCompare(record.id, runConfigFromRecord(record))}
-            className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+        {ownerHref && ownerActionLabel && (
+          <Link
+            to={ownerHref}
+            data-owner-action=""
+            className="motion-state inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
+            {ownerActionLabel}
             <ExternalLink size={14} aria-hidden="true" />
-            Open in Compare
-          </button>
+          </Link>
         )}
-        <CopyLinkButton />
+        {onOpenInCompare && (
+          <span className="inline-flex flex-col items-start gap-1">
+            <button
+              type="button"
+              data-action="open-in-compare"
+              onClick={() => onOpenInCompare(record.id, runConfigFromRecord(record))}
+              className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
+            >
+              <ExternalLink size={14} aria-hidden="true" />
+              Open in Compare
+            </button>
+            {/* §L.2 honesty token — attached to the configuration-only
+                handoff everywhere it appears (§M.16). */}
+            <span className="honesty-note text-[11px] text-text-secondary">
+              {HONESTY_COPY.configurationOnly}
+            </span>
+          </span>
+        )}
+        <CopyLinkButton href={copyHref} subject={copyHref ? "record" : "run"} />
       </div>
     </header>
   );
@@ -482,12 +523,12 @@ function ProvenanceSection({ section }: { section: Record<string, unknown> }) {
       aria-label="Experiment provenance"
       className="flex flex-wrap items-center gap-1.5 py-4 text-sm"
     >
-      <Link to={`/experiments/${experimentId}`} className={linkCls}>
-        Experiment
+      <Link to={`/evaluations/results/${experimentId}`} className={linkCls}>
+        Evaluation
       </Link>
       <span className="text-text-muted">·</span>
-      <Link to={`/evaluations/${suiteId}`} className={linkCls}>
-        Suite v{suiteVersion}
+      <Link to={`/evaluations/sets/${suiteId}`} className={linkCls}>
+        Task Set v{suiteVersion}
       </Link>
       <span className="text-text-muted">·</span>
       <span className="inline-flex min-h-[44px] items-center font-mono text-text-secondary">
@@ -498,8 +539,8 @@ function ProvenanceSection({ section }: { section: Record<string, unknown> }) {
         {boundAttempt ? `${attemptId.slice(0, 8)}…` : attemptId}
         <span className="sr-only">{attemptId}</span>
       </span>
-      <Link to={`/experiments/${experimentId}`} className={`${linkCls} ml-auto`}>
-        Back to experiment
+      <Link to={`/evaluations/results/${experimentId}`} className={`${linkCls} ml-auto`}>
+        Back to evaluation
       </Link>
     </nav>
   );
@@ -771,9 +812,9 @@ function JudgeSection({
                     </span>
                     <span className="ml-auto font-mono text-text tabular-nums">
                       {(() => {
-                        const profile = record.evaluation.profile;
-                        if (profile) {
-                          const rv = rankValueFromResults(ev.criterionScores, profile);
+                        const rubric = record.evaluation.profile;
+                        if (rubric) {
+                          const rv = rankValueFromResults(ev.criterionScores, rubric);
                           if (rv !== null) {
                             const rs = rankScoreOf(rv);
                             const floored = isFloored(rv);

@@ -5,7 +5,7 @@
 // (equal task weight, coverage-transparent means, complete-coverage winners),
 // and renders the summary: identity/suite/date/status, winner line, per-model
 // mean + coverage, failed/partial/interrupted/aborted attempt summary with
-// run links, and the Judge/profile snapshot. ≥768px shows the full matrix;
+// run links, and the Judge/rubric snapshot. ≥768px shows the full matrix;
 // below that the model-selectable mobile adaptation.
 // =============================================================================
 
@@ -14,7 +14,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Crown } from "lucide-react";
 import type { ExperimentRecord } from "../../lib/evaluations/evaluation-types";
 import type { RunRecordV2 } from "../../lib/persistence/run-types";
-import { useEvaluationRepository } from "../../lib/persistence/repository-context";
+import {
+  useEvaluationRepository,
+  useEvidenceRepository,
+  useTaskSetRepository,
+} from "../../lib/persistence/repository-context";
+import type { EvidenceRepository } from "../../lib/persistence/evidence-repository";
 import type { ExperimentController } from "../../lib/evaluations/experiment-controller";
 import type { CatalogModel, ProviderId } from "../../lib/providers/types";
 import type { ModelSlot } from "../../studio-data";
@@ -46,10 +51,12 @@ import {
   type ExperimentRecoveryMessage,
 } from "./ExperimentRecoveryDialog";
 import { ExperimentAddModelDialog, type AddModelDialogMessage } from "./ExperimentAddModelDialog";
-
+import { AttentionOwnerHandoff } from "./AttentionOwnerHandoff";
 export interface ExperimentResultsProps {
   experiment: ExperimentRecord;
   resolveRunRecord: (runId: string) => Promise<RunRecordV2 | null>;
+  /** Evidence derivation repository for receipts (spec §12.1). */
+  evidenceRepo?: EvidenceRepository | null;
   /** Terminal recovery handoff — retry incomplete tasks (Task 7). */
   controller?: ExperimentController | null;
   /** Model catalog shared with the suite editor (roster spec F1). */
@@ -60,6 +67,8 @@ export interface ExperimentResultsProps {
    *  AND no other in-tab execution owns the registry. Gates both recovery and
    *  add-model actions; cross-tab races still resolve via the controller lease. */
   executionActionsEnabled?: boolean;
+  taskSetName?: string;
+  suiteName?: string;
 }
 
 /** Which recovery action the shared dialog currently drives (spec §11.1). */
@@ -91,18 +100,32 @@ function useMediaQuery(query: string): boolean {
 export function ExperimentResults({
   experiment,
   resolveRunRecord,
-  controller,
+  evidenceRepo: evidenceRepoProp,
+  controller = null,
   models = [],
   availableProviderIds = [],
   executionActionsEnabled = true,
+  taskSetName: taskSetNameProp,
+  suiteName: suiteNameProp,
 }: ExperimentResultsProps): ReactElement {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
-  const evalRepo = useEvaluationRepository();
   const [searchParams, setSearchParams] = useSearchParams();
+  const evalRepo = useEvaluationRepository();
+  const taskSetRepo = useTaskSetRepository();
+  const contextEvidenceRepo = useEvidenceRepository();
+  const evidenceRepo = evidenceRepoProp ?? contextEvidenceRepo ?? null;
   const [runRecords, setRunRecords] = useState<ReadonlyMap<string, RunRecordV2> | null>(null);
-  const [suiteName, setSuiteName] = useState<string | null>(null);
+  const [suiteName, setSuiteName] = useState<string | null>(
+    taskSetNameProp ?? suiteNameProp ?? null,
+  );
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (runRecords) {
+      document.querySelector<HTMLElement>("h1")?.focus();
+    }
+  }, [runRecords, experiment.id]);
 
   // --- Roster extension (plan Workstream F) ---------------------------------
   const [addModelOpen, setAddModelOpen] = useState(false);
@@ -270,6 +293,7 @@ export function ExperimentResults({
         suiteId: experiment.suiteId,
         slot,
         now: Date.now(),
+        taskSetRepository: taskSetRepo,
       });
       if (!suiteResult.ok) suiteWarning = suiteResult.message;
     }
@@ -303,6 +327,7 @@ export function ExperimentResults({
     addModelBusy,
     addModelSync,
     evalRepo,
+    taskSetRepo,
     experiment.suiteId,
     experimentId,
   ]);
@@ -534,10 +559,10 @@ export function ExperimentResults({
     });
   });
 
-  const profiles = experiment.snapshot.profiles;
-  const profileText =
-    profiles.length > 0
-      ? profiles.map((p) => `${p.name} v${p.version}`).join(", ")
+  const rubrics = experiment.snapshot.profiles;
+  const rubricText =
+    rubrics.length > 0
+      ? rubrics.map((p) => `${p.name} v${p.version}`).join(", ")
       : "Holistic judgment";
 
   const winnerModels = aggregation.models.filter((m) =>
@@ -553,23 +578,23 @@ export function ExperimentResults({
     <div className="flex min-w-0 flex-1 flex-col gap-4 p-4">
       <header className="flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <h1 className="truncate text-lg font-semibold text-text">
-            {suiteName ?? experiment.suiteId}
+          <h1 tabIndex={-1} className="truncate text-lg font-semibold text-text focus:outline-none">
+            {taskSetNameProp ?? suiteName ?? experiment.suiteId}
           </h1>
           <StatusMark status={experiment.status} />
         </div>
         <p className="text-sm text-text-secondary">
-          Experiment results · Suite v{experiment.suiteVersion} · {startedText} ·{" "}
+          Evaluation results · Task Set v{experiment.suiteVersion} · {startedText} ·{" "}
           <span className="font-mono text-xs text-text-muted">{experiment.id}</span>
         </p>
-        {/* Header action row — Back to suite + Add model (roster spec F3).
+        {/* Header action row — Back to task set + Add model (roster spec F3).
             Add model never appears in or adjacent to the recovery toolbar. */}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Link
-            to={`/evaluations/${experiment.suiteId}`}
+            to={`/evaluations/sets/${experiment.suiteId}`}
             className="inline-flex min-h-[44px] items-center rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            Back to suite
+            Back to task set
           </Link>
           {recoveryEnabled && availableProviderIds.length > 0 ? (
             <button
@@ -770,16 +795,16 @@ export function ExperimentResults({
         </section>
       ) : null}
 
-      <section aria-label="Judge and evaluation profile" className="flex min-w-0 flex-col gap-1">
+      <section aria-label="Judge and evaluation rubric" className="flex min-w-0 flex-col gap-1">
         <h2 className="text-xs font-medium uppercase tracking-wide text-text-muted">
-          Judge &amp; profile
+          Judge &amp; rubric
         </h2>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <CompactModelLabel
             providerId={experiment.snapshot.defaultJudge.providerId}
             slug={experiment.snapshot.defaultJudge.model}
           />
-          <span className="text-sm text-text-secondary">{profileText}</span>
+          <span className="text-sm text-text-secondary">{rubricText}</span>
         </div>
       </section>
 
@@ -823,6 +848,7 @@ export function ExperimentResults({
       {/* Recovery toolbar (spec §11.1) — above the matrix, only while this surface
           owns the lease. Reports repairable vs fallback counts and offers the
           batch repair plus the existing full-roster retry fallback. */}
+      <AttentionOwnerHandoff recoveryAvailable={showRecoveryToolbar} />
       {showRecoveryToolbar ? (
         <section
           aria-label="Recovery"
@@ -877,6 +903,7 @@ export function ExperimentResults({
           runRecords={runRecords}
           repairablePlans={repairablePlans}
           onRepairRequest={recoveryEnabled ? handleRepairRequest : undefined}
+          evidenceRepo={evidenceRepo}
           page={matrixPage}
           onPageChange={handleMatrixPageChange}
         />
@@ -888,6 +915,7 @@ export function ExperimentResults({
           runRecords={runRecords}
           repairablePlans={repairablePlans}
           onRepairRequest={recoveryEnabled ? handleRepairRequest : undefined}
+          evidenceRepo={evidenceRepo}
         />
       )}
 
@@ -917,12 +945,15 @@ export function ExperimentResults({
         models={models}
         availableProviderIds={availableProviderIds}
         takenKeys={addModelTakenKeys}
+        taskSetName={taskSetNameProp ?? suiteName ?? experiment.suiteId}
         suiteName={suiteName ?? experiment.suiteId}
         selectedSlot={addModelSlot}
         onSelectSlot={selectAddModelSlot}
         plan={addModelPlan}
         planError={addModelPlanError}
+        syncToTaskSet={addModelSync}
         syncToSuite={addModelSync}
+        onSyncToTaskSetChange={setAddModelSync}
         onSyncToSuiteChange={setAddModelSync}
         busy={addModelBusy}
         message={addModelMessage}

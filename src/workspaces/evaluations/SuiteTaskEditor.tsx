@@ -2,8 +2,8 @@ import type {
   EvaluationTask,
   TaskEvaluationSelection,
   EvaluationSelection,
-  EvaluationProfileRef,
-  ProfileRecord,
+  RubricVersionRef,
+  RubricRecord,
 } from "../../lib/evaluations/evaluation-types";
 
 interface SuiteTaskEditorProps {
@@ -11,23 +11,23 @@ interface SuiteTaskEditorProps {
   /** Default evaluation from the suite, used to describe the "inherit" option. */
   suiteDefaultEvaluation: EvaluationSelection;
   onChange: (patch: Partial<EvaluationTask>) => void;
-  /** Available profile records for the pinned-profile picker. */
-  profileRecords: ProfileRecord[];
-  /** Resolve a pinned profile ref to a display label. */
-  resolveProfileLabel: (ref: EvaluationProfileRef) => string;
+  /** Available rubric records for the pinned-rubric picker. */
+  rubricRecords: RubricRecord[];
+  /** Resolve a pinned rubric ref to a display label. */
+  resolveRubricLabel: (ref: RubricVersionRef) => string;
 }
 
 export function SuiteTaskEditor({
   task,
   suiteDefaultEvaluation,
   onChange,
-  profileRecords,
-  resolveProfileLabel,
+  rubricRecords,
+  resolveRubricLabel,
 }: SuiteTaskEditorProps) {
   const inheritDescription =
     suiteDefaultEvaluation.kind === "holistic"
       ? "Inherits the suite default: holistic judgment"
-      : `Inherits the suite default: pinned profile ${resolveProfileLabel(suiteDefaultEvaluation.profile)}`;
+      : `Inherits the suite default: pinned rubric ${resolveRubricLabel(suiteDefaultEvaluation.profile)}`;
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto scroll-thin p-1">
@@ -97,8 +97,8 @@ export function SuiteTaskEditor({
         <TaskEvaluationPicker
           selection={task.evaluation}
           inheritDescription={inheritDescription}
-          profileRecords={profileRecords}
-          resolveProfileLabel={resolveProfileLabel}
+          rubricRecords={rubricRecords}
+          resolveRubricLabel={resolveRubricLabel}
           onChange={(sel) => onChange({ evaluation: sel })}
         />
       </fieldset>
@@ -117,7 +117,7 @@ export function SuiteTaskEditor({
           value={task.judgeInstructionOverride}
           onChange={(e) => onChange({ judgeInstructionOverride: e.target.value })}
           rows={3}
-          placeholder="Optional guidance applied to the judge for this task only, on top of the suite/profile judge instruction. Never sent to candidates."
+          placeholder="Optional guidance applied to the judge for this task only, on top of the suite/rubric judge instruction. Never sent to candidates."
           className="mt-1 min-h-[44px] w-full resize-y rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text placeholder-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         <p className="mt-1 text-xs text-text-muted">
@@ -130,20 +130,20 @@ export function SuiteTaskEditor({
 }
 
 // -----------------------------------------------------------------------------
-// TaskEvaluationPicker — tagged choice: inherit | holistic | pin profile.
+// TaskEvaluationPicker — tagged choice: inherit | holistic | pin rubric.
 // -----------------------------------------------------------------------------
 
 function TaskEvaluationPicker({
   selection,
   inheritDescription,
-  profileRecords,
-  resolveProfileLabel,
+  rubricRecords,
+  resolveRubricLabel,
   onChange,
 }: {
   selection: TaskEvaluationSelection;
   inheritDescription: string;
-  profileRecords: ProfileRecord[];
-  resolveProfileLabel: (ref: EvaluationProfileRef) => string;
+  rubricRecords: RubricRecord[];
+  resolveRubricLabel: (ref: RubricVersionRef) => string;
   onChange: (sel: TaskEvaluationSelection) => void;
 }) {
   const mode =
@@ -186,7 +186,7 @@ function TaskEvaluationPicker({
           type="button"
           aria-pressed={mode === "profile"}
           onClick={() => {
-            const first = profileRecords[0];
+            const first = rubricRecords[0];
             const ref = first
               ? { id: first.id, version: first.latestVersion }
               : (pinnedRef ?? { id: "", version: 0 });
@@ -198,7 +198,7 @@ function TaskEvaluationPicker({
               : "text-text-secondary hover:text-text"
           }`}
         >
-          Pin profile version
+          Pin rubric version
         </button>
       </div>
 
@@ -212,25 +212,25 @@ function TaskEvaluationPicker({
 
       {mode === "profile" && (
         <div>
-          {profileRecords.length === 0 ? (
+          {rubricRecords.length === 0 ? (
             <p className="text-xs text-text-muted">
-              No profiles available. Create a profile under the Profiles tab first.
+              No rubrics available. Create a rubric under the Rubrics tab first.
             </p>
           ) : (
             <label className="block">
-              <span className="sr-only">Pinned profile version for this task</span>
+              <span className="sr-only">Pinned rubric version for this task</span>
               <select
                 value={pinnedRef ? `${pinnedRef.id}:${pinnedRef.version}` : ""}
                 onChange={(e) => {
                   const [id, ver] = e.target.value.split(":");
                   onChange({ kind: "profile", profile: { id, version: Number(ver) } });
                 }}
-                aria-label="Pinned profile version for this task"
+                aria-label="Pinned rubric version for this task"
                 className="min-h-[44px] w-full rounded-sm border border-edge bg-card px-2 py-1.5 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
-                {profileRecords.map((r) => (
+                {rubricRecords.map((r) => (
                   <option key={`${r.id}:${r.latestVersion}`} value={`${r.id}:${r.latestVersion}`}>
-                    {resolveProfileLabel({ id: r.id, version: r.latestVersion })}
+                    {resolveRubricLabel({ id: r.id, version: r.latestVersion })}
                   </option>
                 ))}
               </select>

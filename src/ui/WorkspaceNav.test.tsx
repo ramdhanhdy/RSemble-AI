@@ -1,5 +1,10 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, afterEach } from "vitest";
+// Child 08 Task 5 — task-first primary navigation (spec §G.4–G.7).
+//
+// The shell presents exactly four primary destinations — Compare · Evaluations
+// · Lab · Models — on desktop and mobile, with Runs removed from primary
+// navigation entirely and Records living only in the header utility cluster.
+import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
@@ -19,6 +24,19 @@ interface Harness {
   root: TestRoot;
   $: (selector: string) => HTMLElement | null;
   $$: (selector: string) => HTMLElement[];
+}
+
+function stubMatchMedia(desktop: boolean) {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: desktop && query.includes("1024"),
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
 }
 
 function renderWithRouter(node: React.ReactNode, initialEntry = "/compare"): Harness {
@@ -43,71 +61,221 @@ function cleanup(h: Harness) {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  vi.unstubAllGlobals();
 });
 
-describe("WorkspaceNav (desktop)", () => {
+const DESKTOP_ITEMS = ["Compare", "Evaluations", "Lab", "Models"];
+const DESKTOP_HREFS = ["/compare", "/evaluations", "/lab", "/models"];
+const NAV_ICONS = ["lucide-git-compare", "lucide-flask-conical", "lucide-test-tubes", "lucide-cpu"];
+
+describe("WorkspaceNav (desktop) — task-first topology", () => {
   it("renders nav with aria-label='Primary'", () => {
     const h = renderWithRouter(<WorkspaceNav />);
     expect(h.$('nav[aria-label="Primary"]')).toBeTruthy();
     cleanup(h);
   });
 
-  it("renders three links: Compare, Runs, Evaluations", () => {
+  it("renders exactly four destinations in canonical order", () => {
     const h = renderWithRouter(<WorkspaceNav />);
     const links = h.$$("nav[aria-label='Primary'] a");
-    expect(links).toHaveLength(3);
-    const labels = links.map((l) => l.textContent?.trim());
-    expect(labels).toEqual(["Compare", "Runs", "Evaluations"]);
+    expect(links).toHaveLength(4);
+    expect(links.map((l) => l.textContent?.trim())).toEqual(DESKTOP_ITEMS);
+    cleanup(h);
+  });
+
+  it("links point to /compare, /evaluations, /lab, /models", () => {
+    const h = renderWithRouter(<WorkspaceNav />);
+    const hrefs = h.$$("nav[aria-label='Primary'] a").map((l) => l.getAttribute("href"));
+    expect(hrefs).toEqual(DESKTOP_HREFS);
+    cleanup(h);
+  });
+
+  it("has no Runs destination anywhere in primary navigation", () => {
+    const h = renderWithRouter(<WorkspaceNav />);
+    const nav = h.$("nav[aria-label='Primary']")!;
+    expect(nav.textContent).not.toContain("Runs");
+    expect(nav.querySelector("a[href='/runs']")).toBeNull();
+    expect(nav.querySelector("a[href^='/runs']")).toBeNull();
     cleanup(h);
   });
 
   it("marks the active route with aria-current='page'", () => {
-    const h = renderWithRouter(<WorkspaceNav />, "/runs");
-    const current = h.$$('[aria-current="page"]');
-    expect(current).toHaveLength(1);
-    expect(current[0].textContent?.trim()).toBe("Runs");
-    cleanup(h);
-  });
-
-  it("links point to /compare, /runs, /evaluations", () => {
-    const h = renderWithRouter(<WorkspaceNav />);
-    const links = h.$$("nav[aria-label='Primary'] a");
-    const hrefs = links.map((l) => l.getAttribute("href"));
-    expect(hrefs).toContain("/compare");
-    expect(hrefs).toContain("/runs");
-    expect(hrefs).toContain("/evaluations");
-    cleanup(h);
-  });
-});
-
-describe("MobileWorkspaceNav", () => {
-  it("renders three items with visible text labels", () => {
-    const h = renderWithRouter(<MobileWorkspaceNav />);
-    const nav = h.$("nav");
-    expect(nav).toBeTruthy();
-    const links = h.$$("nav a");
-    expect(links).toHaveLength(3);
-    const labels = links.map((l) => l.textContent?.trim()).filter(Boolean);
-    expect(labels).toEqual(expect.arrayContaining(["Compare", "Runs", "Evaluations"]));
-  });
-
-  it("marks the active route with aria-current='page'", () => {
-    const h = renderWithRouter(<MobileWorkspaceNav />, "/evaluations");
+    const h = renderWithRouter(<WorkspaceNav />, "/evaluations");
     const current = h.$$('[aria-current="page"]');
     expect(current).toHaveLength(1);
     expect(current[0].textContent?.trim()).toBe("Evaluations");
     cleanup(h);
   });
 
-  it("includes an icon in each nav item", () => {
+  it("active item carries a static 2px bottom accent bar; inactive items do not", () => {
+    const h = renderWithRouter(<WorkspaceNav />, "/lab");
+    const links = h.$$("nav[aria-label='Primary'] a");
+    const active = links.find((l) => l.getAttribute("aria-current") === "page")!;
+    expect(active.textContent?.trim()).toBe("Lab");
+    expect(active.className).toContain("shadow-[inset_0_-2px_0_0_#00e5ff]");
+    for (const link of links.filter((l) => l !== active)) {
+      expect(link.className).not.toContain("shadow-[inset");
+    }
+    cleanup(h);
+  });
+
+  it("keeps every destination at a >=44px target", () => {
+    const h = renderWithRouter(<WorkspaceNav />);
+    for (const link of h.$$("nav[aria-label='Primary'] a")) {
+      expect(link.className.includes("min-h-[44px]")).toBe(true);
+    }
+    cleanup(h);
+  });
+
+  it("binds the canonical icon identity per destination", () => {
+    const h = renderWithRouter(<WorkspaceNav />);
+    const links = h.$$("nav[aria-label='Primary'] a");
+    links.forEach((link, index) => {
+      const icon = link.querySelector(`svg.${NAV_ICONS[index]}`);
+      expect(icon, `${DESKTOP_ITEMS[index]} must wear ${NAV_ICONS[index]}`).toBeTruthy();
+    });
+    cleanup(h);
+  });
+});
+
+describe("MobileWorkspaceNav — same four destinations", () => {
+  it("renders exactly four items in the same order as desktop", () => {
+    const h = renderWithRouter(<MobileWorkspaceNav />);
+    const links = h.$$("nav a");
+    expect(links).toHaveLength(4);
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(DESKTOP_HREFS);
+    expect(links.map((l) => l.textContent?.trim())).toEqual(DESKTOP_ITEMS);
+    cleanup(h);
+  });
+
+  it("has no Runs item and no Records item at any width", () => {
+    const h = renderWithRouter(<MobileWorkspaceNav />);
+    const nav = h.$("nav")!;
+    expect(nav.querySelector("a[href='/records']")).toBeNull();
+    expect(nav.querySelector("a[href^='/runs']")).toBeNull();
+    expect(nav.textContent).not.toContain("Runs");
+    expect(nav.textContent).not.toContain("Records");
+    cleanup(h);
+  });
+
+  it("marks the active route and mirrors the accent bar on top", () => {
+    const h = renderWithRouter(<MobileWorkspaceNav />, "/models");
+    const current = h.$$('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0].textContent?.trim()).toBe("Models");
+    expect(current[0].className).toContain("shadow-[inset_0_2px_0_0_#00e5ff]");
+    cleanup(h);
+  });
+
+  it("includes an icon in each nav item with the canonical identity", () => {
     const h = renderWithRouter(<MobileWorkspaceNav />);
     const items = h.$$("[data-testid='mobile-nav-item']");
-    expect(items).toHaveLength(3);
-    for (const item of items) {
-      // Each item should have an svg (lucide icon) and text.
+    expect(items).toHaveLength(4);
+    items.forEach((item, index) => {
       expect(item.querySelector("svg")).toBeTruthy();
+      expect(item.querySelector(`svg.${NAV_ICONS[index]}`)).toBeTruthy();
       expect(item.textContent?.trim()).toBeTruthy();
+    });
+    cleanup(h);
+  });
+
+  it("keeps every mobile destination at a >=44px target", () => {
+    const h = renderWithRouter(<MobileWorkspaceNav />);
+    for (const item of h.$$("[data-testid='mobile-nav-item']")) {
+      expect(item.className.includes("min-h-[44px]")).toBe(true);
     }
+    cleanup(h);
+  });
+});
+
+describe("Header Records utility (secondary chrome)", () => {
+  function renderHeader(desktop: boolean): Harness {
+    stubMatchMedia(desktop);
+    return renderWithRouter(
+      <Header
+        running={false}
+        connectionState="ready"
+        onOpenConnections={() => undefined}
+        onOpenPalette={() => undefined}
+        onOpenHelp={() => undefined}
+        recordsOpen={false}
+        onOpenRecords={() => undefined}
+      />,
+      "/compare",
+    );
+  }
+
+  it("renders the Records utility below 1024 as a direct link to /records", () => {
+    const h = renderHeader(false);
+    const link = h.$('a[aria-label="Records"]');
+    expect(link).toBeTruthy();
+    expect(link?.getAttribute("href")).toBe("/records");
+    expect(link?.getAttribute("aria-haspopup")).toBeNull();
+    cleanup(h);
+  });
+
+  it("renders the Records utility at >=1024 as the drawer trigger", () => {
+    const h = renderHeader(true);
+    const button = h.$('button[aria-label="Records"]');
+    expect(button).toBeTruthy();
+    expect(button?.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(button?.getAttribute("aria-expanded")).toBe("false");
+    cleanup(h);
+  });
+
+  it("wires aria-expanded and opens the drawer from the trigger at >=1024", () => {
+    let opened = false;
+    stubMatchMedia(true);
+    const h = renderWithRouter(
+      <Header
+        running={false}
+        connectionState="ready"
+        recordsOpen={false}
+        onOpenRecords={() => {
+          opened = true;
+        }}
+      />,
+    );
+    const button = h.$('button[aria-label="Records"]')!;
+    act(() => {
+      button.click();
+    });
+    expect(opened).toBe(true);
+    cleanup(h);
+  });
+
+  it("shows the History glyph at every width and the label only at lg+", () => {
+    for (const desktop of [false, true]) {
+      const h = renderHeader(desktop);
+      const control = h.$('button[aria-label="Records"]') ?? h.$('a[aria-label="Records"]');
+      expect(control?.querySelector("svg.lucide-history")).toBeTruthy();
+      const label = control?.querySelector("span");
+      expect(label?.className.includes("hidden lg:inline")).toBe(true);
+      // Icon-only form below lg must be a true 44x44 target, not only tall.
+      expect(control?.className.includes("min-h-[44px]")).toBe(true);
+      expect(control?.className.includes("min-w-[44px]")).toBe(true);
+      cleanup(h);
+    }
+  });
+
+  it("orders the right utility cluster palette · Records · Connections · Help", () => {
+    const h = renderHeader(true);
+    const cluster = h.$$("header div.flex.items-center.justify-self-end > *");
+    const names = cluster.map((el) => el.getAttribute("aria-label") ?? "");
+    const paletteIndex = names.indexOf("Command palette");
+    const recordsIndex = names.indexOf("Records");
+    const connectionsIndex = names.findIndex((n) => n.startsWith("Connection status"));
+    const helpIndex = names.indexOf("Keyboard shortcuts");
+    expect(paletteIndex).toBeGreaterThanOrEqual(0);
+    expect(recordsIndex).toBeGreaterThan(paletteIndex);
+    expect(connectionsIndex).toBeGreaterThan(recordsIndex);
+    expect(helpIndex).toBeGreaterThan(connectionsIndex);
+    cleanup(h);
+  });
+
+  it("keeps the Records control out of both primary nav surfaces", () => {
+    const h = renderHeader(true);
+    expect(h.$("nav[aria-label='Primary'] a[href='/records']")).toBeNull();
     cleanup(h);
   });
 });
@@ -137,7 +305,7 @@ describe("Header responsive sacrifice order (768–1023px tablet)", () => {
     expect(navWrapper).toBeTruthy();
     const nav = navWrapper?.querySelector('nav[aria-label="Primary"]');
     expect(nav).toBeTruthy();
-    expect(nav?.querySelectorAll("a").length).toBe(3);
+    expect(nav?.querySelectorAll("a").length).toBe(4);
     cleanup(h);
   });
 
@@ -187,6 +355,18 @@ describe("Header responsive sacrifice order (768–1023px tablet)", () => {
     const h = renderHeader();
     expect(h.$("header")?.className).toContain("grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
     expect(h.$('[role="radiogroup"]')).toBeNull();
+    cleanup(h);
+  });
+
+  it("keeps Records visible below md when palette and help are hidden", () => {
+    const h = renderHeader();
+    const records = h.$('a[aria-label="Records"]');
+    expect(records).toBeTruthy();
+    // Palette and help hide below md; Records must never disappear.
+    expect(h.$$('button[aria-label="Command palette"]')[0]?.className.includes("hidden")).toBe(
+      true,
+    );
+    expect(h.$('button[aria-label="Keyboard shortcuts"]')?.className.includes("hidden")).toBe(true);
     cleanup(h);
   });
 });

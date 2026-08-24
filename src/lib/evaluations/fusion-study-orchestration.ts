@@ -9,7 +9,7 @@
 
 import type { CriticRef } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
-import type { EvaluationProfileSnapshot, EvaluationSuite } from "./evaluation-types";
+import type { RubricSnapshot, EvaluationSuite } from "./evaluation-types";
 import type {
   FusionPlaybook,
   FusionRecipeVersion,
@@ -39,7 +39,7 @@ import {
 export interface RunFusionStudyInput {
   studyId: string;
   suite: EvaluationSuite;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   /** How many tasks feed Stage A stratification screening. */
   stratificationTasks: number;
   tasksPerPairA: number;
@@ -69,11 +69,11 @@ export async function pickStratifiedPairs(
   study: FusionStudy,
   suite: EvaluationSuite,
   pool: PoolManifestVersion,
-  profile: EvaluationProfileSnapshot | null,
+  rubric: RubricSnapshot | null,
   taskSample: number,
 ): Promise<StratifiedPair[]> {
   const weights: CriterionWeights = new Map(
-    (profile?.criteria ?? [])
+    (rubric?.criteria ?? [])
       .filter((c) => "weight" in c)
       .map((c) => [c.id, (c as { weight: number }).weight]),
   );
@@ -82,7 +82,7 @@ export async function pickStratifiedPairs(
   const scoresByTask = new Map<string, Map<string, ModelTaskScore>>();
   for (const task of tasks) {
     const sweep = await deps.executor.runPoolSweep(task, slots);
-    const judged = await deps.executor.judgePool(task, profile, study.judge1, sweep.outputs);
+    const judged = await deps.executor.judgePool(task, rubric, study.judge1, sweep.outputs);
     const modelScores = new Map<string, ModelTaskScore>();
     for (const output of sweep.outputs) {
       const score = modelTaskScoreFromReport(judged.report, output.candidateId);
@@ -100,7 +100,7 @@ export async function pickStratifiedPairs(
         const b = scoresByTask.get(task.id)?.get(modelKeyOf(slots[j]));
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights, profile);
+      const metrics = computeHeadroom(paired, weights, rubric);
       rows.push({
         slots: [slots[i], slots[j]],
         headroom: Math.max(metrics.selectionHeadroom, metrics.synthesisHeadroom ?? 0),
@@ -155,14 +155,14 @@ export async function runFusionStudy(
     current,
     input.suite,
     pool,
-    input.profile,
+    input.rubric,
     input.stratificationTasks,
   );
   const stageA = await runStageA(deps, {
     study: current,
     suite: input.suite,
     pool,
-    profile: input.profile,
+    rubric: input.rubric,
     recipes,
     stratifiedPairs,
     tasksPerPair: input.tasksPerPairA,
@@ -182,7 +182,7 @@ export async function runFusionStudy(
     study: current,
     suite: input.suite,
     pool,
-    profile: input.profile,
+    rubric: input.rubric,
     survivingRecipes: survivorRecipes,
     shortlistRule: input.shortlistRule,
     sequentialPairs: input.sequentialPairs,
@@ -212,7 +212,7 @@ export async function runFusionStudy(
       study: current,
       suite: input.suite,
       pool,
-      profile: input.profile,
+      rubric: input.rubric,
       frozenRecipe,
       runnerUpRecipe,
       topPairs,

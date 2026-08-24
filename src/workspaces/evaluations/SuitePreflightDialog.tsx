@@ -71,11 +71,11 @@ export function SuitePreflightDialog({
     <DialogSurface
       open={open}
       onOpenChange={onOpenChange}
-      title="Suite model preflight"
+      title="Task set model preflight"
       className="max-w-md"
     >
       <div className="flex flex-col gap-3 p-4">
-        <h2 className="text-sm font-semibold text-text">Suite model preflight</h2>
+        <h2 className="text-sm font-semibold text-text">Task set model preflight</h2>
         <p className="text-xs text-text-muted">
           Live model tests send a small generation request and may incur provider cost.
         </p>
@@ -147,7 +147,7 @@ export function SuitePreflightDialog({
                 }}
                 className="inline-flex min-h-[44px] items-center rounded-md border border-accent/40 bg-accent/[0.06] px-4 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               >
-                Run suite
+                Run task set
               </button>
             </>
           )}

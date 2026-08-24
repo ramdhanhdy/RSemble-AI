@@ -11,7 +11,7 @@ import { Link } from "react-router-dom";
 import { GitCompare, AlertCircle, Loader2 } from "lucide-react";
 import type { RunRepository } from "../../lib/persistence/run-repository";
 import type { RunStatus } from "../../lib/persistence/run-types";
-import { formatCandidateScoreDisplay } from "../../lib/evaluations/evaluation-profile";
+import { formatCandidateScoreDisplay } from "../../lib/evaluations/evaluation-rubric";
 import { useRunList } from "./useRunList";
 import { formatRunRow } from "./run-view-model";
 import { RecordRow } from "../../ui/RecordRow";

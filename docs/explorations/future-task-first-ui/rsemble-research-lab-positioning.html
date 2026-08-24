@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>RSemble AI — Research Lab positioning proposal</title>
+  <style>
+    :root {
+      --canvas: #080a0b;
+      --shell: #0c0f11;
+      --panel: #111518;
+      --panel-2: #151a1e;
+      --raised: #1a2025;
+      --hover: #1d2429;
+      --edge: #293137;
+      --edge-strong: #3b474f;
+      --text: #edf1f2;
+      --text-2: #b8c0c5;
+      --muted: #7f8b92;
+      --faint: #566169;
+      --accent: #63e0ca;
+      --accent-ink: #082c27;
+      --accent-soft: rgba(99, 224, 202, .1);
+      --success: #70e5a7;
+      --warning: #f2bd65;
+      --danger: #f47e7e;
+      --info: #78bff6;
+      --violet: #b5a4ff;
+      --radius-sm: 4px;
+      --radius: 7px;
+      --radius-lg: 10px;
+      --shadow: 0 22px 70px rgba(0, 0, 0, .48);
+      --sans: "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --ease-out: cubic-bezier(.23, 1, .32, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    [hidden] { display: none !important; }
+    ::selection { background: rgba(99, 224, 202, .28); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    .artifact {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: 58px minmax(0, 1fr);
+    }
+    .artifact-head {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) auto minmax(240px, 1fr);
+      align-items: center;
+      gap: 18px;
+      min-height: 58px;
+      padding: 0 18px;
+      background: rgba(12, 15, 17, .96);
+      border-bottom: 1px solid var(--edge);
+      backdrop-filter: blur(14px);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .mark { width: 26px; height: 26px; color: var(--accent); flex: 0 0 auto; }
+    .mark svg { width: 100%; height: 100%; }
+    .brand-copy { min-width: 0; }
+    .brand-name { font-size: 15px; font-weight: 690; letter-spacing: -.025em; }
+    .brand-sub { margin-top: 1px; color: var(--muted); font: 10px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .artifact-title { color: var(--text-2); font-size: 13px; text-align: center; }
+    .head-meta { display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; }
+
+    .tag, .status {
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 7px;
+      border: 1px solid var(--edge);
+      border-radius: var(--radius-sm);
+      background: var(--panel);
+      color: var(--text-2);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .tag.accent { color: var(--accent); border-color: rgba(99,224,202,.3); background: var(--accent-soft); }
+    .tag.warning { color: var(--warning); border-color: rgba(242,189,101,.28); background: rgba(242,189,101,.07); }
+    .tag.danger { color: var(--danger); border-color: rgba(244,126,126,.28); background: rgba(244,126,126,.07); }
+    .tag.success { color: var(--success); border-color: rgba(112,229,167,.28); background: rgba(112,229,167,.07); }
+    .status { border: 0; background: transparent; padding: 0; }
+    .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    .status.success::before { background: var(--success); }
+    .status.warning::before { background: var(--warning); }
+    .status.info::before { background: var(--info); }
+
+    .layout {
+      min-height: calc(100vh - 58px);
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+    }
+    .guide {
+      position: sticky;
+      top: 58px;
+      height: calc(100vh - 58px);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--edge);
+      background: var(--shell);
+      overflow-y: auto;
+    }
+    .guide-intro { padding: 20px 18px 14px; border-bottom: 1px solid var(--edge); }
+    .eyebrow { color: var(--muted); font: 10px/1.35 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    .guide-intro h1 { margin: 6px 0 7px; font-size: 18px; letter-spacing: -.025em; }
+    .guide-intro p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .guide-nav { display: grid; padding: 10px; gap: 3px; }
+    .guide-btn {
+      min-height: 46px;
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-2);
+      text-align: left;
+      cursor: pointer;
+      transition: color 130ms ease, border-color 130ms ease, background-color 130ms ease;
+    }
+    .guide-btn:hover { color: var(--text); background: var(--panel); }
+    .guide-btn[aria-current="step"] { color: var(--accent); border-color: rgba(99,224,202,.22); background: var(--accent-soft); }
+    .step-num { font: 11px/1 var(--mono); color: var(--muted); text-align: center; }
+    .guide-btn[aria-current="step"] .step-num { color: var(--accent); }
+    .guide-foot { margin-top: auto; padding: 14px 18px 18px; border-top: 1px solid var(--edge); color: var(--muted); font-size: 11px; line-height: 1.5; }
+
+    .canvas { min-width: 0; padding: 28px clamp(18px, 3vw, 48px) 52px; overflow-x: hidden; }
+    .screen { max-width: 1220px; margin: 0 auto; }
+    .screen-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 22px; margin-bottom: 24px; }
+    .screen-head h2 { margin: 5px 0 7px; font-size: clamp(24px, 3vw, 34px); line-height: 1.12; letter-spacing: -.045em; font-weight: 700; }
+    .screen-head p { max-width: 760px; margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.6; }
+    .head-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
+    .button {
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 13px;
+      border: 1px solid var(--edge);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color 130ms ease, background-color 130ms ease, transform 100ms var(--ease-out);
+    }
+    .button:hover { border-color: var(--edge-strong); background: var(--hover); }
+    .button:active { transform: scale(.975); }
+    .button.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 720; }
+    .button.primary:hover { background: #78ead6; }
+    .button.quiet { background: transparent; color: var(--text-2); }
+    .button.small { min-height: 46px; padding: 0 10px; font-size: 12px; }
+
+    .thesis {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 74px minmax(0, 1fr);
+      align-items: stretch;
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .model-block { border: 1px solid var(--edge); background: var(--panel); border-radius: var(--radius-lg); overflow: hidden; }
+    .model-block.bad { border-color: rgba(244,126,126,.35); }
+    .model-block.good { border-color: rgba(99,224,202,.35); }
+    .model-head { display: flex; justify-content: space-between; gap: 12px; padding: 15px 16px; border-bottom: 1px solid var(--edge); background: var(--panel-2); }
+    .model-head strong { font-size: 14px; }
+    .model-body { padding: 18px; }
+    .tree { display: grid; gap: 10px; }
+    .tree-node { position: relative; padding: 12px 13px; border: 1px solid var(--edge); border-radius: 6px; background: var(--canvas); }
+    .tree-node strong { display: block; margin-bottom: 3px; }
+    .tree-node span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .tree-node.child { margin-left: 22px; }
+    .tree-node.child::before { content: ""; position: absolute; left: -22px; top: -11px; width: 14px; height: 31px; border-left: 1px solid var(--edge-strong); border-bottom: 1px solid var(--edge-strong); border-bottom-left-radius: 5px; }
+    .tree-node.issue { border-color: rgba(244,126,126,.26); background: rgba(244,126,126,.04); }
+    .tree-node.owner { border-color: rgba(99,224,202,.3); background: var(--accent-soft); }
+    .arrow-col { display: grid; place-items: center; color: var(--accent); font: 26px/1 var(--mono); }
+
+    .decision-ledger { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+    .decision-item { padding: 16px; border-right: 1px solid var(--edge); }
+    .decision-item:last-child { border-right: 0; }
+    .decision-item strong { display: block; margin: 7px 0 5px; font-size: 13px; }
+    .decision-item p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+    .topology-shell, .product-frame { border: 1px solid var(--edge); border-radius: var(--radius-lg); overflow: hidden; background: var(--panel); box-shadow: var(--shadow); }
+    .product-bar { min-height: 54px; display: grid; grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr); align-items: center; gap: 12px; padding: 0 14px; border-bottom: 1px solid var(--edge); background: var(--shell); }
+    .product-brand { display: flex; align-items: center; gap: 8px; font-weight: 680; }
+    .cube { width: 18px; height: 18px; color: var(--accent); }
+    .product-nav { display: flex; align-items: center; gap: 2px; }
+    .product-nav span, .product-nav button { min-height: 38px; display: inline-flex; align-items: center; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--text-2); }
+    .product-nav .active, .product-nav button.active { color: var(--accent); background: var(--accent-soft); }
+    .product-utils { display: flex; justify-content: flex-end; gap: 7px; color: var(--muted); font-size: 11px; }
+    .topology-body { padding: 22px; }
+    .job-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+    .job { min-height: 170px; padding: 16px; border-right: 1px solid var(--edge); background: var(--panel); }
+    .job:last-child { border-right: 0; }
+    .job h3 { margin: 24px 0 7px; font-size: 16px; }
+    .job p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .job.lab { background: linear-gradient(180deg, rgba(99,224,202,.08), rgba(99,224,202,.025)); }
+    .route-map { margin-top: 18px; display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 10px; align-items: center; }
+    .route-node { min-height: 88px; padding: 13px; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--canvas); }
+    .route-node strong { display: block; margin-bottom: 5px; }
+    .route-node span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .route-arrow { color: var(--faint); font: 18px/1 var(--mono); }
+
+    .product-workspace { min-height: 600px; display: grid; grid-template-columns: 252px minmax(0,1fr); }
+    .rail { border-right: 1px solid var(--edge); background: var(--shell); }
+    .rail-head { padding: 18px; border-bottom: 1px solid var(--edge); }
+    .rail-head h3 { margin: 5px 0 2px; font-size: 18px; }
+    .rail-tabs { display: grid; padding: 9px; gap: 3px; }
+    .rail-tab { min-height: 46px; display: flex; justify-content: space-between; align-items: center; padding: 0 10px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-2); cursor: pointer; text-align: left; }
+    .rail-tab:hover { background: var(--panel); color: var(--text); }
+    .rail-tab.active { background: var(--accent-soft); border-color: rgba(99,224,202,.2); color: var(--accent); }
+    .rail-count { color: var(--muted); font: 11px/1 var(--mono); }
+    .rail-note { margin: 8px 12px; padding: 12px; border-top: 1px solid var(--edge); color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .workspace { min-width: 0; background: var(--canvas); }
+    .workspace-head { min-height: 84px; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 17px 20px; border-bottom: 1px solid var(--edge); background: var(--panel); }
+    .workspace-head h3 { margin: 5px 0 0; font-size: 19px; letter-spacing: -.025em; }
+    .workspace-body { padding: 20px; }
+    .summary-strip { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 18px; border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+    .summary-cell { padding: 14px; border-right: 1px solid var(--edge); background: var(--panel); }
+    .summary-cell:last-child { border-right: 0; }
+    .summary-value { margin-top: 6px; font-size: 15px; font-weight: 650; }
+    .record-list { border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+    .record-row { min-height: 74px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 16px; width: 100%; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--edge); background: var(--panel); color: var(--text); text-align: left; cursor: pointer; }
+    .record-row:last-child { border-bottom: 0; }
+    .record-row:hover { background: var(--panel-2); }
+    .record-row strong { display: block; margin-bottom: 5px; }
+    .record-meta { display: flex; flex-wrap: wrap; gap: 8px 12px; color: var(--muted); font-size: 11px; }
+    .record-side { display: flex; align-items: center; gap: 10px; }
+    .asset-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+    .asset { min-height: 130px; padding: 15px; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--panel); }
+    .asset h4 { margin: 15px 0 6px; }
+    .asset p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+    .study-layout { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 16px; }
+    .study-main, .study-side { min-width: 0; }
+    .study-header-card { padding: 18px; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--panel); }
+    .study-header-card h3 { margin: 6px 0 8px; font-size: 21px; letter-spacing: -.03em; }
+    .study-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+    .study-flow { display: grid; grid-template-columns: repeat(4, 1fr); margin: 14px 0; border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+    .flow-step { position: relative; min-height: 100px; padding: 13px; border-right: 1px solid var(--edge); background: var(--panel); }
+    .flow-step:last-child { border-right: 0; }
+    .flow-step::after { content: "›"; position: absolute; right: -7px; top: 37px; z-index: 2; width: 14px; height: 22px; display: grid; place-items: center; background: var(--panel); color: var(--faint); }
+    .flow-step:last-child::after { display: none; }
+    .flow-step strong { display: block; margin: 11px 0 4px; font-size: 13px; }
+    .flow-step p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .section-card { margin-top: 14px; border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+    .section-card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid var(--edge); background: var(--panel-2); }
+    .section-card-head h4 { margin: 0; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--edge); text-align: left; font-size: 12px; vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    th { color: var(--muted); font: 10px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; background: var(--canvas); }
+    td.mono { font-size: 11px; }
+    tr.recommended td { background: rgba(99,224,202,.055); }
+    .side-card { margin-bottom: 12px; padding: 14px; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--panel); }
+    .side-card h4 { margin: 6px 0 8px; font-size: 13px; }
+    .side-card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .pin-list { display: grid; gap: 8px; margin-top: 10px; }
+    .pin { padding: 9px; border: 1px solid var(--edge); border-radius: 5px; background: var(--canvas); }
+    .pin strong { display: block; margin-bottom: 3px; font-size: 11px; }
+    .pin span { color: var(--muted); font: 10px/1.4 var(--mono); overflow-wrap: anywhere; }
+
+    .compare-frame { min-height: 610px; display: grid; grid-template-columns: minmax(290px, 35%) minmax(0,65%); }
+    .compare-command { padding: 18px; border-right: 1px solid var(--edge); background: var(--panel); }
+    .compare-command h3 { margin: 5px 0 14px; font-size: 18px; }
+    .field { margin-bottom: 14px; }
+    .field-label { display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--text-2); font-size: 11px; font-weight: 650; }
+    .input-like { min-height: 42px; padding: 10px; border: 1px solid var(--edge); border-radius: 5px; background: var(--canvas); color: var(--text-2); line-height: 1.45; }
+    .model-line { min-height: 42px; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--edge); border-bottom: 0; background: var(--canvas); }
+    .model-line:first-child { border-radius: 5px 5px 0 0; }
+    .model-line:last-child { border-bottom: 1px solid var(--edge); border-radius: 0 0 5px 5px; }
+    .compare-result { min-width: 0; background: var(--canvas); }
+    .result-head { min-height: 64px; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 17px; border-bottom: 1px solid var(--edge); background: var(--shell); }
+    .result-tabs { display: flex; align-items: center; gap: 3px; }
+    .result-tab { min-height: 46px; padding: 0 10px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-2); cursor: pointer; }
+    .result-tab.active { color: var(--accent); border-color: rgba(99,224,202,.22); background: var(--accent-soft); }
+    .result-content { padding: 20px; }
+    .result-content h3 { margin: 7px 0 8px; font-size: 21px; letter-spacing: -.03em; }
+    .result-content > p { margin: 0 0 16px; color: var(--text-2); line-height: 1.55; }
+    .winner-row { display: grid; grid-template-columns: 36px minmax(0,1fr) 70px; gap: 10px; align-items: center; min-height: 66px; padding: 10px 12px; border: 1px solid rgba(99,224,202,.3); border-radius: var(--radius); background: var(--accent-soft); }
+    .rank { color: var(--accent); font: 18px/1 var(--mono); }
+    .score { color: var(--accent); font: 21px/1 var(--mono); text-align: right; }
+    .candidate-lines { margin-top: 9px; border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+    .candidate-line { min-height: 54px; display: grid; grid-template-columns: 36px minmax(0,1fr) 70px; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--edge); background: var(--panel); }
+    .candidate-line:last-child { border-bottom: 0; }
+    .derive-zone { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--edge); }
+    .derive-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .derived-card { padding: 16px; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--panel); }
+    .derived-card h4 { margin: 7px 0 8px; font-size: 17px; }
+    .derived-card p { margin: 0; color: var(--text-2); line-height: 1.55; }
+    .provenance-line { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+
+    .migration-grid { display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 16px; }
+    .migration-pipeline { border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+    .migration-step { min-height: 72px; display: grid; grid-template-columns: 36px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--edge); background: var(--panel); }
+    .migration-step:last-child { border-bottom: 0; }
+    .migration-step strong { display: block; margin-bottom: 3px; }
+    .migration-step p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .migration-step.commit { background: rgba(244,126,126,.045); }
+    .step-index { color: var(--muted); font: 12px/1 var(--mono); }
+    .warning-panel { padding: 16px; border: 1px solid rgba(244,126,126,.32); border-radius: var(--radius); background: rgba(244,126,126,.055); }
+    .warning-panel h3 { margin: 7px 0 8px; font-size: 15px; }
+    .warning-panel p { margin: 0; color: var(--text-2); font-size: 12px; line-height: 1.55; }
+    .mapping { margin-top: 12px; border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+    .mapping-row { display: grid; grid-template-columns: minmax(0,1fr) 22px minmax(0,1fr); gap: 8px; align-items: center; padding: 9px 10px; border-bottom: 1px solid var(--edge); background: var(--canvas); font: 10px/1.4 var(--mono); }
+    .mapping-row:last-child { border-bottom: 0; }
+    .mapping-row span:nth-child(2) { color: var(--accent); text-align: center; }
+    .contract-note { margin-top: 12px; padding: 12px; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--panel); color: var(--muted); font-size: 11px; line-height: 1.5; }
+
+    .locked-list { border-top: 1px solid var(--edge); }
+    .locked-row { display: grid; grid-template-columns: 38px minmax(0,1fr) minmax(220px, .75fr); gap: 14px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--edge); }
+    .lock-mark { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid rgba(112,229,167,.25); border-radius: 50%; background: rgba(112,229,167,.07); color: var(--success); }
+    .locked-row strong { display: block; margin-bottom: 5px; }
+    .locked-row p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .locked-choice { color: var(--text-2); font-size: 12px; line-height: 1.5; }
+
+    .modal-scrim { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 18px; background: rgba(0,0,0,.84); opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+    .modal-scrim.open { opacity: 1; pointer-events: auto; }
+    .modal { width: min(620px, 100%); max-height: calc(100vh - 36px); overflow-y: auto; border: 1px solid var(--edge-strong); border-radius: var(--radius-lg); background: var(--shell); box-shadow: var(--shadow); transform: translateY(10px) scale(.985); transition: transform 180ms var(--ease-out); }
+    .modal-scrim.open .modal { transform: translateY(0) scale(1); }
+    .modal-head { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 17px 18px; border-bottom: 1px solid var(--edge); background: var(--shell); }
+    .modal-head h3 { margin: 5px 0 0; font-size: 19px; }
+    .modal-body { padding: 18px; }
+    .preflight { border: 1px solid var(--edge); border-radius: var(--radius); overflow: hidden; }
+    .preflight-row { display: grid; grid-template-columns: 150px minmax(0,1fr); gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--edge); }
+    .preflight-row:last-child { border-bottom: 0; }
+    .preflight-row span:first-child { color: var(--muted); font-size: 11px; }
+    .preflight-row span:last-child { color: var(--text-2); font-size: 12px; }
+    .modal-actions { position: sticky; bottom: 0; z-index: 2; display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--edge); background: var(--shell); }
+    .icon-btn { width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid var(--edge); border-radius: 6px; background: var(--panel); color: var(--text-2); cursor: pointer; }
+
+    .toast { position: fixed; right: 18px; bottom: 18px; z-index: 100; max-width: min(390px, calc(100vw - 36px)); padding: 12px 14px; border: 1px solid var(--edge-strong); border-radius: var(--radius); background: var(--raised); color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity 150ms ease, transform 180ms var(--ease-out); }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 1060px) {
+      .artifact-head { grid-template-columns: minmax(220px,1fr) auto; }
+      .artifact-title { display: none; }
+      .job-grid { grid-template-columns: repeat(2,1fr); }
+      .job:nth-child(2) { border-right: 0; }
+      .job:nth-child(-n+2) { border-bottom: 1px solid var(--edge); }
+      .study-layout, .migration-grid { grid-template-columns: 1fr; }
+      .study-side { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; }
+      .side-card { margin-bottom: 0; }
+    }
+
+    @media (max-width: 800px) {
+      .artifact { grid-template-rows: auto minmax(0,1fr); }
+      .artifact-head { position: relative; min-height: 58px; grid-template-columns: 1fr auto; }
+      .head-meta .tag:not(.accent) { display: none; }
+      .layout { display: block; width: 100%; max-width: 100%; min-width: 0; }
+      .artifact, .artifact-head, .guide, .canvas { width: 100%; max-width: 100%; min-width: 0; }
+      .guide { position: sticky; top: 0; z-index: 30; height: auto; border-right: 0; border-bottom: 1px solid var(--edge); overflow: hidden; }
+      .guide-intro, .guide-foot { display: none; }
+      .guide-nav { display: flex; width: 100%; max-width: 100vw; min-width: 0; overflow-x: auto; padding: 7px 10px; scrollbar-width: none; }
+      .guide-nav::-webkit-scrollbar { display: none; }
+      .guide-btn { flex: 0 0 auto; min-height: 46px; grid-template-columns: 20px auto; padding: 0 11px; }
+      .canvas { padding: 22px 15px 40px; }
+      .screen-head { display: block; }
+      .head-actions { margin-top: 14px; }
+      .thesis { grid-template-columns: 1fr; }
+      .arrow-col { min-height: 38px; transform: rotate(90deg); }
+      .decision-ledger { grid-template-columns: 1fr; }
+      .decision-item { border-right: 0; border-bottom: 1px solid var(--edge); }
+      .decision-item:last-child { border-bottom: 0; }
+      .product-bar { grid-template-columns: 1fr; gap: 8px; padding: 10px 12px; }
+      .product-brand, .product-utils { display: none; }
+      .product-nav { overflow-x: auto; }
+      .job-grid { grid-template-columns: 1fr; }
+      .job { min-height: 130px; border-right: 0; border-bottom: 1px solid var(--edge); }
+      .job:last-child { border-bottom: 0; }
+      .route-map { grid-template-columns: 1fr; }
+      .route-arrow { transform: rotate(90deg); text-align: center; }
+      .product-workspace { grid-template-columns: 1fr; }
+      .rail { border-right: 0; border-bottom: 1px solid var(--edge); }
+      .rail-tabs { display: flex; overflow-x: auto; }
+      .rail-tab { flex: 0 0 auto; }
+      .rail-note { display: none; }
+      .workspace-head { align-items: flex-start; }
+      .summary-strip { grid-template-columns: 1fr; }
+      .summary-cell { border-right: 0; border-bottom: 1px solid var(--edge); }
+      .summary-cell:last-child { border-bottom: 0; }
+      .study-flow { grid-template-columns: 1fr 1fr; }
+      .flow-step:nth-child(2) { border-right: 0; }
+      .flow-step:nth-child(-n+2) { border-bottom: 1px solid var(--edge); }
+      .flow-step::after { display: none; }
+      .compare-frame { grid-template-columns: 1fr; }
+      .compare-command { border-right: 0; border-bottom: 1px solid var(--edge); }
+      .study-side { grid-template-columns: 1fr; }
+      .locked-row { grid-template-columns: 34px minmax(0,1fr); }
+      .locked-choice { grid-column: 2; }
+    }
+
+    @media (max-width: 520px) {
+      .artifact-head { padding: 0 12px; }
+      .brand-sub { display: none; }
+      .head-meta { display: none; }
+      .artifact-head { grid-template-columns: 1fr; }
+      .screen-head h2 { font-size: 27px; }
+      .product-nav span, .product-nav button { padding: 0 9px; }
+      .workspace-head { display: block; }
+      .workspace-head .button { margin-top: 12px; width: 100%; }
+      .asset-grid { grid-template-columns: 1fr; }
+      .rail-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; padding: 8px; }
+      .rail-tab { min-width: 0; justify-content: center; padding: 0 5px; font-size: 11px; text-align: center; }
+      .rail-count { display: none; }
+      .study-flow { grid-template-columns: 1fr; }
+      .flow-step { border-right: 0; border-bottom: 1px solid var(--edge); }
+      .flow-step:last-child { border-bottom: 0; }
+      .section-card { overflow-x: auto; }
+      table { min-width: 650px; }
+      .result-head { align-items: flex-start; flex-direction: column; }
+      .result-tabs { width: 100%; overflow-x: auto; }
+      .result-tab { flex: 0 0 auto; }
+      .derive-actions .button { width: 100%; }
+      .migration-step { grid-template-columns: 26px minmax(0,1fr); }
+      .migration-step > .tag { grid-column: 2; justify-self: start; }
+      .preflight-row { grid-template-columns: 1fr; gap: 4px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="artifact">
+    <header class="artifact-head">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2.3 20 6.8v9L12 20.3 4 15.8v-9L12 2.3Z" stroke="currentColor" stroke-width="1.4"/><path d="m4.4 7 7.6 4.3L19.6 7M12 11.3v8.5" stroke="currentColor" stroke-width="1.4"/><path d="m8.2 4.5 7.7 4.4" stroke="currentColor" stroke-width="1.4" opacity=".65"/></svg></span>
+        <span class="brand-copy"><span class="brand-name">RSemble AI</span><span class="brand-sub">Architecture review</span></span>
+      </div>
+      <div class="artifact-title">Research Lab and Fusion positioning proposal</div>
+      <div class="head-meta"><span class="tag">Documentation only</span><span class="tag accent">Decision checkpoint</span></div>
+    </header>
+
+    <div class="layout">
+      <aside class="guide">
+        <div class="guide-intro">
+          <div class="eyebrow">Reading path</div>
+          <h1>Reposition Fusion</h1>
+          <p>From Task-Set-owned feature to one method tested by first-class Policy Studies.</p>
+        </div>
+        <nav class="guide-nav" aria-label="Proposal sections">
+          <button class="guide-btn" data-screen="thesis" aria-current="step"><span class="step-num">01</span><span>Core correction</span></button>
+          <button class="guide-btn" data-screen="topology"><span class="step-num">02</span><span>Product topology</span></button>
+          <button class="guide-btn" data-screen="lab"><span class="step-num">03</span><span>Research Lab</span></button>
+          <button class="guide-btn" data-screen="study"><span class="step-num">04</span><span>Policy Study</span></button>
+          <button class="guide-btn" data-screen="compare"><span class="step-num">05</span><span>Compare + Fusion</span></button>
+          <button class="guide-btn" data-screen="migration"><span class="step-num">06</span><span>Hard migration</span></button>
+          <button class="guide-btn" data-screen="locked"><span class="step-num">07</span><span>Decisions locked</span></button>
+        </nav>
+        <div class="guide-foot">Illustrative product-shaped content. Scores and costs shown are examples from the archived Fusion Study specification, not claims about the live local corpus.</div>
+      </aside>
+
+      <main class="canvas">
+        <section class="screen" id="screen-thesis" data-screen-panel>
+          <header class="screen-head">
+            <div><div class="eyebrow">Positioning thesis</div><h2>Fusion is a method—not the owner.</h2><p>The current feature is named and nested as if it exists to prove that Fusion works. In reality it compares competing execution policies and may conclude that Rank, Refine, or a single model is better.</p></div>
+          </header>
+
+          <div class="thesis">
+            <article class="model-block bad">
+              <div class="model-head"><strong>Current conceptual model</strong><span class="tag danger">Conflated</span></div>
+              <div class="model-body"><div class="tree">
+                <div class="tree-node"><strong>Task Set</strong><span>Controlled workload and protocol</span></div>
+                <div class="tree-node child issue"><strong>Fusion Study</strong><span>Named for one treatment and owned by the workload</span></div>
+                <div class="tree-node child"><strong>Tests four policies</strong><span>Best-fixed · Rank · Fuse · Refine</span></div>
+                <div class="tree-node child"><strong>Policy Playbook</strong><span>May conclude “do not fuse”</span></div>
+              </div></div>
+            </article>
+
+            <div class="arrow-col" aria-hidden="true">→</div>
+
+            <article class="model-block good">
+              <div class="model-head"><strong>Revised conceptual model</strong><span class="tag accent">Outcome-led</span></div>
+              <div class="model-body"><div class="tree">
+                <div class="tree-node owner"><strong>Research Lab</strong><span>Owns experimental study infrastructure and reusable assets</span></div>
+                <div class="tree-node child owner"><strong>Policy Study</strong><span>Pins a workload, tests execution policies, owns findings</span></div>
+                <div class="tree-node child"><strong>Task Set Version · Model Pool · Fusion Recipes</strong><span>Immutable referenced inputs—not owners</span></div>
+                <div class="tree-node child"><strong>Policy Playbook</strong><span>Exploratory or confirmed strategy recommendation</span></div>
+              </div></div>
+            </article>
+          </div>
+
+          <div class="decision-ledger">
+            <div class="decision-item"><div class="eyebrow">Everyday work</div><strong>Compare always produces a judged comparison.</strong><p>Fuse and Refine become optional derived results instead of peer root modes.</p></div>
+            <div class="decision-item"><div class="eyebrow">Repeatable work</div><strong>Evaluations owns workloads and ordinary executions.</strong><p>Task Sets can start and backlink to studies, but do not own them.</p></div>
+            <div class="decision-item"><div class="eyebrow">Research work</div><strong>Lab owns policy experiments and playbooks.</strong><p>Fusion remains visible only where it names the actual method, recipe, or result.</p></div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-topology" data-screen-panel hidden>
+          <header class="screen-head">
+            <div><div class="eyebrow">Primary information architecture</div><h2>Four destinations, four distinct questions.</h2><p>Lab earns primary navigation because its first capability is complete: it can define, execute, recover, inspect, and report Policy Studies. Future study types remain invisible until independently implemented.</p></div>
+          </header>
+
+          <div class="topology-shell">
+            <div class="product-bar">
+              <div class="product-brand"><svg class="cube" viewBox="0 0 24 24" fill="none"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7l8-4.5Z" stroke="currentColor" stroke-width="1.4"/><path d="m4.4 7.2 7.6 4.2 7.6-4.2M12 11.4v9.5" stroke="currentColor" stroke-width="1.4"/></svg> RSemble AI</div>
+              <nav class="product-nav" aria-label="Proposed primary navigation"><span>Compare</span><span>Evaluations</span><span class="active">Lab</span><span>Models</span></nav>
+              <div class="product-utils"><span>Search</span><span>Attention</span><span>Records</span><span class="status success">Ready</span></div>
+            </div>
+            <div class="topology-body">
+              <div class="job-grid">
+                <article class="job"><div class="eyebrow">One task</div><h3>Compare</h3><p>Give several models one task, judge their responses, then optionally Fuse or Refine the preserved comparison.</p></article>
+                <article class="job"><div class="eyebrow">Repeatable workload</div><h3>Evaluations</h3><p>Define Task Sets, run ordinary Evaluation Executions, recover missing cells, and inspect result matrices.</p></article>
+                <article class="job lab"><div class="eyebrow">Learn how to execute</div><h3>Research Lab</h3><p>Run Policy Studies over pinned workloads, compare strategies, and produce qualified playbooks.</p></article>
+                <article class="job"><div class="eyebrow">Learn model behavior</div><h3>Models</h3><p>Inspect coverage-aware claims about exact model configurations from eligible canonical observations.</p></article>
+              </div>
+
+              <div class="route-map" aria-label="Context relationships">
+                <div class="route-node"><strong>Task Set Version</strong><span>“Start Policy Study” preselects an immutable workload.</span></div><div class="route-arrow">→</div>
+                <div class="route-node"><strong>/lab/studies/:studyId</strong><span>The study owns trials, findings, recovery, and its playbook.</span></div><div class="route-arrow">→</div>
+                <div class="route-node"><strong>Run with playbook</strong><span>Explicitly applies the pinned recommendation in Compare after cost preflight.</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-lab" data-screen-panel hidden>
+          <header class="screen-head">
+            <div><div class="eyebrow">Proposed working surface</div><h2>Research Lab leads with findings, not configuration.</h2><p>Policy Studies and their playbooks are primary. Fusion Recipes and Model Pools are reusable versioned assets in secondary sections.</p></div>
+          </header>
+
+          <div class="product-frame">
+            <div class="product-bar">
+              <div class="product-brand"><svg class="cube" viewBox="0 0 24 24" fill="none"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7l8-4.5Z" stroke="currentColor" stroke-width="1.4"/><path d="m4.4 7.2 7.6 4.2 7.6-4.2M12 11.4v9.5" stroke="currentColor" stroke-width="1.4"/></svg> RSemble AI</div>
+              <nav class="product-nav" aria-label="Primary navigation"><span>Compare</span><span>Evaluations</span><span class="active">Lab</span><span>Models</span></nav>
+              <div class="product-utils"><span>Search</span><span>Records</span><span class="status success">Ready</span></div>
+            </div>
+            <div class="product-workspace">
+              <aside class="rail">
+                <div class="rail-head"><div class="eyebrow">Research Lab</div><h3>How should models work?</h3></div>
+                <div class="rail-tabs" role="tablist" aria-label="Lab sections">
+                  <button class="rail-tab active" role="tab" aria-selected="true" data-lab-tab="studies"><span>Policy Studies</span><span class="rail-count">3</span></button>
+                  <button class="rail-tab" role="tab" aria-selected="false" data-lab-tab="recipes"><span>Fusion Recipes</span><span class="rail-count">3</span></button>
+                  <button class="rail-tab" role="tab" aria-selected="false" data-lab-tab="pools"><span>Model Pools</span><span class="rail-count">2</span></button>
+                </div>
+                <div class="rail-note">Routing, Judge, and Workflow studies use the same internal substrate later. They remain absent from this UI until complete.</div>
+              </aside>
+              <section class="workspace">
+                <header class="workspace-head"><div><div class="eyebrow" id="labEyebrow">Studies</div><h3 id="labTitle">Policy Studies</h3></div><button class="button primary" id="labPrimary">New Policy Study</button></header>
+                <div class="workspace-body" id="labContent"></div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-study" data-screen-panel hidden>
+          <header class="screen-head">
+            <div><div class="eyebrow">Canonical route · /lab/studies/study-research-grounding</div><h2>A study owns the experiment; the workload is pinned input.</h2><p>This Policy Study is a complete registered study type on a generic first-party Lab substrate. Its report may recommend any tested policy, including “do not fuse.”</p></div>
+            <div class="head-actions"><button class="button small quiet" id="copyRoute">Copy route</button><button class="button small" id="openRecord">Exact record</button></div>
+          </header>
+
+          <div class="study-layout">
+            <div class="study-main">
+              <article class="study-header-card">
+                <div class="eyebrow">Policy Study · Exploration</div>
+                <h3>Research Grounding execution strategy</h3>
+                <p style="margin:0;color:var(--text-2);line-height:1.55">Which execution policy provides the best quality–cost tradeoff for long-context research synthesis under the pinned workload and protocol?</p>
+                <div class="study-meta"><span class="tag warning">Exploratory</span><span class="status success">Completed</span><span class="tag">Study schema v1</span><span class="tag">Created from Task Set v6</span></div>
+              </article>
+
+              <div class="study-flow" aria-label="Policy Study flow">
+                <div class="flow-step"><div class="eyebrow">01</div><strong>Pin inputs</strong><p>Task Set Version, Model Pool Version, Fusion Recipe Versions, judges.</p></div>
+                <div class="flow-step"><div class="eyebrow">02</div><strong>Run protocol</strong><p>Blocked candidate evidence, recipe elimination, pair shortlist.</p></div>
+                <div class="flow-step"><div class="eyebrow">03</div><strong>Measure</strong><p>Holdout observations, policy deltas, costs, dependency-aware uncertainty.</p></div>
+                <div class="flow-step"><div class="eyebrow">04</div><strong>Publish playbook</strong><p>Exploratory or confirmed recommendation with exact provenance.</p></div>
+              </div>
+
+              <section class="section-card">
+                <header class="section-card-head"><h4>Policy Playbook</h4><div><span class="tag warning">Exploratory</span></div></header>
+                <table>
+                  <thead><tr><th>Policy</th><th>Configuration</th><th>Score</th><th>Lift</th><th>Cost</th><th>Confidence</th></tr></thead>
+                  <tbody>
+                    <tr><td>Best single</td><td>Model A</td><td class="mono">4.18</td><td class="mono">baseline</td><td class="mono">1×</td><td>High</td></tr>
+                    <tr><td>Rank</td><td>A + C</td><td class="mono">4.37</td><td class="mono">+0.19</td><td class="mono">2.4×</td><td>High</td></tr>
+                    <tr class="recommended"><td><strong>Fuse</strong></td><td>B + C → Synth X · AnalysisFed v2</td><td class="mono"><strong>4.52</strong></td><td class="mono"><strong>+0.34</strong></td><td class="mono">3.2×</td><td>Medium</td></tr>
+                    <tr><td>Refine</td><td>A → Synth X</td><td class="mono">4.45</td><td class="mono">+0.27</td><td class="mono">2.1×</td><td>High</td></tr>
+                  </tbody>
+                </table>
+              </section>
+
+              <section class="section-card">
+                <header class="section-card-head"><h4>Conclusion</h4><button class="button small primary" data-open-preflight>Run with playbook</button></header>
+                <div style="padding:14px;color:var(--text-2);line-height:1.6">For this workload: use Fusion B+C when maximum quality matters; use Rank A+C when cost matters; do not use Fusion for routine runs. Pool adequacy: confirmed. Status: exploratory pending fresh Task Set evidence.</div>
+              </section>
+            </div>
+
+            <aside class="study-side">
+              <section class="side-card"><div class="eyebrow">Pinned references</div><h4>Reproducibility receipt</h4><div class="pin-list">
+                <div class="pin"><strong>Workload</strong><span>task-set:research-grounding@6</span></div>
+                <div class="pin"><strong>Model pool</strong><span>pool:cross-family-frontier@3</span></div>
+                <div class="pin"><strong>Fusion recipes</strong><span>blind-raw@1 · analysis-fed@2 · analysis-scores@2</span></div>
+                <div class="pin"><strong>Judges</strong><span>development:j1@4 · holdout:j2@2</span></div>
+              </div></section>
+              <section class="side-card"><div class="eyebrow">Evidence boundary</div><h4>What may leave the Lab?</h4><p>Underlying single-model responses may qualify through canonical Observation eligibility. Rank, Fuse, Refine, recipe, and playbook outputs remain policy evidence.</p></section>
+              <section class="side-card"><div class="eyebrow">Future substrate</div><h4>Registered type: policy</h4><p>The internal registry can later add Routing, Judge, and Workflow study adapters. Unregistered types have no route, create action, or placeholder UI.</p></section>
+            </aside>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-compare" data-screen-panel hidden>
+          <header class="screen-head">
+            <div><div class="eyebrow">Everyday execution</div><h2>Compare first. Derive Fusion when it earns the cost.</h2><p>A judged Comparison Result is always the durable parent. Fuse and Refine create attributable child results against pinned candidate and Judge evidence.</p></div>
+          </header>
+
+          <div class="product-frame compare-frame">
+            <aside class="compare-command">
+              <div class="eyebrow">One task</div><h3>Compare models</h3>
+              <div class="field"><div class="field-label"><span>Task</span><span class="tag accent">Task v3</span></div><div class="input-like">Review a long research memo for unsupported claims, missing counterevidence, and methodological weaknesses.</div></div>
+              <div class="field"><div class="field-label"><span>Candidate models</span><span>3 selected</span></div>
+                <div class="model-line"><span>Model A</span><span class="tag">OpenAI</span></div>
+                <div class="model-line"><span>Model B</span><span class="tag">Anthropic</span></div>
+                <div class="model-line"><span>Model C</span><span class="tag">Z-AI</span></div>
+              </div>
+              <div class="field"><div class="field-label"><span>Rubric and Judge</span></div><div class="input-like">Research integrity v4<br><span style="color:var(--muted);font-size:11px">Blind Judge · exact configuration pinned</span></div></div>
+              <button class="button primary" style="width:100%" id="runComparisonDemo">Run comparison</button>
+              <button class="button quiet" style="width:100%;margin-top:8px" data-open-preflight>Run with playbook</button>
+            </aside>
+
+            <section class="compare-result">
+              <header class="result-head">
+                <div class="result-tabs" role="tablist" aria-label="Comparison results">
+                  <button class="result-tab active" role="tab" aria-selected="true" data-result-tab="comparison">Comparison</button>
+                  <button class="result-tab" role="tab" aria-selected="false" data-result-tab="fusion" id="fusionTab" hidden>Fusion Result</button>
+                  <button class="result-tab" role="tab" aria-selected="false" data-result-tab="refine" id="refineTab" hidden>Refined Result</button>
+                </div>
+                <span class="status success">Judged · complete</span>
+              </header>
+              <div class="result-content" id="comparisonResult">
+                <div class="eyebrow">Comparison Result · cmp-9b41</div><h3>Model B provides the strongest evidence discipline.</h3><p>The Judge found complete coverage across all candidates. The ranked result and exact assessment remain preserved regardless of which derived action runs next.</p>
+                <div class="winner-row"><span class="rank">1</span><span><strong>Model B</strong><br><span style="color:var(--muted);font-size:11px">Best source discipline · strongest counterevidence</span></span><span class="score">91</span></div>
+                <div class="candidate-lines">
+                  <div class="candidate-line"><span class="mono">2</span><span>Model A</span><span class="mono" style="text-align:right">86</span></div>
+                  <div class="candidate-line"><span class="mono">3</span><span>Model C</span><span class="mono" style="text-align:right">78</span></div>
+                </div>
+                <div class="derive-zone"><div class="eyebrow">Derived actions</div><div class="derive-actions"><button class="button primary" data-derive="fusion">Fuse answers</button><button class="button" data-derive="refine">Refine winner</button><button class="button quiet" id="judgeDetails">Judge evidence</button></div><p style="margin:9px 0 0;color:var(--muted);font-size:11px">These actions reuse accepted candidate and Judge attempts. They do not create another Comparison Result.</p></div>
+              </div>
+              <div class="result-content" id="fusionResult" hidden><div class="derived-card"><div class="eyebrow">Fusion Result · fusion-result-01</div><h4>Synthesized research-integrity review</h4><p>The fused answer combines Model B’s source discipline with Model A’s methodological critique. It is a policy artifact, not evidence attributed to either model.</p><div class="provenance-line"><span class="tag accent">Fusion Recipe · AnalysisFed v2</span><span class="tag">Comparison cmp-9b41</span><span class="tag">Attempt 1</span><span class="tag warning">Lab policy evidence only</span></div></div></div>
+              <div class="result-content" id="refineResult" hidden><div class="derived-card"><div class="eyebrow">Refined Result · refined-result-01</div><h4>Model B response, revised against the pinned rubric</h4><p>The winning candidate is improved without claiming pairwise complementarity. The artifact remains a policy output and never becomes another sample for Model B.</p><div class="provenance-line"><span class="tag">Winner Model B</span><span class="tag">Rubric v4</span><span class="tag">Attempt 1</span><span class="tag warning">Lab policy evidence only</span></div></div></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-migration" data-screen-panel hidden>
+          <header class="screen-head">
+            <div><div class="eyebrow">One-time schema replacement</div><h2>Convert the content. Retire the old contract.</h2><p>The new Lab becomes the only writable authority. Existing local Fusion content receives one semantic conversion; old stores, routes, payload shapes, and archive imports are removed after the transaction validates.</p></div>
+          </header>
+
+          <div class="migration-grid">
+            <div>
+              <div class="migration-pipeline">
+                <div class="migration-step"><span class="step-index">01</span><div><strong>Detect old Fusion schema</strong><p>Open all seven stores in one read transaction and reject unknown record versions.</p></div><span class="tag">Read only</span></div>
+                <div class="migration-step"><span class="step-index">02</span><div><strong>Build generic Lab records in memory</strong><p>Preserve semantic IDs, links, artifacts, trial lineage, costs, claim levels, and playbook conclusions.</p></div><span class="tag">No writes</span></div>
+                <div class="migration-step"><span class="step-index">03</span><div><strong>Validate the complete graph</strong><p>Every reference resolves; counts and identity crosswalks balance; no record is silently skipped.</p></div><span class="tag accent">Fail closed</span></div>
+                <div class="migration-step"><span class="step-index">04</span><div><strong>Write generic stores atomically</strong><p>Create Study, Trial, Attempt, Observation, Recipe, Model Pool, and Playbook records.</p></div><span class="tag">Transactional</span></div>
+                <div class="migration-step commit"><span class="step-index">05</span><div><strong>Delete old active stores and compatibility</strong><p>Only after the generic graph re-reads successfully. Old routes and Fusion-shaped archive imports stop resolving.</p></div><span class="tag danger">Commit boundary</span></div>
+              </div>
+              <div class="contract-note"><strong style="color:var(--text)">Failure contract:</strong> any unmappable record aborts before the schema commit and leaves the old database untouched. After commit, there is no permanent wrapper, dual authority, legacy route, or old archive reader.</div>
+            </div>
+
+            <aside>
+              <div class="warning-panel"><div class="eyebrow" style="color:var(--danger)">Deliberate compatibility break</div><h3>No old Fusion contract survives.</h3><p>This decision simplifies the final architecture but intentionally invalidates old `/evaluations/:suiteId/fusion/:studyId` links and Fusion-shaped archive files after the one-time conversion.</p></div>
+              <div class="mapping" aria-label="Schema mapping">
+                <div class="mapping-row"><span>FusionRecipeVersion</span><span>→</span><span>LabRecipeVersion(kind:fusion)</span></div>
+                <div class="mapping-row"><span>PoolManifestVersion</span><span>→</span><span>ModelPoolVersion</span></div>
+                <div class="mapping-row"><span>FusionStudy</span><span>→</span><span>StudyRecord(kind:policy)</span></div>
+                <div class="mapping-row"><span>FusionTrial</span><span>→</span><span>StudyTrial</span></div>
+                <div class="mapping-row"><span>FusionAttempt</span><span>→</span><span>StudyAttempt</span></div>
+                <div class="mapping-row"><span>FusionObservation</span><span>→</span><span>StudyObservation(scope:policy)</span></div>
+                <div class="mapping-row"><span>FusionPlaybook</span><span>→</span><span>PolicyPlaybook</span></div>
+              </div>
+              <button class="button" style="width:100%;margin-top:12px" id="migrationBoundary">Show removed contracts</button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-locked" data-screen-panel hidden>
+          <header class="screen-head">
+            <div><div class="eyebrow">Review ledger</div><h2>The decisions this proposal will write into the program.</h2><p>These are product contracts, not visual suggestions. Changing one later would require an explicit amendment to the governing parent and affected child specifications.</p></div>
+          </header>
+
+          <div class="locked-list">
+            <div class="locked-row"><span class="lock-mark">✓</span><div><strong>Research Lab is primary navigation.</strong><p>It ships with one complete functional capability rather than empty future tabs.</p></div><div class="locked-choice">Compare · Evaluations · Lab · Models</div></div>
+            <div class="locked-row"><span class="lock-mark">✓</span><div><strong>Policy Study owns the experiment.</strong><p>A Task Set Version is pinned workload input, not the owner or canonical route parent.</p></div><div class="locked-choice mono">/lab/studies/:studyId</div></div>
+            <div class="locked-row"><span class="lock-mark">✓</span><div><strong>Fusion remains method vocabulary only.</strong><p>Use Fuse action, Fusion Result, and Fusion Recipe. Do not use Fusion Study or Fusion Lab.</p></div><div class="locked-choice">Study type: Policy Study</div></div>
+            <div class="locked-row"><span class="lock-mark">✓</span><div><strong>Compare always preserves the judged parent result.</strong><p>Fusion and Refine are immutable derived child results; a playbook can auto-run one after explicit preflight.</p></div><div class="locked-choice">Comparison → optional derived results</div></div>
+            <div class="locked-row"><span class="lock-mark">✓</span><div><strong>Recipes and Model Pools are reusable Lab assets.</strong><p>Studies pin immutable versions and retain exact reproducibility receipts.</p></div><div class="locked-choice">Studies primary · assets secondary</div></div>
+            <div class="locked-row"><span class="lock-mark">✓</span><div><strong>Lab evidence has a strict attribution boundary.</strong><p>Only underlying single-model responses may qualify through ordinary Observation eligibility.</p></div><div class="locked-choice">Policy outputs never inflate Model profiles</div></div>
+            <div class="locked-row"><span class="lock-mark">✓</span><div><strong>Generic framework, first-party registry.</strong><p>Policy Study is complete now. Routing, Judge, and Workflow adapters remain invisible until dedicated verticals implement them.</p></div><div class="locked-choice">No custom schemas · no plugin SDK · no placeholders</div></div>
+            <div class="locked-row"><span class="lock-mark">✓</span><div><strong>Hard one-time migration.</strong><p>Convert current content semantically, then remove old stores, routes, payload compatibility, and archive readers.</p></div><div class="locked-choice">One writable authority after commit</div></div>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button class="button quiet" data-screen="thesis">Review from start</button><button class="button primary" id="approveDirection">Direction accurately captured</button></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-scrim" id="preflightModal" role="presentation" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="preflightTitle">
+      <header class="modal-head"><div><div class="eyebrow">Explicit paid-run checkpoint</div><h3 id="preflightTitle">Run with Policy Playbook</h3></div><button class="icon-btn" data-close-modal aria-label="Close preflight">×</button></header>
+      <div class="modal-body">
+        <p style="margin:0 0 14px;color:var(--text-2);line-height:1.55">This loads one exact playbook version. It does not silently attach itself to future Compare work.</p>
+        <div class="preflight">
+          <div class="preflight-row"><span>Playbook</span><span>Research Grounding strategy · exploratory · v1</span></div>
+          <div class="preflight-row"><span>Task compatibility</span><span>Exact Task Version or explicitly selected compatible Task Set context</span></div>
+          <div class="preflight-row"><span>Candidate policy</span><span>Model B + Model C · exact configurations pinned</span></div>
+          <div class="preflight-row"><span>Judge</span><span>Blind comparison Judge · pinned configuration</span></div>
+          <div class="preflight-row"><span>Derived action</span><span>Automatically run Fusion after the judged Comparison Result completes</span></div>
+          <div class="preflight-row"><span>Fusion Recipe</span><span>AnalysisFed v2 · anonymized candidates · verification enabled</span></div>
+          <div class="preflight-row"><span>Cost</span><span>Computed from live provider pricing before execution; user confirmation required</span></div>
+        </div>
+      </div>
+      <footer class="modal-actions"><button class="button quiet" data-close-modal>Cancel</button><button class="button primary" id="confirmPlaybook">Apply playbook to Compare</button></footer>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const screenButtons = [...document.querySelectorAll('[data-screen]')];
+      const panels = [...document.querySelectorAll('[data-screen-panel]')];
+      const toast = document.getElementById('toast');
+      let toastTimer;
+
+      function showToast(message) {
+        clearTimeout(toastTimer);
+        toast.textContent = message;
+        toast.classList.add('show');
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+      }
+
+      function showScreen(name, persist = true) {
+        panels.forEach(panel => { panel.hidden = panel.id !== `screen-${name}`; });
+        document.querySelectorAll('.guide-btn').forEach(button => {
+          if (button.dataset.screen === name) button.setAttribute('aria-current', 'step');
+          else button.removeAttribute('aria-current');
+        });
+        if (persist) localStorage.setItem('rsemble-lab-proposal-screen', name);
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      }
+
+      screenButtons.forEach(button => button.addEventListener('click', () => showScreen(button.dataset.screen)));
+
+      const labContent = document.getElementById('labContent');
+      const labTitle = document.getElementById('labTitle');
+      const labEyebrow = document.getElementById('labEyebrow');
+      const labPrimary = document.getElementById('labPrimary');
+      const labTemplates = {
+        studies: `
+          <div class="summary-strip">
+            <div class="summary-cell"><div class="eyebrow">Active</div><div class="summary-value">1 study running</div></div>
+            <div class="summary-cell"><div class="eyebrow">Findings</div><div class="summary-value">1 exploratory playbook</div></div>
+            <div class="summary-cell"><div class="eyebrow">Confirmed</div><div class="summary-value">1 qualified playbook</div></div>
+          </div>
+          <div class="record-list">
+            <button class="record-row" data-open-study><span><strong>Research Grounding execution strategy</strong><span class="record-meta"><span>Task Set v6</span><span>Cross-family pool v3</span><span>Policy Study</span></span></span><span class="record-side"><span class="tag warning">Exploratory</span><span>›</span></span></button>
+            <button class="record-row" data-study-toast="Async Reliability playbook is confirmed on fresh Task Set evidence."><span><strong>Async Reliability execution strategy</strong><span class="record-meta"><span>Task Set v5</span><span>Frontier reasoning pool v2</span><span>Policy Study</span></span></span><span class="record-side"><span class="tag success">Confirmed</span><span>›</span></span></button>
+            <button class="record-row" data-study-toast="Source Integrity study is in Stage B; completed trials remain preserved."><span><strong>Source Integrity execution strategy</strong><span class="record-meta"><span>Task Set v3</span><span>Cross-family pool v3</span><span>Stage B · pair discovery</span></span></span><span class="record-side"><span class="status info">Running</span><span>›</span></span></button>
+          </div>`,
+        recipes: `
+          <div class="asset-grid">
+            <article class="asset"><div class="eyebrow">Fusion Recipe · v1</div><h4>Blind Raw</h4><p>Anonymized candidate answers only. No development-Judge analysis or numeric scores.</p></article>
+            <article class="asset"><div class="eyebrow">Fusion Recipe · v2</div><h4>Analysis Fed</h4><p>Anonymized candidates plus qualitative consensus, contradiction, and blind-spot analysis.</p></article>
+            <article class="asset"><div class="eyebrow">Fusion Recipe · v2</div><h4>Analysis + Scores</h4><p>Qualitative analysis plus anchored criterion scores. Holdout Judge separation remains mandatory.</p></article>
+          </div>`,
+        pools: `
+          <div class="asset-grid">
+            <article class="asset"><div class="eyebrow">Model Pool · v3</div><h4>Cross-family frontier</h4><p>Six exact model configurations spanning independent providers and post-training families.</p></article>
+            <article class="asset"><div class="eyebrow">Model Pool · v2</div><h4>Frontier reasoning</h4><p>Five high-reasoning configurations with one predeclared lower-cost challenger.</p></article>
+          </div>`
+      };
+      const labMeta = {
+        studies: ['Studies', 'Policy Studies', 'New Policy Study'],
+        recipes: ['Reusable assets', 'Fusion Recipes', 'New Recipe Version'],
+        pools: ['Reusable assets', 'Model Pools', 'New Model Pool Version']
+      };
+
+      function bindLabRows() {
+        const openStudy = labContent.querySelector('[data-open-study]');
+        if (openStudy) openStudy.addEventListener('click', () => showScreen('study'));
+        labContent.querySelectorAll('[data-study-toast]').forEach(row => row.addEventListener('click', () => showToast(row.dataset.studyToast)));
+      }
+
+      function renderLab(name) {
+        document.querySelectorAll('[data-lab-tab]').forEach(button => {
+          const active = button.dataset.labTab === name;
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        labEyebrow.textContent = labMeta[name][0];
+        labTitle.textContent = labMeta[name][1];
+        labPrimary.textContent = labMeta[name][2];
+        labContent.innerHTML = labTemplates[name];
+        bindLabRows();
+      }
+      document.querySelectorAll('[data-lab-tab]').forEach(button => button.addEventListener('click', () => renderLab(button.dataset.labTab)));
+      labPrimary.addEventListener('click', () => showToast(`${labPrimary.textContent} opens a complete creation flow in the proposed Lab.`));
+      renderLab('studies');
+
+      const resultTabs = document.querySelectorAll('[data-result-tab]');
+      function showResult(name) {
+        resultTabs.forEach(tab => {
+          const active = tab.dataset.resultTab === name;
+          tab.classList.toggle('active', active);
+          tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        document.getElementById('comparisonResult').hidden = name !== 'comparison';
+        document.getElementById('fusionResult').hidden = name !== 'fusion';
+        document.getElementById('refineResult').hidden = name !== 'refine';
+      }
+      resultTabs.forEach(tab => tab.addEventListener('click', () => showResult(tab.dataset.resultTab)));
+      document.querySelectorAll('[data-derive]').forEach(button => button.addEventListener('click', () => {
+        const kind = button.dataset.derive;
+        const tab = document.getElementById(kind === 'fusion' ? 'fusionTab' : 'refineTab');
+        tab.hidden = false;
+        showResult(kind);
+        showToast(kind === 'fusion' ? 'Fusion Result created beneath Comparison cmp-9b41.' : 'Refined Result created beneath Comparison cmp-9b41.');
+      }));
+      document.getElementById('judgeDetails').addEventListener('click', () => showToast('Judge evidence remains attached to the parent Comparison Result.'));
+      document.getElementById('runComparisonDemo').addEventListener('click', () => showToast('Prototype only: a real run would create a new judged Comparison Result before derived actions unlock.'));
+
+      const modal = document.getElementById('preflightModal');
+      const modalClose = modal.querySelector('[data-close-modal]');
+      let priorFocus = null;
+      function openModal(event) {
+        priorFocus = event?.currentTarget || document.activeElement;
+        document.querySelector('.artifact').inert = true;
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        modalClose.focus();
+      }
+      function closeModal() {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.querySelector('.artifact').inert = false;
+        if (priorFocus && typeof priorFocus.focus === 'function') priorFocus.focus();
+      }
+      document.querySelectorAll('[data-open-preflight]').forEach(button => button.addEventListener('click', openModal));
+      document.querySelectorAll('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
+      modal.addEventListener('click', event => { if (event.target === modal) closeModal(); });
+      document.addEventListener('keydown', event => {
+        if (!modal.classList.contains('open')) return;
+        if (event.key === 'Escape') { closeModal(); return; }
+        if (event.key !== 'Tab') return;
+        const focusable = [...modal.querySelectorAll('button:not([disabled])')];
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      });
+      document.getElementById('confirmPlaybook').addEventListener('click', () => { closeModal(); showScreen('compare'); showToast('Playbook pinned. Live cost preflight must pass before execution.'); });
+
+      document.getElementById('copyRoute').addEventListener('click', async () => {
+        const route = '/lab/studies/study-research-grounding';
+        try { await navigator.clipboard.writeText(route); showToast(`Copied ${route}`); }
+        catch { showToast(route); }
+      });
+      document.getElementById('openRecord').addEventListener('click', () => showToast('Records opens exact Study, Trial, Attempt, Observation, and artifact provenance.'));
+      document.getElementById('migrationBoundary').addEventListener('click', () => showToast('Removed after commit: old Fusion stores, legacy route, payload reader, and old archive importer.'));
+      document.getElementById('approveDirection').addEventListener('click', () => showToast('Review checkpoint recorded in this prototype only. The Markdown program is not changed yet.'));
+
+      const saved = localStorage.getItem('rsemble-lab-proposal-screen');
+      if (saved && document.getElementById(`screen-${saved}`)) showScreen(saved, false);
+    })();
+  </script>
+</body>
+</html>

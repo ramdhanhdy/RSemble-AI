@@ -82,7 +82,7 @@ function makeEngine(taskIds: string[] = ["t1", "t2", "t3"]): ExperimentEngine {
   const record = createExperimentRecord({
     id: "exp-1",
     suite: makeSuite(taskIds),
-    profiles: [],
+    rubrics: [],
     now: 5000,
   });
   return createExperimentEngine(record);
@@ -145,7 +145,7 @@ describe("start", () => {
   it("orders the queue by task order field, not array position", () => {
     const suite = makeSuite(["a", "b"]);
     suite.tasks = [makeTask("b", 0), makeTask("a", 1)];
-    const record = createExperimentRecord({ id: "exp-1", suite, profiles: [], now: 5000 });
+    const record = createExperimentRecord({ id: "exp-1", suite, rubrics: [], now: 5000 });
     const engine = createExperimentEngine(record);
     engine.start(FENCE, 5000);
     expect(engine.nextAction()).toEqual({ kind: "begin-task", taskId: "b" });
@@ -406,7 +406,7 @@ describe("reload recovery", () => {
 describe("retryIncomplete", () => {
   function engineWithMixedAttempts(): ExperimentEngine {
     const suite = makeSuite(["t-done", "t-failed", "t-partial", "t-interrupted", "t-fresh"]);
-    const record = createExperimentRecord({ id: "exp-1", suite, profiles: [], now: 5000 });
+    const record = createExperimentRecord({ id: "exp-1", suite, rubrics: [], now: 5000 });
     const engine = createExperimentEngine(record);
     // Drive to a terminal state with mixed outcomes by writing attempts directly
     // through the public machine: run each task and commit with varied statuses.
@@ -919,7 +919,7 @@ describe("selectAttemptId", () => {
 describe("snapshot immutability", () => {
   it("createExperimentRecord deep-copies the suite into the snapshot", () => {
     const suite = makeSuite(["t1"]);
-    const record = createExperimentRecord({ id: "exp-1", suite, profiles: [], now: 5000 });
+    const record = createExperimentRecord({ id: "exp-1", suite, rubrics: [], now: 5000 });
 
     suite.name = "MUTATED";
     suite.tasks[0].prompt = "MUTATED";
@@ -1022,7 +1022,7 @@ describe("createExperimentRecord", () => {
     const record = createExperimentRecord({
       id: "exp-1",
       suite: makeSuite(["t1", "t2"]),
-      profiles: [],
+      rubrics: [],
       now: 5000,
     });
     expect(record.id).toBe("exp-1");

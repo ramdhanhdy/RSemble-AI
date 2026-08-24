@@ -3,11 +3,18 @@
 //
 // Covers export completeness, allowlisted construction, centralized import
 // limits, skip/conflict/rollback import semantics, run Markdown export from the
-// persisted record, and classified failure guidance.
+// persisted record, and classified failure guidance. Child 02 Task 10C adds
+// the preview-first, collision-safe, cancellation-safe, atomic v1/v2 import:
+// preview classifies every entity (create/reuse/collision) BEFORE any write,
+// invalid/corrupt archives are committed as preview "invalid" entities rather
+// than aborting the read-only preview, any non-identical ID collision aborts
+// commit before writes, and injected failure/quota/cancellation leaves source
+// and target unchanged.
 // =============================================================================
 
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import Dexie from "dexie";
 import {
   RSembleEvaluationDB,
   StorageError,
@@ -20,22 +27,64 @@ import {
 } from "./database";
 import { createRunRepository } from "./run-repository";
 import {
+  ArchiveImportCancelledError,
   archiveFailureGuidance,
+  ArchiveExportCancelledError,
   buildRunExportMarkdown,
+  commitPreviewWorkbenchArchiveV2,
   exportWorkbenchArchive,
+  exportWorkbenchArchiveV2,
+  exportWorkbenchArchiveV3,
   IMPORT_LIMITS,
   importWorkbenchArchive,
+  importWorkbenchArchiveAuto,
   parseWorkbenchArchive,
+  previewWorkbenchArchive,
   validateArchiveBytes,
+  type ArchiveExportProgress,
   type WorkbenchArchiveV1,
 } from "./archive";
+import {
+  computeArchiveV2PayloadDigest,
+  validateArchiveV2,
+  type WorkbenchArchiveV2,
+} from "./archive-v2-types";
+import * as fx from "./archive-v2-fixtures";
+import {
+  ensureFusionToResearchLabMigration,
+  getFusionToResearchLabReceipt,
+} from "../migrations/fusion-to-research-lab";
+import { migratedInputSnapshotRef } from "./comparison-result-migration";
+import type { ComparisonResultIndex } from "../compare/comparison-result-types";
 import type { FullRunSummaryV2, LegacyRunSummary, RunRecordV2, RunSummary } from "./run-types";
 import type {
-  EvaluationProfile,
+  EvaluationRubric,
   EvaluationSuite,
   ExperimentRecord,
-  ProfileRecord,
+  RubricRecord,
 } from "../evaluations/evaluation-types";
+
+const COMPARISON_SNAP_REF = `snap:sha256:${"a".repeat(64)}`;
+
+/** Inline Comparison Result index for seeding and collision variants. The
+ *  shared fixture builder lands with the implementation commit. */
+function comparisonIndexFor(id: string, inputSnapshotRef: string): ComparisonResultIndex {
+  return {
+    id,
+    runId: id,
+    createdAt: 1000,
+    updatedAt: 1000,
+    status: "completed",
+    mode: "rank",
+    title: `Comparison ${id}`,
+    taskBinding: { kind: "ad_hoc", inputSnapshotRef },
+    taskInstanceId: null,
+    activeObservationIds: [],
+    evidenceReceiptRevision: 0,
+    lineage: { repeatedFrom: null },
+    revision: 0,
+  };
+}
 
 // --- Valid baselines ----------------------------------------------------------
 
@@ -122,7 +171,7 @@ function makeLegacySummary(id: string): LegacyRunSummary {
   };
 }
 
-function makeProfile(id: string, version = 1, name = `Profile ${id}`): EvaluationProfile {
+function makeRubric(id: string, version = 1, name = `Rubric ${id}`): EvaluationRubric {
   return {
     id,
     version,
@@ -143,7 +192,7 @@ function makeProfile(id: string, version = 1, name = `Profile ${id}`): Evaluatio
   };
 }
 
-function makeProfileRecord(id: string): ProfileRecord {
+function makeRubricRecord(id: string): RubricRecord {
   return {
     id,
     revision: 1,
@@ -255,7 +304,7 @@ function detailRow(record: RunRecordV2): RunDetailRow {
   };
 }
 
-function profileRow(record: ProfileRecord): ProfileRow {
+function profileRow(record: RubricRecord): ProfileRow {
   return {
     id: record.id,
     record,
@@ -266,8 +315,8 @@ function profileRow(record: ProfileRecord): ProfileRow {
   };
 }
 
-function profileVersionRow(profile: EvaluationProfile): ProfileVersionRow {
-  return { id: profile.id, version: profile.version, profile, updatedAt: profile.updatedAt };
+function profileVersionRow(rubric: EvaluationRubric): ProfileVersionRow {
+  return { id: rubric.id, version: rubric.version, profile: rubric, updatedAt: rubric.updatedAt };
 }
 
 function suiteRow(suite: EvaluationSuite): SuiteRow {
@@ -309,8 +358,8 @@ function populatedArchive(): WorkbenchArchiveV1 {
   const archive = emptyArchive();
   archive.runs.summaries.push(makeFullSummary("run-1"), makeLegacySummary("legacy-1"));
   archive.runs.details.push(makeRun("run-1"));
-  archive.profiles.identities.push(makeProfileRecord("prof-1"));
-  archive.profiles.versions.push(makeProfile("prof-1"));
+  archive.profiles.identities.push(makeRubricRecord("prof-1"));
+  archive.profiles.versions.push(makeRubric("prof-1"));
   archive.suites.push(makeSuite("suite-1"));
   archive.experiments.push(makeExperiment("exp-1", "suite-1"));
   return archive;
@@ -320,8 +369,103 @@ function populatedArchive(): WorkbenchArchiveV1 {
 
 let db: RSembleEvaluationDB;
 
+function makeV12ArchiveDb(dbName: string): RSembleEvaluationDB {
+  const d = new Dexie(dbName) as unknown as RSembleEvaluationDB;
+  d.version(1).stores({
+    runSummaries:
+      "id, kind, revision, createdAt, completedAt, status, mode, sourceKind, sourceProtocolFingerprint, sourceExperimentTaskAttemptId, *modelKeys",
+    runDetails: "id, revision, createdAt, status",
+    profiles: "id, revision, latestVersion, updatedAt, archivedAt",
+    profileVersions: "[id+version], id, version, updatedAt",
+    suites: "id, revision, version, updatedAt, archivedAt",
+    experiments: "id, revision, suiteId, suiteVersion, protocolFingerprint, createdAt, status",
+    storageMeta: "key",
+  });
+  d.version(2).stores({
+    fusionRecipes: "[id+version], id, version",
+    poolManifests: "[id+version], id, version",
+    fusionStudies: "id, revision, suiteId, suiteVersion, status, updatedAt",
+    fusionTrials: "id, revision, studyId, stage, status, createdAt",
+    fusionAttempts: "id, studyId, createdAt",
+    fusionObservations: "id, trialId, createdAt",
+    fusionPlaybooks: "id, studyId, createdAt",
+  });
+  d.version(3).stores({
+    tasks: "id, updatedAt, archivedAt, origin",
+    taskVersions: "[taskId+version], taskId, createdAt",
+    taskArtifacts: "id, contentDigest, mediaType, byteCount, createdAt",
+    taskArtifactBytes: "id",
+    taskInstances: "id, [taskId+taskVersion], inputDigest, inputCompleteness, createdAt",
+    taskFamilies: "id, parentFamilyId, updatedAt, archivedAt",
+    taskFamilyAssignments: "id, taskId, taskVersion, familyId, isPrimary, createdAt, archivedAt",
+    taskFacetAnnotations: "id, taskId, [taskId+taskVersion], facetId, valueId, createdAt",
+    taskMigrationCrosswalk: "legacyScopeKey, taskId, taskVersion",
+  });
+  d.version(4).stores({
+    taskFamilyRelations: "id, fromFamilyId, toFamilyId, kind, createdAt",
+  });
+  d.version(5).stores({
+    taskSets: "id, updatedAt, archivedAt, origin",
+    taskSetVersions: "[taskSetId+version], taskSetId, createdAt",
+  });
+  d.version(6).stores({
+    taskSetOwnershipCrosswalk: "key, kind, taskSetId",
+  });
+  d.version(7).stores({
+    taskSetMaterializations:
+      "id, taskSetId, [taskSetId+taskSetVersion], protocolFingerprint, createdAt",
+  });
+  d.version(8).stores({
+    modelConfigurations: "id, providerId, requestedModel, resolvedVersion, observedTo",
+    observations:
+      "id, sourceKey, sourceResultId, taskId, taskInstanceId, modelConfigurationId, observedAt",
+    evidenceDecisions:
+      "id, [observationId+ruleVersion], observationId, status, evidenceClass, comparabilityCohortId",
+    evidenceIndexJobs: "sourceResultId, sourceKind, status, ruleVersion, updatedAt",
+  });
+  d.version(9).stores({
+    observations:
+      "id, &sourceKey, sourceResultId, taskId, taskInstanceId, modelConfigurationId, observedAt",
+  });
+  d.version(10).stores({
+    verifierOutcomes: "id, taskId, modelKey, runId, executedAt",
+  });
+  d.version(11).stores({
+    comparisonResults: "id, runId, status, mode, createdAt, updatedAt, revision",
+  });
+  d.version(12).stores({
+    labRecipeRecords: "id, kind, latestVersion, archivedAt, updatedAt",
+    labRecipeVersions: "[recipeId+version], recipeId, digest, createdAt",
+    modelPoolRecords: "id, latestVersion, archivedAt, updatedAt",
+    modelPoolVersions: "[poolId+version], poolId, digest, createdAt",
+    studies: "id, kind, status, claimLevel, confirmationOf, updatedAt, archivedAt",
+    studyTrials: "id, studyId, status, sampleIndex, createdAt",
+    studyAttempts: "id, studyId, fromTrialId, toTrialId, createdAt",
+    studyObservations: "id, studyId, trialId, status, createdAt",
+    policyPlaybooks: "id, studyId, definitionFingerprint, createdAt",
+  });
+  (d as any)._storageState = "ready";
+  (d as any).setState = function (s: string) {
+    (this as any)._storageState = s;
+  };
+  Object.defineProperty(d, "state", {
+    get() {
+      return (this as any)._storageState;
+    },
+  });
+  (d as any).assertWritable = function () {
+    if ((this as any)._storageState === "blocked")
+      throw new StorageError("blocked", "Database upgrade is blocked.");
+    if ((this as any)._storageState === "versionchange")
+      throw new StorageError("versionchange", "Database version change.");
+    if ((this as any)._storageState === "unavailable")
+      throw new StorageError("unavailable", "Database unavailable.");
+  };
+  return d;
+}
+
 beforeEach(async () => {
-  db = new RSembleEvaluationDB("test-archive-" + Math.random());
+  db = makeV12ArchiveDb("test-archive-" + Math.random());
   await db.open();
 });
 
@@ -333,13 +477,13 @@ afterEach(async () => {
 // --- 1. Export completeness ----------------------------------------------------
 
 describe("exportWorkbenchArchive", () => {
-  it("includes schema version, summaries, details, profiles, suites, and experiments", async () => {
+  it("includes schema version, summaries, details, profiles: rubrics, suites, and experiments", async () => {
     await db.runSummaries.put(summaryRow(makeFullSummary("run-1")));
     await db.runSummaries.put(summaryRow(makeLegacySummary("legacy-1")));
     await db.runDetails.put(detailRow(makeRun("run-1")));
-    await db.profiles.put(profileRow(makeProfileRecord("prof-1")));
-    await db.profileVersions.put(profileVersionRow(makeProfile("prof-1")));
-    await db.profileVersions.put(profileVersionRow(makeProfile("prof-1", 2)));
+    await db.profiles.put(profileRow(makeRubricRecord("prof-1")));
+    await db.profileVersions.put(profileVersionRow(makeRubric("prof-1")));
+    await db.profileVersions.put(profileVersionRow(makeRubric("prof-1", 2)));
     await db.suites.put(suiteRow(makeSuite("suite-1")));
     await db.experiments.put(experimentRow(makeExperiment("exp-1", "suite-1")));
 
@@ -403,8 +547,8 @@ describe("IMPORT_LIMITS constants", () => {
     expect(IMPORT_LIMITS.ARCHIVE_BYTES).toBe(268435456);
     expect(IMPORT_LIMITS.RUN_SUMMARIES).toBe(25000);
     expect(IMPORT_LIMITS.RUN_DETAILS).toBe(25000);
-    expect(IMPORT_LIMITS.PROFILE_IDENTITIES).toBe(5000);
-    expect(IMPORT_LIMITS.PROFILE_REVISIONS).toBe(10000);
+    expect(IMPORT_LIMITS.RUBRIC_IDENTITIES).toBe(5000);
+    expect(IMPORT_LIMITS.RUBRIC_REVISIONS).toBe(10000);
     expect(IMPORT_LIMITS.SUITES).toBe(5000);
     expect(IMPORT_LIMITS.EXPERIMENTS).toBe(25000);
     expect(IMPORT_LIMITS.STRING_BYTES).toBe(8388608);
@@ -555,11 +699,11 @@ describe("importWorkbenchArchive", () => {
   it("conflicts at the profileVersions [id+version] composite key", async () => {
     await importWorkbenchArchive(db, populatedArchive());
     const changed = emptyArchive();
-    changed.profiles.versions.push(makeProfile("prof-1", 1, "Renamed profile"));
+    changed.profiles.versions.push(makeRubric("prof-1", 1, "Renamed rubric"));
     const result = await importWorkbenchArchive(db, changed);
     expect(result.conflicting).toEqual(["prof-1@1"]);
     const row = await db.profileVersions.get(["prof-1", 1]);
-    expect((row?.profile as EvaluationProfile).name).toBe("Profile prof-1");
+    expect((row?.profile as EvaluationRubric).name).toBe("Rubric prof-1");
   });
 
   it("writes nothing when a record in a multi-record archive is corrupt", async () => {
@@ -798,7 +942,7 @@ describe("archiveFailureGuidance", () => {
 // --- §18 export completeness: hybrid scoring derivation ------------------------
 
 function makeHybridRun(
-  profile: EvaluationProfile | null,
+  rubric: EvaluationRubric | null,
   criterionScores: Array<{
     criterionId: string;
     label: string;
@@ -811,7 +955,7 @@ function makeHybridRun(
   id = "run-hybrid",
 ): RunRecordV2 {
   const record = makeRun(id);
-  record.evaluation.profile = profile;
+  record.evaluation.profile = rubric;
   record.judge = {
     status: "done",
     acceptedAttemptId: null,
@@ -862,7 +1006,7 @@ const binaryB = {
   trueWhen: "yes",
   falseWhen: "no",
 };
-const mixedProfile: EvaluationProfile = {
+const mixedRubric: EvaluationRubric = {
   id: "p-mix",
   version: 1,
   name: "Mixed",
@@ -879,7 +1023,7 @@ const mixedProfile: EvaluationProfile = {
 
 describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () => {
   it("ordinary mixed profile: Q, C, λ, rankValue, rankScore, derivation, binary PASS/FAIL", () => {
-    const record = makeHybridRun(mixedProfile, [
+    const record = makeHybridRun(mixedRubric, [
       { criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" },
       { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
       { criterionId: "check-b", label: "Check B", kind: "binary", value: true, rationale: "r" },
@@ -902,14 +1046,14 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
   });
 
   it("uneven group weights: derivation reflects weighted compliance", () => {
-    const profile: EvaluationProfile = {
-      ...mixedProfile,
+    const rubric: EvaluationRubric = {
+      ...mixedRubric,
       requirementGroups: [
         { id: "g1", name: "Core", checkIds: ["check-a"], weight: 2, mode: "ALL" },
         { id: "g2", name: "Extra", checkIds: ["check-b"], weight: 1, mode: "ALL" },
       ],
     };
-    const record = makeHybridRun(profile, [
+    const record = makeHybridRun(rubric, [
       { criterionId: "quality", label: "Quality", kind: "graded", score: 3, rationale: "r" },
       { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
       { criterionId: "check-b", label: "Check B", kind: "binary", value: false, rationale: "r" },
@@ -926,12 +1070,12 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
   it("floored candidate: floor marker and raw rankValue shown", () => {
     // Q = 1 (valid graded score 1), C = 0 (group fails), λ = 1
     // → rv = 1 - 1*(1-0) = 0 < 1 → floored.
-    const profile: EvaluationProfile = {
-      ...mixedProfile,
+    const rubric: EvaluationRubric = {
+      ...mixedRubric,
       complianceInfluence: 1.0,
     };
     const record = makeHybridRun(
-      profile,
+      rubric,
       [
         { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
         { criterionId: "check-a", label: "Check A", kind: "binary", value: false, rationale: "r" },
@@ -948,7 +1092,7 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
   });
 
   it("binary group labels shown on binary criterion rows", () => {
-    const record = makeHybridRun(mixedProfile, [
+    const record = makeHybridRun(mixedRubric, [
       { criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" },
       { criterionId: "check-a", label: "Check A", kind: "binary", value: true, rationale: "r" },
       { criterionId: "check-b", label: "Check B", kind: "binary", value: false, rationale: "r" },
@@ -959,14 +1103,14 @@ describe("buildRunExportMarkdown — hybrid scoring derivation (spec §18)", () 
     expect(md).toContain("Check B: FAIL");
   });
 
-  it("legacy profile (null): falls back to overallScore headline, no derivation", () => {
+  it("legacy rubric (null): falls back to overallScore headline, no derivation", () => {
     const record = makeHybridRun(
       null,
       [{ criterionId: "quality", label: "Quality", kind: "graded", score: 4, rationale: "r" }],
       3.5,
     );
     const md = buildRunExportMarkdown(record);
-    // No profile → no scoring derivation section.
+    // No rubric → no scoring derivation section.
     expect(md).not.toContain("rankValue = Q");
     expect(md).not.toContain("Compliance influence (λ)");
     // Headline uses overallScore.
@@ -1226,5 +1370,1198 @@ describe("importWorkbenchArchive — preserves revision for subsequent CAS updat
     const got = await repo.get("run-rev");
     expect(got?.revision).toBe(8);
     expect(got?.status).toBe("failed");
+  });
+});
+
+// --- Task 10B: complete deterministic secret-safe v2 export -------------------
+
+/** Seed every canonical Dexie store with one representative entity each (IDs
+ *  ordered so deterministic-ordering assertions are meaningful). Mirrors the
+ *  repository row mapping via the shared fixture builders. */
+async function seedCompleteCorpus(): Promise<void> {
+  const bytes = new TextEncoder().encode("candidate-visible artifact text");
+
+  await db.runSummaries.put(fx.runSummaryRow(fx.makeRunSummary("run-1")));
+  await db.runSummaries.put(fx.runSummaryRow(fx.makeRunSummary("run-2")));
+  await db.runDetails.put(fx.runDetailRow(fx.makeRunDetail("run-1")));
+  await db.runDetails.put(fx.runDetailRow(fx.makeRunDetail("run-2")));
+  await db.profiles.put(fx.profileRow(fx.makeRubricRecord("rubric-1")));
+  await db.profileVersions.put(fx.profileVersionRow(fx.makeRubricVersion("rubric-1", 1)));
+  await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+  await db.experiments.put(fx.experimentRow(fx.makeExperiment("exp-1", "suite-1")));
+
+  await (db as any).fusionRecipes.put(fx.fusionRecipeRow(fx.makeRecipe("recipe-1", 1)));
+  await (db as any).poolManifests.put(fx.poolManifestRow(fx.makePoolManifest("pool-1", 1)));
+  await (db as any).fusionStudies.put(fx.fusionStudyRow(fx.makeStudy("study-1")));
+  await (db as any).fusionTrials.put(fx.fusionTrialRow(fx.makeTrial("trial-1", "study-1")));
+  await (db as any).fusionAttempts.put(fx.fusionAttemptRow(fx.makeAttempt("attempt-1", "study-1")));
+  await (db as any).fusionObservations.put(
+    fx.fusionObservationRow(fx.makeObservation("obs-1", "trial-1")),
+  );
+  await (db as any).fusionPlaybooks.put(
+    fx.fusionPlaybookRow(fx.makePlaybook("playbook-1", "study-1")),
+  );
+
+  await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-1")));
+  await db.taskVersions.put(fx.taskVersionRow(fx.makeTaskVersion("task-1", 1, "art-1")));
+  await db.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-1", bytes)));
+  await db.taskArtifactBytes.put(fx.taskArtifactBytesRow("art-1", bytes));
+  await db.taskInstances.put(
+    fx.taskInstanceRow(fx.makeTaskInstance("inst-1", "task-1", 1, "art-1")),
+  );
+  await db.taskFamilies.put(fx.taskFamilyRow(fx.makeTaskFamily("fam-1")));
+  await db.taskFamilyAssignments.put(
+    fx.taskFamilyAssignmentRow(fx.makeTaskFamilyAssignment("fa-1", "task-1", 1, "fam-1")),
+  );
+  await db.taskFamilyRelations.put(
+    fx.taskFamilyRelationRow(fx.makeTaskFamilyRelation("rel-1", "fam-1", "fam-1")),
+  );
+  await db.taskFacetAnnotations.put(
+    fx.taskFacetAnnotationRow(fx.makeTaskFacetAnnotation("ann-1", "task-1")),
+  );
+  await db.taskMigrationCrosswalk.put(fx.taskMigrationCrosswalkRow(fx.makeCrosswalk("task-1", 1)));
+
+  // Task Set identity (Child 03 Task 11).
+  await db.taskSets.put(fx.taskSetRecordRow(fx.makeTaskSetRecord("suite-1")));
+  await db.taskSetVersions.put(fx.taskSetVersionRow(fx.makeTaskSetVersion("suite-1", 1)));
+  await db.taskSetMaterializations.put(
+    fx.taskSetMaterializationRow(fx.makeTaskSetMaterialization("mat-1", "suite-1", 1)),
+  );
+  await db.taskSetOwnershipCrosswalk.put(fx.makeSuiteManifestCrosswalk("suite-1"));
+  await db.taskSetOwnershipCrosswalk.put(fx.makeExperimentOwnerCrosswalk("exp-1", "suite-1"));
+  await db.taskSetOwnershipCrosswalk.put(fx.makeFusionOwnerCrosswalk("study-1", "suite-1"));
+  // Evidence collections (Child 04 Task 12).
+  const mc = fx.makeModelConfiguration();
+  const obs = fx.makeEvidenceObservation(mc.id);
+  const dec = fx.makeEligibilityDecision(obs.id, 1);
+  const job = fx.makeEvidenceIndexJob("run-1");
+  const vo = fx.makeExecutedVerifierOutcome("run-1", "task-1", "openrouter:m1", 1400);
+
+  await db.modelConfigurations.put(fx.modelConfigurationRow(mc));
+  await db.observations.put(fx.evidenceObservationRow(obs));
+  await db.evidenceDecisions.put(fx.evidenceDecisionRow(dec));
+  await db.evidenceIndexJobs.put(fx.evidenceIndexJobRow(job));
+  await db.verifierOutcomes.put(fx.verifierOutcomeRow(vo));
+
+  // Unrestricted storage metadata must never cross the archive boundary.
+  await db.storageMeta.put({ key: "execution-lease", value: { ownerId: "owner-1" } });
+}
+
+describe("exportWorkbenchArchiveV2 — complete task-first export", () => {
+  it("round-trips every canonical collection through the v2 validator", async () => {
+    await seedCompleteCorpus();
+
+    const archive = await exportWorkbenchArchiveV2(db);
+
+    // Manifest identity.
+    expect(archive.manifest.formatVersion).toBe(2);
+    expect(archive.manifest.storageVersion).toBe(1);
+    expect(typeof archive.manifest.exportedAt).toBe("number");
+    expect(archive.manifest.producer).toBe("rsemble-ai");
+    expect(archive.manifest.disclosure).toEqual({
+      scope: "local",
+      notes: "Local workbench export. No remote transport metadata.",
+    });
+
+    // Every entity exported — exact equality with the seeded source records.
+    expect(archive.runs.summaries.map((s) => s.id)).toEqual(["run-1", "run-2"]);
+    expect(archive.runs.details.map((r) => r.id)).toEqual(["run-1", "run-2"]);
+    expect(archive.rubrics.identities.map((r) => r.id)).toEqual(["rubric-1"]);
+    expect(archive.rubrics.versions.map((r) => r.version)).toEqual([1]);
+    expect(archive.suites.map((s) => s.id)).toEqual(["suite-1"]);
+    expect(archive.experiments.map((e) => e.id)).toEqual(["exp-1"]);
+    expect(archive.fusion.recipes.map((r) => r.id)).toEqual(["recipe-1"]);
+    expect(archive.fusion.poolManifests.map((p) => p.id)).toEqual(["pool-1"]);
+    expect(archive.fusion.studies.map((s) => s.id)).toEqual(["study-1"]);
+    expect(archive.fusion.trials.map((t) => t.id)).toEqual(["trial-1"]);
+    expect(archive.fusion.attempts.map((a) => a.id)).toEqual(["attempt-1"]);
+    expect(archive.fusion.observations.map((o) => o.id)).toEqual(["obs-1"]);
+    expect(archive.fusion.playbooks.map((p) => p.id)).toEqual(["playbook-1"]);
+    expect(archive.tasks.tasks.map((t) => t.id)).toEqual(["task-1"]);
+    expect(archive.tasks.taskVersions.map((v) => v.version)).toEqual([1]);
+    expect(archive.tasks.taskArtifacts.map((a) => a.id)).toEqual(["art-1"]);
+    expect(archive.tasks.taskArtifactBytes.map((b) => b.id)).toEqual(["art-1"]);
+    expect(archive.tasks.taskInstances.map((i) => i.id)).toEqual(["inst-1"]);
+    expect(archive.tasks.taskFamilies.map((f) => f.id)).toEqual(["fam-1"]);
+    expect(archive.tasks.taskFamilyAssignments.map((a) => a.id)).toEqual(["fa-1"]);
+    expect(archive.tasks.taskFamilyRelations.map((r) => r.id)).toEqual(["rel-1"]);
+    expect(archive.tasks.taskFacetAnnotations.map((a) => a.id)).toEqual(["ann-1"]);
+    expect(archive.tasks.taskMigrationCrosswalks.map((c) => c.legacyScopeKey)).toEqual([
+      "legacy:task-1",
+    ]);
+    expect(archive.taskSets?.records.map((r) => r.id)).toEqual(["suite-1"]);
+    expect(archive.taskSets?.versions.map((v) => v.version)).toEqual([1]);
+    expect(archive.taskSets?.materializations.map((m) => m.id)).toEqual(["mat-1"]);
+    expect(archive.taskSets?.ownershipCrosswalks.map((c) => c.key).sort()).toEqual([
+      "ts-xwalk:exp:exp-1",
+      "ts-xwalk:fusion:study-1",
+      "ts-xwalk:suite:suite-1:sha256:" + "b".repeat(64),
+    ]);
+    expect(archive.evidence?.modelConfigurations.map((m) => m.id)).toEqual([
+      "mc:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    ]);
+    expect(archive.evidence?.observations.length).toBe(1);
+    expect(archive.evidence?.evidenceDecisions.length).toBe(1);
+    expect(archive.evidence?.evidenceIndexJobs.map((j) => j.sourceResultId)).toEqual(["run-1"]);
+    expect(archive.evidence?.verifierOutcomes.map((v) => v.runId)).toEqual(["run-1"]);
+
+    // Source evidence is semantically unchanged: deep equality with the seeded
+    // domain records, and artifact bytes decode byte-equal.
+    expect(archive.tasks.tasks[0]).toEqual(fx.makeTaskRecord("task-1"));
+    expect(archive.fusion.studies[0]).toEqual(fx.makeStudy("study-1"));
+    const decoded = atob(archive.tasks.taskArtifactBytes[0].bytesBase64);
+    expect(new TextDecoder().decode(Uint8Array.from(decoded, (c) => c.charCodeAt(0)))).toBe(
+      "candidate-visible artifact text",
+    );
+
+    // The complete envelope passes the pure v2 validator end-to-end.
+    const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+    expect(check.errors).toEqual([]);
+    expect(check.valid).toBe(true);
+
+    // Fusion claim levels and artifact refs survive the round trip.
+    expect(archive.fusion.studies[0].claimLevel).toBe("exploratory");
+    expect(archive.fusion.playbooks[0].claimLevel).toBe("exploratory");
+    expect(archive.fusion.trials[0].children.synthesisArtifact).toBeNull();
+  });
+
+  it("exports an empty workbench as a valid, count-zero v2 envelope", async () => {
+    const archive = await exportWorkbenchArchiveV2(db);
+    expect(Object.values(archive.manifest.counts)).toEqual(new Array(35).fill(0));
+    const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+    expect(check.valid).toBe(true);
+  });
+
+  it("carries exact per-collection counts and a recomputable integrity digest", async () => {
+    await seedCompleteCorpus();
+    const archive = await exportWorkbenchArchiveV2(db);
+
+    expect(archive.manifest.counts.runSummaries).toBe(2);
+    expect(archive.manifest.counts.runDetails).toBe(2);
+    expect(archive.manifest.counts.rubricIdentities).toBe(1);
+    expect(archive.manifest.counts.rubricVersions).toBe(1);
+    expect(archive.manifest.counts.suites).toBe(1);
+    expect(archive.manifest.counts.experiments).toBe(1);
+    expect(archive.manifest.counts.fusionRecipes).toBe(1);
+    expect(archive.manifest.counts.poolManifests).toBe(1);
+    expect(archive.manifest.counts.fusionStudies).toBe(1);
+    expect(archive.manifest.counts.fusionTrials).toBe(1);
+    expect(archive.manifest.counts.fusionAttempts).toBe(1);
+    expect(archive.manifest.counts.fusionObservations).toBe(1);
+    expect(archive.manifest.counts.fusionPlaybooks).toBe(1);
+    expect(archive.manifest.counts.tasks).toBe(1);
+    expect(archive.manifest.counts.taskVersions).toBe(1);
+    expect(archive.manifest.counts.taskArtifacts).toBe(1);
+    expect(archive.manifest.counts.taskArtifactBytes).toBe(1);
+    expect(archive.manifest.counts.taskInstances).toBe(1);
+    expect(archive.manifest.counts.taskFamilies).toBe(1);
+    expect(archive.manifest.counts.taskFamilyAssignments).toBe(1);
+    expect(archive.manifest.counts.taskFamilyRelations).toBe(1);
+    expect(archive.manifest.counts.taskFacetAnnotations).toBe(1);
+    expect(archive.manifest.counts.taskMigrationCrosswalks).toBe(1);
+    expect(archive.manifest.counts.taskSets).toBe(1);
+    expect(archive.manifest.counts.taskSetVersions).toBe(1);
+    expect(archive.manifest.counts.taskSetMaterializations).toBe(1);
+    expect(archive.manifest.counts.taskSetOwnershipCrosswalks).toBe(3);
+    expect(archive.manifest.counts.modelConfigurations).toBe(1);
+    expect(archive.manifest.counts.observations).toBe(1);
+    expect(archive.manifest.counts.evidenceDecisions).toBe(1);
+    expect(archive.manifest.counts.evidenceIndexJobs).toBe(1);
+    expect(archive.manifest.counts.verifierOutcomes).toBe(1);
+
+    expect(archive.manifest.payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(archive.manifest.payloadDigest).toBe(computeArchiveV2PayloadDigest(archive));
+  });
+
+  it("is deterministic: serialization, collection order, and digest are identical across exports", async () => {
+    await seedCompleteCorpus();
+    // Insert in descending ID order so only an explicit deterministic sort
+    // can produce ascending output.
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-b")));
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-a")));
+
+    const a = await exportWorkbenchArchiveV2(db, { now: () => 7777 });
+    const b = await exportWorkbenchArchiveV2(db, { now: () => 7777 });
+
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    expect(a.manifest.payloadDigest).toBe(b.manifest.payloadDigest);
+    // Descending insertion still yields deterministic ascending order.
+    expect(a.suites.map((s) => s.id)).toEqual(["suite-1", "suite-a", "suite-b"]);
+  });
+
+  it("its versioned collections sort unambiguously under prefix IDs and the emitted archive self-validates (F5)", async () => {
+    // Seed task versions under prefix IDs "a" and "a0" whose composite sort
+    // key must separate id from version. A naive `id + paddedVersion`
+    // concatenation conflates the two (naive sorts a-v1 after a0-v1 because
+    // "a0..." < "a..."), so the exporter and validator must share a NUL-
+    // separated composite key and the delivered envelope must clear
+    // `validateArchiveV2` (self-validation determinism).
+    const base = fx.makeTaskRecord("a0");
+    await db.tasks.put(fx.taskRecordRow({ ...base, id: "a", latestVersion: 1 }));
+    await db.tasks.put(fx.taskRecordRow({ ...base }));
+    const v = fx.makeTaskVersion("_", 1, "art-1");
+    await db.taskVersions.put(
+      fx.taskVersionRow({ ...v, taskId: "a0", version: 1, defaultContextManifest: [] }),
+    );
+    await db.taskVersions.put(
+      fx.taskVersionRow({ ...v, taskId: "a", version: 1, defaultContextManifest: [] }),
+    );
+
+    const archive = await exportWorkbenchArchiveV2(db);
+    // Tasks: plain id sort ("a" before "a0").
+    expect(archive.tasks.tasks.map((t) => t.id)).toEqual(["a", "a0"]);
+    // Versions: composite NUL-separated sort → "a@1" before "a0@1".
+    expect(archive.tasks.taskVersions.map((t) => t.taskId)).toEqual(["a", "a0"]);
+    // The delivered envelope self-validates.
+    const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+    expect(check.errors).toEqual([]);
+    expect(check.valid).toBe(true);
+  });
+
+  it("omits disposable storage metadata and never reads storageMeta", async () => {
+    await seedCompleteCorpus();
+    const envelope = JSON.stringify(await exportWorkbenchArchiveV2(db));
+    expect(envelope).not.toContain("execution-lease");
+    expect(envelope).not.toContain("owner-1");
+    // No storageMeta-derived collection key exists in the envelope.
+    expect(JSON.parse(envelope)).not.toHaveProperty("storageMeta");
+  });
+
+  it("aborts the export with redacted validation diagnostics when a guard-failing row is persisted, delivering no archive (F3)", async () => {
+    await db.taskFamilies.put(fx.taskFamilyRow(fx.makeTaskFamily("fam-good")));
+    const corrupt = fx.makeTaskFamily("fam-bad") as unknown as Record<string, unknown>;
+    corrupt.apiKey = "smuggled-credential-value";
+    await db.taskFamilies.put({
+      id: "fam-bad",
+      family: corrupt,
+      parentFamilyId: null,
+      updatedAt: 1000,
+      archivedAt: null,
+      revision: 1,
+    });
+
+    // A guard-failing/corrupt persisted row must ABORT the export (exact store
+    // coverage + unsafe-content-aborts) instead of being silently filtered out
+    // and the trimmed result presented as a complete archive.
+    await expect(exportWorkbenchArchiveV2(db)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    // Nothing was delivered; the diagnostic names the entity/collection but
+    // never echoes the secret-shaped value.
+  });
+
+  it("exports Comparison Result indexes with derived immutable input-snapshot metadata and migration limitations", async () => {
+    await seedCompleteCorpus();
+    await db.comparisonResults.put(comparisonIndexFor("run-1", COMPARISON_SNAP_REF));
+    await db.comparisonResults.put(comparisonIndexFor("run-2", migratedInputSnapshotRef("run-2")));
+
+    const archive = await exportWorkbenchArchiveV2(db);
+    // The comparison payload arrives with the implementation commit; read it
+    // through a structural alias until the envelope type declares it.
+    const extensible = archive as unknown as {
+      comparisons?: {
+        indexes: Array<Record<string, unknown>>;
+        inputSnapshots: Array<Record<string, unknown>>;
+        limitations: Array<Record<string, unknown>>;
+      };
+    };
+    const comparisons = extensible.comparisons;
+    expect(comparisons?.indexes.map((i) => i.id)).toEqual(["run-1", "run-2"]);
+    // Immutable input-snapshot metadata derived from durable state only.
+    expect(comparisons?.inputSnapshots).toEqual([
+      {
+        runId: "run-1",
+        kind: "input_snapshot",
+        inputRef: COMPARISON_SNAP_REF,
+        inputDigest: `sha256:${"a".repeat(64)}`,
+        artifactRefs: [],
+        limitation: null,
+      },
+      {
+        runId: "run-2",
+        kind: "input_snapshot",
+        inputRef: migratedInputSnapshotRef("run-2"),
+        inputDigest: null,
+        artifactRefs: [],
+        limitation: "instance_input_incomplete",
+      },
+    ]);
+    // Migration limitations for non-resolving refs only.
+    expect(comparisons?.limitations).toEqual([
+      { runId: "run-2", reason: "instance_input_incomplete" },
+    ]);
+    // Exact RunRecordV2 reference by ID — the index never copies the payload.
+    expect(comparisons?.indexes[0]).not.toHaveProperty("candidates");
+    expect(comparisons?.indexes[0]).not.toHaveProperty("task");
+    const counts = archive.manifest.counts as unknown as Record<string, number>;
+    expect(counts.comparisonIndexes).toBe(2);
+    expect(counts.comparisonInputSnapshots).toBe(2);
+    expect(counts.comparisonLimitations).toBe(1);
+    const check = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+    expect(check.errors).toEqual([]);
+    expect(check.valid).toBe(true);
+  });
+
+  it("aborts the export with redacted diagnostics when a guard-failing comparison index row is persisted, delivering no archive", async () => {
+    await db.comparisonResults.put({
+      id: "run-1",
+      runId: "run-1",
+      createdAt: 1000,
+      updatedAt: 1000,
+      status: "not-a-real-status",
+      mode: "rank",
+      title: "corrupt",
+      taskBinding: { kind: "ad_hoc", inputSnapshotRef: COMPARISON_SNAP_REF },
+      taskInstanceId: null,
+      activeObservationIds: [],
+      evidenceReceiptRevision: 0,
+      lineage: { repeatedFrom: null },
+      revision: 0,
+    } as unknown as ComparisonResultIndex);
+
+    await expect(exportWorkbenchArchiveV2(db)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+  });
+});
+
+describe("exportWorkbenchArchiveV2 — secret safety", () => {
+  it("blocks an export whose artifact bytes carry credential-shaped material, naming the artifact without echoing the value", async () => {
+    const secretBytes = new TextEncoder().encode("prefix sk-live-1234567890abcdef suffix");
+    await db.tasks.put(fx.taskRecordRow(fx.makeTaskRecord("task-secret")));
+    await db.taskVersions.put(
+      fx.taskVersionRow(fx.makeTaskVersion("task-secret", 1, "art-secret")),
+    );
+    await db.taskArtifacts.put(fx.taskArtifactRow(fx.makeTaskArtifact("art-secret", secretBytes)));
+    await db.taskArtifactBytes.put(fx.taskArtifactBytesRow("art-secret", secretBytes));
+
+    await expect(exportWorkbenchArchiveV2(db)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      // Entity/type diagnostics: names the artifact + byte scan, never the value.
+      expect(message).toContain("tasks.taskArtifactBytes");
+      expect(message).toContain("art-secret");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
+
+  it("blocks an export whose structured collection carries a credential-like value, with redacted diagnostics", async () => {
+    const smuggled = fx.makeStudy("study-secret") as unknown as Record<string, unknown>;
+    smuggled.conclusion = "contact: sk-live-1234567890abcdef";
+    await (db as any).fusionStudies.put({
+      id: "study-secret",
+      study: smuggled,
+      revision: 1,
+      suiteId: "suite-1",
+      suiteVersion: 1,
+      status: "in_progress",
+      updatedAt: 1000,
+    });
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("fusion.studies");
+      expect(message).toContain("study-secret");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
+
+  it("blocks a credential-like value smuggled inside artifact metadata text", async () => {
+    // Structured fields that pass their entity guard but still carry a
+    // credential-shaped string must be caught by the pre-export value scan.
+    const run = fx.makeRunDetail("run-secret");
+    run.task.prompt = "Bearer abc123def456 is the header to use";
+    await db.runDetails.put(fx.runDetailRow(run));
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("runs.details");
+      expect(message).toContain("run-secret");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("Bearer abc123def456");
+    }
+  });
+
+  it("blocks an export whose Task Set record carries a credential-like value, with redacted diagnostics", async () => {
+    const smuggled = fx.makeTaskSetRecord("ts-secret") as unknown as Record<string, unknown>;
+    smuggled.description = "contact: sk-live-1234567890abcdef";
+    await db.taskSets.put({
+      id: "ts-secret",
+      record: smuggled,
+      latestVersion: 1,
+      createdAt: 1000,
+      updatedAt: 1000,
+      archivedAt: null,
+      origin: "authored",
+      revision: 1,
+    });
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("taskSets.records");
+      expect(message).toContain("ts-secret");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
+  it("blocks an export whose ModelConfiguration snapshot carries a credential-like value, with redacted diagnostics", async () => {
+    const mc = fx.makeModelConfiguration();
+    mc.runtimeSettings.apiKey = "sk-live-1234567890abcdef";
+    await db.modelConfigurations.put(fx.modelConfigurationRow(mc));
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("evidence.modelConfigurations");
+      expect(message).toContain(mc.id);
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
+  it("blocks an export whose Comparison Result index carries a credential-like value, with redacted diagnostics", async () => {
+    const index = comparisonIndexFor("run-1", COMPARISON_SNAP_REF);
+    index.title = "contact: sk-live-1234567890abcdef";
+    await db.comparisonResults.put(index);
+
+    try {
+      await exportWorkbenchArchiveV2(db);
+      expect.unreachable("export must be blocked");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain("comparisons.indexes");
+      expect(message).toContain("run-1");
+      expect(message).toContain("[REDACTED]");
+      expect(message).not.toContain("sk-live-1234567890abcdef");
+    }
+  });
+});
+
+describe("exportWorkbenchArchiveV2 — progress and cancellation", () => {
+  it("reports monotonic per-stage progress covering every collection phase", async () => {
+    await seedCompleteCorpus();
+    const updates: ArchiveExportProgress[] = [];
+    await exportWorkbenchArchiveV2(db, {
+      onProgress: (p) => updates.push({ stage: p.stage, done: p.done, total: p.total }),
+    });
+
+    expect(updates.length).toBeGreaterThan(3);
+    expect(updates[0].done).toBe(0);
+    expect(updates[updates.length - 1]).toEqual(
+      expect.objectContaining({ stage: "finalize", done: expect.any(Number) }),
+    );
+    const total = updates[updates.length - 1].total;
+    expect(total).toBeGreaterThan(0);
+    expect(updates[updates.length - 1].done).toBe(total);
+    // Monotonic completion.
+    for (let i = 1; i < updates.length; i++) {
+      expect(updates[i].done).toBeGreaterThanOrEqual(updates[i - 1].done);
+    }
+    // Every collection phase is named at least once.
+    const stages = new Set(updates.map((u) => u.stage));
+    for (const stage of [
+      "runs",
+      "rubrics",
+      "suites",
+      "experiments",
+      "fusion",
+      "tasks",
+      "task-sets",
+      "artifact-bytes",
+      "scan",
+      "finalize",
+    ]) {
+      expect(stages.has(stage)).toBe(true);
+    }
+  });
+
+  it("cancels before delivery when the signal is aborted mid-export, delivering no archive", async () => {
+    await seedCompleteCorpus();
+    const controller = new AbortController();
+    let sawScanStage = false;
+    const attempt = exportWorkbenchArchiveV2(db, {
+      signal: controller.signal,
+      onProgress: (p) => {
+        if (p.stage === "scan" && !sawScanStage) {
+          sawScanStage = true;
+          controller.abort();
+        }
+      },
+    });
+    await expect(attempt).rejects.toBeInstanceOf(ArchiveExportCancelledError);
+  });
+
+  it("rejects immediately for an already-aborted signal without reading collections", async () => {
+    await seedCompleteCorpus();
+    const controller = new AbortController();
+    controller.abort();
+    const stages: string[] = [];
+    await expect(
+      exportWorkbenchArchiveV2(db, {
+        signal: controller.signal,
+        onProgress: (p) => stages.push(p.stage),
+      }),
+    ).rejects.toBeInstanceOf(ArchiveExportCancelledError);
+    expect(stages).toEqual([]);
+  });
+
+  it("cancellation is classified as a cancellable export failure", () => {
+    expect(archiveFailureGuidance(new ArchiveExportCancelledError())).toBe(
+      "Export was cancelled — no archive was delivered.",
+    );
+  });
+});
+
+// --- Task 10B: v1 adapter stays readable and behaviorally identical ------------
+
+describe("v1 adapter behavior after the v1/v2 refactor", () => {
+  it("v1 export still produces the schemaVersion-1 shape from the same stores", async () => {
+    await seedCompleteCorpus();
+    const v1 = await exportWorkbenchArchive(db);
+    expect(v1.schemaVersion).toBe(1);
+    expect(v1.runs.summaries.map((s) => s.id)).toEqual(["run-1", "run-2"]);
+    expect(v1.runs.details.map((r) => r.id)).toEqual(["run-1", "run-2"]);
+    expect(v1.profiles.identities.map((r) => r.id)).toEqual(["rubric-1"]);
+    expect(v1.suites.map((s) => s.id)).toEqual(["suite-1"]);
+    expect(v1.experiments.map((e) => e.id)).toEqual(["exp-1"]);
+    // v1 never carries Fusion/Task collections.
+    expect(Object.keys(v1).sort()).toEqual([
+      "experiments",
+      "exportedAt",
+      "profiles",
+      "runs",
+      "schemaVersion",
+      "suites",
+    ]);
+    expect(parseWorkbenchArchive(JSON.parse(JSON.stringify(v1))).ok).toBe(true);
+  });
+});
+
+// --- Task 10C: preview-first, collision-safe, cancellation-safe atomic import -----
+
+function makeEmptyV2(exportedAt = 1000): WorkbenchArchiveV2 {
+  const archive = fx.buildValidArchiveV2Fixture();
+  archive.manifest.exportedAt = exportedAt;
+  archive.runs = { summaries: [], details: [] };
+  archive.rubrics = { identities: [], versions: [] };
+  archive.suites = [];
+  archive.experiments = [];
+  archive.fusion = {
+    recipes: [],
+    poolManifests: [],
+    studies: [],
+    trials: [],
+    attempts: [],
+    observations: [],
+    playbooks: [],
+  };
+  archive.tasks = {
+    tasks: [],
+    taskVersions: [],
+    taskArtifacts: [],
+    taskArtifactBytes: [],
+    taskInstances: [],
+    taskFamilies: [],
+    taskFamilyAssignments: [],
+    taskFamilyRelations: [],
+    taskFacetAnnotations: [],
+    taskMigrationCrosswalks: [],
+  };
+  archive.taskSets = {
+    records: [],
+    versions: [],
+    materializations: [],
+    ownershipCrosswalks: [],
+  };
+  archive.evidence = {
+    modelConfigurations: [],
+    observations: [],
+    evidenceDecisions: [],
+    evidenceIndexJobs: [],
+    verifierOutcomes: [],
+  };
+  archive.manifest.counts = {
+    runSummaries: 0,
+    runDetails: 0,
+    rubricIdentities: 0,
+    rubricVersions: 0,
+    suites: 0,
+    experiments: 0,
+    fusionRecipes: 0,
+    poolManifests: 0,
+    fusionStudies: 0,
+    fusionTrials: 0,
+    fusionAttempts: 0,
+    fusionObservations: 0,
+    fusionPlaybooks: 0,
+    tasks: 0,
+    taskVersions: 0,
+    taskArtifacts: 0,
+    taskArtifactBytes: 0,
+    taskInstances: 0,
+    taskFamilies: 0,
+    taskFamilyAssignments: 0,
+    taskFamilyRelations: 0,
+    taskFacetAnnotations: 0,
+    taskMigrationCrosswalks: 0,
+    taskSets: 0,
+    taskSetVersions: 0,
+    taskSetMaterializations: 0,
+    taskSetOwnershipCrosswalks: 0,
+    modelConfigurations: 0,
+    observations: 0,
+    evidenceDecisions: 0,
+    evidenceIndexJobs: 0,
+    verifierOutcomes: 0,
+    comparisonIndexes: 0,
+    comparisonInputSnapshots: 0,
+    comparisonLimitations: 0,
+  };
+  archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+  return archive;
+}
+
+describe("previewWorkbenchArchive — deterministic preview, no writes", () => {
+  it("restores a v1 archive into a bootstrap-receipt database, then reuses identical rows and still rejects collisions", async () => {
+    await ensureFusionToResearchLabMigration(db);
+    const archive = populatedArchive();
+    const preview = await previewWorkbenchArchive(db, archive, {
+      sourceLabel: "legacy-v1.json",
+    });
+    expect(preview.format).toBe("v1");
+    expect(preview.collisions).toEqual([]);
+    expect(preview.create.length).toBeGreaterThan(0);
+    expect(await getFusionToResearchLabReceipt(db)).not.toBeNull();
+    expect(await db.runDetails.count()).toBe(0);
+
+    await importWorkbenchArchive(db, archive);
+    expect(await db.runDetails.count()).toBe(1);
+    expect(await db.suites.count()).toBe(1);
+
+    const reuse = await previewWorkbenchArchive(db, archive, { sourceLabel: "legacy-v1.json" });
+    expect(reuse.collisions).toEqual([]);
+    expect(reuse.reuse.length).toBeGreaterThan(0);
+
+    const mutated = populatedArchive();
+    mutated.suites[0] = makeSuite("suite-1", "Renamed after restore");
+    const collide = await previewWorkbenchArchive(db, mutated, { sourceLabel: "legacy-v1.json" });
+    expect(collide.collisions.some((c) => c.collection === "suites" && c.key === "suite-1")).toBe(
+      true,
+    );
+  });
+
+  it("classifies every v2 entity as create/reuse/collision/invalid with deterministic counts and no writes", async () => {
+    const artifactBytes = new TextEncoder().encode("reuse-me");
+    // Pre-seed ONE canonically identical suite so the preview exercises reuse.
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+
+    const archive = makeEmptyV2();
+    archive.runs.summaries = [fx.makeRunSummary("run-pre")];
+    archive.runs.details = [fx.makeRunDetail("run-pre")];
+    archive.rubrics.identities = [fx.makeRubricRecord("rubric-1")];
+    archive.rubrics.versions = [fx.makeRubricVersion("rubric-1", 1)];
+    archive.suites = [fx.makeSuite("suite-1")]; // canonically identical → reuse
+    archive.experiments = [fx.makeExperiment("exp-1", "suite-1")];
+    archive.fusion = {
+      recipes: [],
+      poolManifests: [],
+      studies: [],
+      trials: [],
+      attempts: [],
+      observations: [],
+      playbooks: [],
+    };
+    archive.tasks.tasks = [fx.makeTaskRecord("task-1")];
+    archive.tasks.taskVersions = [fx.makeTaskVersion("task-1", 1, "art-1")];
+    archive.tasks.taskArtifacts = [fx.makeTaskArtifact("art-1", artifactBytes)];
+    archive.tasks.taskArtifactBytes = [fx.makeArtifactBytes("art-1", artifactBytes)];
+    archive.tasks.taskInstances = [fx.makeTaskInstance("inst-1", "task-1", 1, "art-1")];
+    archive.tasks.taskFamilies = [fx.makeTaskFamily("fam-1")];
+    archive.tasks.taskFamilyAssignments = [
+      fx.makeTaskFamilyAssignment("fa-1", "task-1", 1, "fam-1"),
+    ];
+    archive.tasks.taskFamilyRelations = [fx.makeTaskFamilyRelation("rel-1", "fam-1", "fam-1")];
+    archive.tasks.taskFacetAnnotations = [fx.makeTaskFacetAnnotation("ann-1", "task-1")];
+    archive.tasks.taskMigrationCrosswalks = [fx.makeCrosswalk("task-1", 1)];
+    archive.manifest.counts = {
+      runSummaries: 1,
+      runDetails: 1,
+      rubricIdentities: 1,
+      rubricVersions: 1,
+      suites: 1,
+      experiments: 1,
+      fusionRecipes: 0,
+      poolManifests: 0,
+      fusionStudies: 0,
+      fusionTrials: 0,
+      fusionAttempts: 0,
+      fusionObservations: 0,
+      fusionPlaybooks: 0,
+      tasks: 1,
+      taskVersions: 1,
+      taskArtifacts: 1,
+      taskArtifactBytes: 1,
+      taskInstances: 1,
+      taskFamilies: 1,
+      taskFamilyAssignments: 1,
+      taskFamilyRelations: 1,
+      taskFacetAnnotations: 1,
+      taskMigrationCrosswalks: 1,
+      taskSets: 0,
+      taskSetVersions: 0,
+      taskSetMaterializations: 0,
+      taskSetOwnershipCrosswalks: 0,
+      modelConfigurations: 0,
+      observations: 0,
+      evidenceDecisions: 0,
+      evidenceIndexJobs: 0,
+      verifierOutcomes: 0,
+      comparisonIndexes: 0,
+      comparisonInputSnapshots: 0,
+      comparisonLimitations: 0,
+    };
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+
+    expect(preview.format).toBe("v2");
+    // 14 importable collections carry exactly one entity.
+    expect(preview.totalEntities).toBe(14);
+    expect(preview.invalid.length).toBe(0);
+    expect(preview.collisions.map((c) => c.key)).toEqual([]);
+    // Exactly the pre-existing suite is reusable.
+    expect(preview.reuse.map((e) => `${e.collection}/${e.key}`)).toEqual(["suites/suite-1"]);
+    expect(preview.create.length).toBe(13);
+    // One artifact is pre-materialized so the commit can verify bytes.
+    expect(preview.artifactBytes.length).toBe(1);
+    expect(preview.artifactBytes[0].id).toBe("art-1");
+    expect([...preview.artifactBytes[0].bytes]).toEqual([...artifactBytes]);
+    // Deterministic collection order + sorted counts.
+    expect(preview.counts[0]).toEqual({
+      collection: "experiments",
+      total: 1,
+      create: 1,
+      reuse: 0,
+      collision: 0,
+      invalid: 0,
+    });
+    expect(preview.counts.map((c) => c.collection)).toEqual(
+      [...preview.counts.map((c) => c.collection)].sort(),
+    );
+    expect(preview.counts.find((c) => c.collection === "suites")).toEqual({
+      collection: "suites",
+      total: 1,
+      create: 0,
+      reuse: 1,
+      collision: 0,
+      invalid: 0,
+    });
+    // Preview is read-only.
+    expect(await db.suites.count()).toBe(1);
+    expect(await db.runDetails.count()).toBe(0);
+  });
+
+  it("reports guard-failing/corrupt entities without aborting the preview", async () => {
+    const validBytes = new TextEncoder().encode("valid artifact text");
+    const artifactSummary = fx.makeTaskArtifact("art-1", validBytes);
+
+    const archive = makeEmptyV2();
+    archive.runs.details = [fx.makeRunDetail("run-corrupt")];
+    const detail = archive.runs.details[0] as unknown as Record<string, unknown>;
+    detail.status = "not-a-real-status"; // guard-failing → invalid entity
+    archive.suites = [fx.makeSuite("suite-1") as unknown as EvaluationSuite];
+    delete (archive.suites[0] as unknown as Record<string, unknown>).id; // corrupt → invalid
+    // A consistent artifact pair keeps the envelope validator satisfied; only
+    // the corrupt structured entities exercise the preview invalid bucket.
+    archive.tasks.taskArtifacts = [artifactSummary];
+    archive.tasks.taskArtifactBytes = [{ id: "art-1", bytesBase64: fx.bytesToBase64(validBytes) }];
+    archive.manifest.counts.runDetails = 1;
+    archive.manifest.counts.suites = 1;
+    archive.manifest.counts.taskArtifacts = 1;
+    archive.manifest.counts.taskArtifactBytes = 1;
+    archive.manifest.counts.tasks = 0;
+    archive.manifest.counts.taskVersions = 0;
+    archive.manifest.counts.taskInstances = 0;
+    archive.manifest.counts.taskFamilies = 0;
+    archive.manifest.counts.taskFamilyAssignments = 0;
+    archive.manifest.counts.taskFamilyRelations = 0;
+    archive.manifest.counts.taskFacetAnnotations = 0;
+    archive.manifest.counts.taskMigrationCrosswalks = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+
+    expect(preview.format).toBe("v2");
+    expect(preview.invalid.map((e) => `${e.collection}/${e.key}`).sort()).toEqual([
+      "runs.details/run-corrupt",
+      "suites/",
+    ]);
+    // The consistent artifact pair is still classified normally.
+    expect(preview.create.map((e) => `${e.collection}/${e.key}`)).toEqual([
+      "tasks.taskArtifacts/art-1",
+    ]);
+    expect(await db.suites.count()).toBe(0);
+  });
+
+  it("rejects a digest/byte-mismatched artifact at envelope validation before any classification", async () => {
+    const validBytes = new TextEncoder().encode("valid artifact text");
+    const tamperedBytes = new TextEncoder().encode("tampered artifact text");
+    const archive = makeEmptyV2();
+    archive.tasks.taskArtifacts = [fx.makeTaskArtifact("art-1", validBytes)];
+    archive.tasks.taskArtifactBytes = [
+      { id: "art-1", bytesBase64: fx.bytesToBase64(tamperedBytes) },
+    ];
+    archive.manifest.counts.taskArtifacts = 1;
+    archive.manifest.counts.taskArtifactBytes = 1;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    await expect(
+      previewWorkbenchArchive(db, archive, { sourceLabel: "memory" }),
+    ).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    expect(await db.taskArtifacts.count()).toBe(0);
+  });
+
+  it("classifies Comparison Result indexes as create, then reuse on a repeat preview", async () => {
+    const archive = makeEmptyV2();
+    archive.runs.summaries = [fx.makeRunSummary("run-pre")];
+    archive.runs.details = [fx.makeRunDetail("run-pre")];
+    const extensible = archive as unknown as { comparisons?: unknown };
+    extensible.comparisons = {
+      indexes: [comparisonIndexFor("run-pre", COMPARISON_SNAP_REF)],
+      inputSnapshots: [
+        {
+          runId: "run-pre",
+          kind: "input_snapshot",
+          inputRef: COMPARISON_SNAP_REF,
+          inputDigest: `sha256:${"a".repeat(64)}`,
+          artifactRefs: [],
+          limitation: null,
+        },
+      ],
+      limitations: [],
+    };
+    const counts = archive.manifest.counts as unknown as Record<string, number>;
+    counts.runSummaries = 1;
+    counts.runDetails = 1;
+    counts.comparisonIndexes = 1;
+    counts.comparisonInputSnapshots = 1;
+    counts.comparisonLimitations = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const first = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(first.create.map((e) => `${e.collection}/${e.key}`)).toContain(
+      "comparisons.indexes/run-pre",
+    );
+
+    await commitPreviewWorkbenchArchiveV2(db, first);
+    expect(await db.comparisonResults.count()).toBe(1);
+    const second = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(second.reuse.map((e) => `${e.collection}/${e.key}`)).toContain(
+      "comparisons.indexes/run-pre",
+    );
+    expect(second.create.map((e) => `${e.collection}/${e.key}`)).not.toContain(
+      "comparisons.indexes/run-pre",
+    );
+  });
+
+  it("rejects legacy v2 archive containing fusion collections as unsupported_fusion_archive_shape with a receipt (REV-3)", async () => {
+    const archive = fx.buildLegacyFusionV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "legacy.json" });
+    expect(preview.format).toBe("unsupported_fusion_archive_shape");
+    expect(preview.unsupportedReceipt).toBeDefined();
+    expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionRecipes");
+    expect(preview.unsupportedReceipt!.rejectedCollections).toContain("fusionStudies");
+    expect(await db.suites.count()).toBe(0);
+  });
+});
+
+describe("commitPreviewWorkbenchArchiveV2 — atomic commit, collision-safety, cancellation", () => {
+  it("imports the complete non-fusion v2 fixture into an empty database atomically with exact source Run/Experiment evidence", async () => {
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.format).toBe("v2");
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+
+    const result = await commitPreviewWorkbenchArchiveV2(db, preview);
+
+    expect(result.created.length).toBe(preview.create.length);
+    expect(result.reused).toEqual([]);
+    expect(result.skipped).toEqual([]);
+    // Every imported entity appears exactly once across surviving tables.
+    expect(await db.runSummaries.count()).toBe(1);
+    expect(await db.runDetails.count()).toBe(1);
+    expect(await db.profiles.count()).toBe(1);
+    expect(await db.profileVersions.count()).toBe(1);
+    expect(await db.suites.count()).toBe(1);
+    expect(await db.experiments.count()).toBe(1);
+    expect(await db.tasks.count()).toBe(1);
+    expect(await db.taskVersions.count()).toBe(1);
+    expect(await db.taskArtifacts.count()).toBe(1);
+    expect(await db.taskArtifactBytes.count()).toBe(1);
+    expect(await db.taskInstances.count()).toBe(1);
+    expect(await db.taskFamilies.count()).toBe(1);
+    expect(await db.taskFamilyAssignments.count()).toBe(1);
+    expect(await db.taskFamilyRelations.count()).toBe(1);
+    expect(await db.taskFacetAnnotations.count()).toBe(1);
+    expect(await db.taskMigrationCrosswalk.count()).toBe(1);
+    const importedRun = await db.runDetails.get("run-1");
+    expect((importedRun?.record as RunRecordV2).status).toBe("completed");
+    const importedExperiment = await db.experiments.get("exp-1");
+    expect((importedExperiment?.experiment as ExperimentRecord).protocolFingerprint).toBe(
+      "sha256:abc",
+    );
+    // Round-trip: re-export the imported database as v3 (the canonical format).
+    await ensureFusionToResearchLabMigration(db);
+    const reexported = await exportWorkbenchArchiveV3(db);
+    expect(reexported.manifest.counts.runSummaries).toBe(1);
+    expect(reexported.manifest.counts.suites).toBe(1);
+  });
+  it("imports Comparison Result indexes atomically from a comparison-carrying envelope", async () => {
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
+    const extensible = archive as unknown as { comparisons?: unknown };
+    extensible.comparisons = {
+      indexes: [comparisonIndexFor("run-1", COMPARISON_SNAP_REF)],
+      inputSnapshots: [
+        {
+          runId: "run-1",
+          kind: "input_snapshot",
+          inputRef: COMPARISON_SNAP_REF,
+          inputDigest: `sha256:${"a".repeat(64)}`,
+          artifactRefs: [],
+          limitation: null,
+        },
+      ],
+      limitations: [],
+    };
+    const counts = archive.manifest.counts as unknown as Record<string, number>;
+    counts.comparisonIndexes = 1;
+    counts.comparisonInputSnapshots = 1;
+    counts.comparisonLimitations = 0;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+    const commit = await commitPreviewWorkbenchArchiveV2(db, preview);
+    expect(commit.created).toContain("run-1");
+    expect(await db.comparisonResults.count()).toBe(1);
+    expect((await db.comparisonResults.get("run-1"))?.taskBinding).toEqual({
+      kind: "ad_hoc",
+      inputSnapshotRef: COMPARISON_SNAP_REF,
+    });
+  });
+
+  it("a non-identical ID collision aborts the whole commit BEFORE any write (no remap, no overwrite)", async () => {
+    await db.suites.put(fx.suiteRow(fx.makeSuite("suite-1")));
+    // Rewrite the incoming suite content so the same ID is NOT canonically identical.
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
+    archive.suites[0] = { ...archive.suites[0], name: "suite-1 — renamed" };
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.collisions.map((c) => `${c.collection}/${c.key}`)).toEqual(["suites/suite-1"]);
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    // Nothing was written: the pre-existing suite is untouched, and no new
+    // entity leaked into any other store.
+    const kept = await db.suites.get("suite-1");
+    expect((kept?.suite as EvaluationSuite).name).toBe("Suite suite-1");
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+  });
+
+  it("repeated import is idempotent: second commit reuses/skips everything and writes nothing", async () => {
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
+    const first = await commitPreviewWorkbenchArchiveV2(
+      db,
+      await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" }),
+    );
+    expect(first.created.length).toBeGreaterThan(0);
+
+    const secondPreview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(secondPreview.create).toEqual([]);
+    expect(secondPreview.collisions).toEqual([]);
+    expect(secondPreview.invalid).toEqual([]);
+    expect(secondPreview.totalEntities).toBe(24);
+
+    const second = await commitPreviewWorkbenchArchiveV2(db, secondPreview);
+    expect(second.created).toEqual([]);
+    expect(second.reused.length).toBe(24);
+    expect(second.skipped).toEqual([]);
+    // No duplicate rows from a second pass.
+    expect(await db.suites.count()).toBe(1);
+    expect(await db.tasks.count()).toBe(1);
+  });
+  it("cancellation before commit leaves source and target unchanged and throws the cancellation error", async () => {
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      commitPreviewWorkbenchArchiveV2(db, preview, { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(ArchiveImportCancelledError);
+    // Target unchanged.
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+  });
+  it("an injected mid-commit failure rolls the transaction back — nothing is written", async () => {
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    vi.spyOn(db.experiments, "put").mockRejectedValueOnce(new Error("boom"));
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+    });
+    // Rollback: zero entities in every touched store.
+    expect(await db.runSummaries.count()).toBe(0);
+    expect(await db.experiments.count()).toBe(0);
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+  });
+
+  it("a preview carrying invalid entities never commits them — commit raises a validation StorageError", async () => {
+    const artifactBytes = new TextEncoder().encode("valid artifact text");
+    const archive = makeEmptyV2();
+    const detail = fx.makeRunDetail("run-bad") as unknown as Record<string, unknown>;
+    detail.status = "corrupt";
+    archive.runs.details = [detail as unknown as RunRecordV2];
+    const artifact = fx.makeTaskArtifact("art-1", artifactBytes);
+    archive.tasks.taskArtifacts = [artifact];
+    archive.tasks.taskArtifactBytes = [
+      { id: "art-1", bytesBase64: fx.bytesToBase64(artifactBytes) },
+    ];
+    archive.manifest.counts.runDetails = 1;
+    archive.manifest.counts.taskArtifacts = 1;
+    archive.manifest.counts.taskArtifactBytes = 1;
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.invalid.map((e) => `${e.collection}/${e.key}`)).toEqual([
+      "runs.details/run-bad",
+    ]);
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.taskArtifacts.count()).toBe(0);
+  });
+
+  it("a preview-to-commit race inserting a non-identical same-key row aborts inside the transaction and never overwrites (F1)", async () => {
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.create.some((c) => c.collection === "suites" && c.key === "suite-1")).toBe(true);
+    expect(preview.collisions).toEqual([]);
+
+    // RACE: a different-content suite with the same ID lands AFTER the preview
+    // but BEFORE the commit. The commit MUST re-read the destination row and
+    // abort (no-overwrite contract) rather than blindly put() over it.
+    await db.suites.put(fx.suiteRow({ ...fx.makeSuite("suite-1"), name: "raced different suite" }));
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "conflict",
+    });
+    // The raced row is never overwritten.
+    expect((await db.suites.get("suite-1"))?.suite).toEqual({
+      ...fx.makeSuite("suite-1"),
+      name: "raced different suite",
+    });
+    // No unrelated write leaked from the aborted commit.
+    expect(await db.tasks.count()).toBe(0);
+    expect(await db.runDetails.count()).toBe(0);
+  });
+  it("mutating preview.payload after preview aborts the commit with zero writes and a validation StorageError (F2)", async () => {
+    const archive = fx.buildValidNonFusionArchiveV2Fixture();
+    const preview = await previewWorkbenchArchive(db, archive, { sourceLabel: "memory" });
+    expect(preview.collisions).toEqual([]);
+    expect(preview.invalid).toEqual([]);
+
+    // An external caller mutates a previewed payload record after validation.
+    // The commit must re-validate the complete payload (digest + guards) so a
+    // stale/mutated payload is never written.
+    (preview.payload as WorkbenchArchiveV2).suites[0] = {
+      ...fx.makeSuite("suite-1"),
+      name: "mutated after preview",
+    };
+
+    await expect(commitPreviewWorkbenchArchiveV2(db, preview)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    // Zero writes across the whole corpus.
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(0);
+    expect(await db.runDetails.count()).toBe(0);
+    expect(await db.taskMigrationCrosswalk.count()).toBe(0);
+  });
+});
+
+describe("importWorkbenchArchiveAuto — adapter dispatch", () => {
+  it("dispatches a v1 payload through the preserved v1 adapter (no v2 validation required)", async () => {
+    const v1 = populatedArchive();
+    // A v1 payload has no manifest; the auto path must not force v2 validation.
+    const result = await importWorkbenchArchiveAuto(db, v1 as unknown as never);
+    expect(result.format).toBe("v1");
+    if (result.format !== "v1") throw new Error("expected v1 dispatch");
+    expect(result.v1.created.length).toBeGreaterThan(0);
+    expect(await db.suites.count()).toBe(1);
+  });
+
+  it("dispatches a v2 payload through the v2 adapter and validates the complete payload BEFORE any write", async () => {
+    const archive = fx.buildValidArchiveV2Fixture();
+    // Break the digest AFTER building: payload mutated, digest stale.
+    archive.suites[0] = { ...archive.suites[0], name: "digest-broken" };
+
+    await expect(importWorkbenchArchiveAuto(db, archive)).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+    // Nothing written.
+    expect(await db.suites.count()).toBe(0);
+    expect(await db.runDetails.count()).toBe(0);
+  });
+
+  it("rejects an unknown payload shape", async () => {
+    await expect(importWorkbenchArchiveAuto(db, { hello: "world" })).rejects.toMatchObject({
+      name: "StorageError",
+      kind: "validation",
+    });
+  });
+});
+
+describe("archiveFailureGuidance — import cancellation", () => {
+  it("classifies ArchiveImportCancelledError without leaking content", () => {
+    const guidance = archiveFailureGuidance(new ArchiveImportCancelledError());
+    expect(guidance).toContain("cancel");
   });
 });

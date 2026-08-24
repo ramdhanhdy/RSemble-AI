@@ -28,6 +28,7 @@ function renderWithRouter(initialEntry = "/runs", repo: InMemoryRunRepository): 
     root.render(
       <RepositoryContext.Provider
         value={{
+          taskRepo: null,
           runRepo: repo,
           evalRepo: null,
           fusionRepo: null,
@@ -192,6 +193,29 @@ describe("RunsWorkspace", () => {
     cleanup(h);
   });
 
+  it("legacy /runs/:id route moves focus to the exact detail heading", async () => {
+    stubMatchMedia(true);
+    const repo = new InMemoryRunRepository();
+    await seedRepo(repo, [["run-1", 1000]]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+
+    const h = renderWithRouter("/runs/run-1", repo);
+    await settle();
+    const heading = h.$("[data-detail-heading]");
+    expect(heading).toBeTruthy();
+    expect(document.activeElement).toBe(heading);
+    cleanup(h);
+  });
+
   it("mobile /runs shows list only (no detail pane)", async () => {
     stubMatchMedia(false);
     const repo = new InMemoryRunRepository();
@@ -217,7 +241,7 @@ describe("RunsWorkspace", () => {
     cleanup(h);
   });
 
-  it("mobile /runs/:id shows detail with Back to Runs", async () => {
+  it("mobile /runs/:id shows detail with Back to Records", async () => {
     stubMatchMedia(false);
     const repo = new InMemoryRunRepository();
     await seedRepo(repo, [["run-1", 1000]]);
@@ -237,9 +261,10 @@ describe("RunsWorkspace", () => {
 
     // Detail visible
     expect(h.$("[data-run-detail]")).toBeTruthy();
-    // Back to Runs link
+    // Back to Records link
     const backLink = h.$("a[href='/runs']");
     expect(backLink).toBeTruthy();
+    expect(backLink?.textContent).toContain("Back to Records");
     cleanup(h);
   });
 

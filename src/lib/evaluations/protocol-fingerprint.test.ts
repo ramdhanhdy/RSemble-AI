@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { describe, expect, it } from "vitest";
-import type { EvaluationProfile, EvaluationSuite, ExperimentSnapshot } from "./evaluation-types";
+import type { EvaluationRubric, EvaluationSuite, ExperimentSnapshot } from "./evaluation-types";
 import {
   buildFingerprintInput,
   computeProtocolFingerprint,
@@ -53,24 +53,24 @@ function makeSuite(overrides: Partial<EvaluationSuite> = {}): EvaluationSuite {
   };
 }
 
-const PROFILES: EvaluationProfile[] = [];
+const RUBRICS: EvaluationRubric[] = [];
 
 describe("computeSnapshotProtocolFingerprint", () => {
   it("matches the suite-based fingerprint for identical semantic content", () => {
     const suite = makeSuite();
-    const snapshot = createExperimentSnapshot(suite, PROFILES, 1000);
+    const snapshot = createExperimentSnapshot(suite, RUBRICS, 1000);
     expect(computeSnapshotProtocolFingerprint(snapshot)).toBe(
-      computeProtocolFingerprint(suite, PROFILES),
+      computeProtocolFingerprint(suite, RUBRICS),
     );
   });
 
   it("produces the canonical sha256 shape", () => {
-    const snapshot = createExperimentSnapshot(makeSuite(), PROFILES, 1000);
+    const snapshot = createExperimentSnapshot(makeSuite(), RUBRICS, 1000);
     expect(computeSnapshotProtocolFingerprint(snapshot)).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
   it("changes when a roster slot is appended", () => {
-    const snapshot = createExperimentSnapshot(makeSuite(), PROFILES, 1000);
+    const snapshot = createExperimentSnapshot(makeSuite(), RUBRICS, 1000);
     const rotated: ExperimentSnapshot = {
       ...snapshot,
       modelSlots: [
@@ -91,7 +91,7 @@ describe("computeSnapshotProtocolFingerprint", () => {
   });
 
   it("changes when providerId, model, or enabled change", () => {
-    const base = createExperimentSnapshot(makeSuite(), PROFILES, 1000);
+    const base = createExperimentSnapshot(makeSuite(), RUBRICS, 1000);
     const baseFp = computeSnapshotProtocolFingerprint(base);
 
     const flipEnabled: ExperimentSnapshot = {
@@ -116,7 +116,7 @@ describe("computeSnapshotProtocolFingerprint", () => {
   });
 
   it("changes when candidate or Judge reasoning effort changes", () => {
-    const base = createExperimentSnapshot(makeSuite(), PROFILES, 1000);
+    const base = createExperimentSnapshot(makeSuite(), RUBRICS, 1000);
     const changed: ExperimentSnapshot = {
       ...base,
       reasoningPolicy: { candidates: "low", judge: "high" },
@@ -127,7 +127,7 @@ describe("computeSnapshotProtocolFingerprint", () => {
   });
 
   it("ignores slot id and display provider (non-semantic fields)", () => {
-    const base = createExperimentSnapshot(makeSuite(), PROFILES, 1000);
+    const base = createExperimentSnapshot(makeSuite(), RUBRICS, 1000);
     const baseFp = computeSnapshotProtocolFingerprint(base);
     const cosmetic: ExperimentSnapshot = {
       ...base,
@@ -141,7 +141,7 @@ describe("computeSnapshotProtocolFingerprint", () => {
   });
 
   it("buildFingerprintInput keeps semantic fields only", () => {
-    const input = buildFingerprintInput(makeSuite(), PROFILES) as Record<string, unknown>;
+    const input = buildFingerprintInput(makeSuite(), RUBRICS) as Record<string, unknown>;
     const firstSlot = (input.modelSlots as Array<Record<string, unknown>>)[0];
     expect(firstSlot.id).toBeUndefined();
     expect(firstSlot.provider).toBeUndefined();
@@ -152,11 +152,11 @@ describe("computeSnapshotProtocolFingerprint", () => {
 
 // --- Hybrid fingerprint mutation tests ----------------------------------------
 
-function makeGradedProfile(): EvaluationProfile {
+function makeGradedRubric(): EvaluationRubric {
   return {
     id: "p1",
     version: 1,
-    name: "Hybrid Profile",
+    name: "Hybrid Rubric",
     description: "test",
     judgeInstruction: "",
     criteria: [
@@ -195,9 +195,9 @@ describe("hybrid fingerprint mutations", () => {
     const suite = makeSuite({
       defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
     });
-    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedRubric()]);
     const fp2 = computeProtocolFingerprint(suite, [
-      { ...makeGradedProfile(), complianceInfluence: 0.5 },
+      { ...makeGradedRubric(), complianceInfluence: 0.5 },
     ]);
     expect(fp1).not.toBe(fp2);
   });
@@ -206,14 +206,14 @@ describe("hybrid fingerprint mutations", () => {
     const suite = makeSuite({
       defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
     });
-    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
-    const profile2 = {
-      ...makeGradedProfile(),
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedRubric()]);
+    const rubric2 = {
+      ...makeGradedRubric(),
       requirementGroups: [
         { id: "g1", name: "Group 1", checkIds: ["b1"], weight: 2, mode: "ALL" as const },
       ],
     };
-    const fp2 = computeProtocolFingerprint(suite, [profile2]);
+    const fp2 = computeProtocolFingerprint(suite, [rubric2]);
     expect(fp1).not.toBe(fp2);
   });
 
@@ -221,11 +221,11 @@ describe("hybrid fingerprint mutations", () => {
     const suite = makeSuite({
       defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
     });
-    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
-    const profile2 = {
-      ...makeGradedProfile(),
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedRubric()]);
+    const rubric2 = {
+      ...makeGradedRubric(),
       criteria: [
-        ...makeGradedProfile().criteria,
+        ...makeGradedRubric().criteria,
         {
           id: "b2",
           kind: "binary" as const,
@@ -239,7 +239,7 @@ describe("hybrid fingerprint mutations", () => {
         { id: "g1", name: "Group 1", checkIds: ["b1", "b2"], weight: 1, mode: "ALL" as const },
       ],
     };
-    const fp2 = computeProtocolFingerprint(suite, [profile2]);
+    const fp2 = computeProtocolFingerprint(suite, [rubric2]);
     expect(fp1).not.toBe(fp2);
   });
 
@@ -247,18 +247,18 @@ describe("hybrid fingerprint mutations", () => {
     const suite = makeSuite({
       defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
     });
-    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
-    const profile2 = {
-      ...makeGradedProfile(),
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedRubric()]);
+    const rubric2 = {
+      ...makeGradedRubric(),
       criteria: [
         {
-          ...makeGradedProfile().criteria[0],
+          ...makeGradedRubric().criteria[0],
           anchors: { one: "1", two: "CHANGED", three: "3", four: "4", five: "5" },
         },
-        makeGradedProfile().criteria[1],
+        makeGradedRubric().criteria[1],
       ],
     };
-    const fp2 = computeProtocolFingerprint(suite, [profile2]);
+    const fp2 = computeProtocolFingerprint(suite, [rubric2]);
     expect(fp1).not.toBe(fp2);
   });
 
@@ -266,23 +266,23 @@ describe("hybrid fingerprint mutations", () => {
     const suite = makeSuite({
       defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
     });
-    const fp1 = computeProtocolFingerprint(suite, [makeGradedProfile()]);
-    const profile2 = {
-      ...makeGradedProfile(),
+    const fp1 = computeProtocolFingerprint(suite, [makeGradedRubric()]);
+    const rubric2 = {
+      ...makeGradedRubric(),
       criteria: [
-        makeGradedProfile().criteria[0],
-        { ...makeGradedProfile().criteria[1], trueWhen: "CHANGED" },
+        makeGradedRubric().criteria[0],
+        { ...makeGradedRubric().criteria[1], trueWhen: "CHANGED" },
       ],
     };
-    const fp2 = computeProtocolFingerprint(suite, [profile2]);
+    const fp2 = computeProtocolFingerprint(suite, [rubric2]);
     expect(fp1).not.toBe(fp2);
   });
 
-  it("legacy profiles (no hybrid fields) produce stable fingerprints", () => {
+  it("legacy rubrics (no hybrid fields) produce stable fingerprints", () => {
     const suite = makeSuite({
       defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
     });
-    const legacy: EvaluationProfile = {
+    const legacy: EvaluationRubric = {
       id: "p1",
       version: 1,
       name: "Legacy",
@@ -308,7 +308,7 @@ describe("hybrid fingerprint mutations", () => {
 });
 
 describe("legacy/pure-graded fingerprint stability (plan J.1)", () => {
-  function pureGraded(): EvaluationProfile {
+  function pureGraded(): EvaluationRubric {
     return {
       id: "p1",
       version: 1,
@@ -329,8 +329,8 @@ describe("legacy/pure-graded fingerprint stability (plan J.1)", () => {
     };
   }
 
-  it("pure-graded profile hash is unchanged by an irrelevant complianceInfluence field", () => {
-    // complianceInfluence is irrelevant for a profile with no binary channel
+  it("pure-graded rubric hash is unchanged by an irrelevant complianceInfluence field", () => {
+    // complianceInfluence is irrelevant for a rubric with no binary channel
     // (C := 1 → rankValue = Q). It must NOT alter the fingerprint.
     const suite = makeSuite({
       defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
@@ -342,12 +342,12 @@ describe("legacy/pure-graded fingerprint stability (plan J.1)", () => {
     expect(plain).toBe(withLambda);
   });
 
-  it("a mixed profile's complianceInfluence DOES change the fingerprint", () => {
+  it("a mixed rubric's complianceInfluence DOES change the fingerprint", () => {
     const suite = makeSuite({
       defaultEvaluation: { kind: "profile", profile: { id: "p1", version: 1 } },
     });
-    const mixed = (lambda: number | undefined): EvaluationProfile => ({
-      ...makeGradedProfile(),
+    const mixed = (lambda: number | undefined): EvaluationRubric => ({
+      ...makeGradedRubric(),
       complianceInfluence: lambda,
     });
     const fpAbsent = computeProtocolFingerprint(suite, [mixed(undefined)]);

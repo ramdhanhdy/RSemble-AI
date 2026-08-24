@@ -24,7 +24,7 @@
 // =============================================================================
 
 import type { JudgeReport } from "../../studio-data";
-import type { EvaluationProfileSnapshot, TaskVerification } from "./evaluation-types";
+import type { RubricSnapshot, TaskVerification } from "./evaluation-types";
 import type {
   BinaryCriterionHeadroom,
   CriterionHeadroom,
@@ -94,7 +94,7 @@ export interface HeadroomMetrics {
   /** Binary channel pass-rate imbalances (spec §17); empty when none. */
   binaryPerCriterion: BinaryCriterionHeadroom[];
   /** Group-level binary oracle contribution to H_synth (spec §17/§21);
-   *  null when the profile has no requirement groups. */
+   *  null when the rubric has no requirement groups. */
   binaryOracleHeadroom: number | null;
   tasksUsed: number;
   tasksWithCriteria: number;
@@ -132,7 +132,7 @@ export function taskOverall(score: ModelTaskScore, weights: CriterionWeights): n
 export function computeHeadroom(
   tasks: PairedTaskScores[],
   weights: CriterionWeights,
-  profile?: EvaluationProfileSnapshot | null,
+  rubric?: RubricSnapshot | null,
 ): HeadroomMetrics {
   const usable: Array<{ taskId: string; sa: number; sb: number }> = [];
   for (const t of tasks) {
@@ -163,8 +163,8 @@ export function computeHeadroom(
     synthesisHeadroom = mean(gaps);
   }
 
-  const binaryPerCriterion = computeBinaryPassRateImbalance(tasks, profile);
-  const binaryOracleHeadroom = profile ? computeBinaryOracleHeadroom(tasks, profile) : null;
+  const binaryPerCriterion = computeBinaryPassRateImbalance(tasks, rubric);
+  const binaryOracleHeadroom = rubric ? computeBinaryOracleHeadroom(tasks, rubric) : null;
 
   return {
     selectionHeadroom,
@@ -484,13 +484,13 @@ export const MIN_BINARY_SAMPLES = 3;
  *  Checks below MIN_BINARY_SAMPLES are gated out (spec §17). */
 export function computeBinaryPassRateImbalance(
   tasks: PairedTaskScores[],
-  profile?: EvaluationProfileSnapshot | null,
+  rubric?: RubricSnapshot | null,
 ): BinaryCriterionHeadroom[] {
-  // Resolve human-readable check names from the profile snapshot when
+  // Resolve human-readable check names from the rubric snapshot when
   // available; fall back to the check ID so rows are never labeled with raw IDs.
   const nameById = new Map<string, string>();
-  if (profile) {
-    for (const c of profile.criteria) {
+  if (rubric) {
+    for (const c of rubric.criteria) {
       if (c.kind === "binary") nameById.set(c.id, c.name || c.id);
     }
   }
@@ -539,7 +539,7 @@ function modelGroupSatisfied(
  *  A group is oracle-satisfied if EITHER model's group passes; complementary
  *  failures inside a group (each model fails a different subcheck) therefore
  *  cannot fabricate headroom. Returns mean over tasks of the group-level
- *  oracle surplus; null when the profile has no requirement groups.
+ *  oracle surplus; null when the rubric has no requirement groups.
  *
  *  Design note: the oracle surplus counts groups equally (unweighted). The
  *  spec §17 oracle bullet is count-based ("a group is satisfied if either
@@ -550,9 +550,9 @@ function modelGroupSatisfied(
  *  at the group level. */
 export function computeBinaryOracleHeadroom(
   tasks: PairedTaskScores[],
-  profile: EvaluationProfileSnapshot,
+  rubric: RubricSnapshot,
 ): number | null {
-  const groups = profile.requirementGroups ?? [];
+  const groups = rubric.requirementGroups ?? [];
   if (groups.length === 0) return null;
   let surplusSum = 0;
   let used = 0;

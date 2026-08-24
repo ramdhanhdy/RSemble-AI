@@ -147,7 +147,7 @@ describe("SuitePreflightDialog", () => {
     );
     await settle();
     const labels = h.$$("button").map((b) => b.textContent?.trim());
-    expect(labels).toContain("Run suite");
+    expect(labels).toContain("Run task set");
     expect(labels).not.toContain("Run anyway");
     cleanup(h);
   });
@@ -172,7 +172,7 @@ describe("SuitePreflightDialog", () => {
     expect(text).toContain("untested");
     expect(text).toContain("recommended");
     const labels = h.$$("button").map((b) => b.textContent?.trim());
-    expect(labels).toContain("Run suite");
+    expect(labels).toContain("Run task set");
     cleanup(h);
   });
 

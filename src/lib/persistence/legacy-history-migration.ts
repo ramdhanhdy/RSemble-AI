@@ -10,6 +10,35 @@ import type { LegacyRunSummary } from "./run-types";
 import type { RunRepository } from "./run-repository";
 
 const STORAGE_KEY = "rsemble.runHistory.v1";
+const PROHIBITED_KEYS: ReadonlySet<string> = new Set([
+  "apiKey",
+  "authorization",
+  "token",
+  "secret",
+  "password",
+  "env",
+]);
+
+function sanitizeRawPayload(entry: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (PROHIBITED_KEYS.has(key)) continue;
+    if (typeof value === "object" && value !== null) {
+      if (Array.isArray(value)) {
+        result[key] = value.map((item) =>
+          typeof item === "object" && item !== null && !Array.isArray(item)
+            ? sanitizeRawPayload(item as Record<string, unknown>)
+            : item,
+        );
+      } else {
+        result[key] = sanitizeRawPayload(value as Record<string, unknown>);
+      }
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
 
 interface LegacyRunHistoryEntry {
   taskExcerpt: string;
@@ -127,6 +156,7 @@ export async function migrateLegacyHistory(repo: RunRepository): Promise<Migrati
     try {
       const id = migrationId(entry, i);
       const modelKeys = extractModelKeys(entry);
+      const importedAt = Date.now();
       const summary: LegacyRunSummary = {
         kind: "legacy",
         schemaVersion: "1-import",
@@ -138,8 +168,13 @@ export async function migrateLegacyHistory(repo: RunRepository): Promise<Migrati
         scoresByModelKey: extractScores(entry),
         detailAvailable: false,
         searchText: buildSearchText(entry.taskExcerpt || "", modelKeys),
+        rawPayload: sanitizeRawPayload(entry as unknown as Record<string, unknown>),
+        importMetadata: {
+          importedAt,
+          format: "1-import",
+          importer: "localStorage:rsemble.runHistory.v1",
+        },
       };
-
       const result = await repo.importLegacySummary(summary);
       if (result === "created") {
         imported++;

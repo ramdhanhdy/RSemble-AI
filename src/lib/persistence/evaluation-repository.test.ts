@@ -1,31 +1,42 @@
 // =============================================================================
 // RSemble AI — Evaluation repository tests
 //
-// Exercises the Dexie-backed evaluation repository: suite/profile/experiment
-// CRUD, revision checks, archiving, and experiment task lifecycle.
+// Exercises the Dexie-backed and in-memory evaluation repositories through the
+// canonical Rubric repository API (listRubrics, getRubricRecord,
+// getRubricVersion, createRubric, appendRubricVersion, archiveRubric,
+// restoreRubric, duplicateRubric) plus suite/experiment CRUD, revision checks,
+// archiving, and the experiment task lifecycle. Also verifies that manually
+// seeded legacy `profiles` / `profileVersions` rows load through the canonical
+// API, and that the deprecated `*Profile*` adapter methods forward correctly.
 // =============================================================================
 
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "./database";
 import { InMemoryRunRepository } from "./run-repository";
-import { createEvaluationRepository, InMemoryEvaluationRepository } from "./evaluation-repository";
+import {
+  createEvaluationRepository,
+  InMemoryEvaluationRepository,
+  type EvaluationRepository,
+  type TaskSetMaterializationRecord,
+} from "./evaluation-repository";
 import type {
-  EvaluationProfile,
+  EvaluationRubric,
   EvaluationSuite,
   ExperimentRecord,
-  ProfileRecord,
+  RubricRecord,
 } from "../evaluations/evaluation-types";
 import { validateSuiteForExecution } from "../evaluations/suite-validation";
 import type { FullRunSummaryV2, RunRecordV2 } from "./run-types";
+import type { MaterializedWorkloadSnapshot } from "../evaluations/workload-manifest";
 
 // --- Valid baselines ----------------------------------------------------------
 
-function makeProfile(id: string, version = 1): EvaluationProfile {
+function makeRubric(id: string, version = 1): EvaluationRubric {
   return {
     id,
     version,
-    name: `Profile ${id}`,
+    name: `Rubric ${id}`,
     description: "test",
     judgeInstruction: "judge fairly",
     criteria: [
@@ -42,7 +53,7 @@ function makeProfile(id: string, version = 1): EvaluationProfile {
   };
 }
 
-function makeProfileRecord(id: string): ProfileRecord {
+function makeRubricRecord(id: string): RubricRecord {
   return {
     id,
     revision: 0,
@@ -129,6 +140,72 @@ function makeExperiment(id: string, suiteId: string): ExperimentRecord {
   };
 }
 
+function makeMaterialization(id: string, taskSetId = "set-1"): TaskSetMaterializationRecord {
+  const protocolFingerprint = "sha256:materialization-identity";
+  const snapshot: MaterializedWorkloadSnapshot = {
+    taskSetId,
+    taskSetVersion: 1,
+    tasks: [
+      {
+        memberId: "task-1",
+        taskVersionRef: { taskId: "task-1", version: 1 },
+        order: 0,
+        role: "organic",
+        stratum: null,
+        weight: 1,
+        rubricOverrideRef: null,
+        executionOverrides: null,
+        task: {
+          taskId: "task-1",
+          version: 1,
+          title: "Task 1",
+          objective: "Task 1",
+          candidateInstruction: "Do something",
+          defaultContextManifest: [],
+          responseContract: null,
+          taskVerifierRef: null,
+          source: { kind: "authored", legacyScopeKey: null, note: null },
+          createdAt: 1000,
+        },
+        effectiveRubricRef: null,
+        effectiveRubric: null,
+        evaluation: { kind: "holistic" },
+        judgeInstructionOverride: null,
+        verification: null,
+        isArchived: false,
+        isEffectiveRubricArchived: false,
+      },
+    ],
+    rubrics: [],
+    defaultRubricRef: null,
+    defaultRubric: null,
+    defaultModelSlots: [
+      {
+        id: "s1",
+        providerId: "openrouter",
+        provider: "OpenRouter",
+        model: "m1",
+        slug: "m1",
+        enabled: true,
+      },
+    ],
+    defaultJudge: { providerId: "openrouter", model: "judge" },
+    repeatPolicy: { kind: "none" },
+    missingnessPolicy: { kind: "allow-repair" },
+    protocolDefaults: {},
+    protocolFingerprint,
+    createdAt: 1000,
+  };
+  return {
+    id,
+    taskSetId,
+    taskSetVersion: 1,
+    protocolFingerprint,
+    snapshot,
+    createdAt: 1000,
+  };
+}
+
 function makeRun(id: string): RunRecordV2 {
   return {
     schemaVersion: 2,
@@ -197,7 +274,7 @@ function makeSummary(id: string): FullRunSummaryV2 {
 describe("EvaluationRepository (Dexie-backed)", () => {
   let db: RSembleEvaluationDB;
   let runRepo: InMemoryRunRepository;
-  let evalRepo: ReturnType<typeof createEvaluationRepository>;
+  let evalRepo: EvaluationRepository;
 
   beforeEach(() => {
     db = new RSembleEvaluationDB("test-eval-" + Math.random().toString(36).slice(2));
@@ -255,55 +332,287 @@ describe("EvaluationRepository (Dexie-backed)", () => {
     });
   });
 
-  describe("Profile CRUD", () => {
-    it("creates a profile with version 1 and retrieves it", async () => {
-      await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1"));
-      const record = await evalRepo.getProfileRecord("p1");
+  describe("Rubric repository API", () => {
+    it("creates a rubric with version 1 and retrieves it", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      const record = await evalRepo.getRubricRecord("r1");
       expect(record).not.toBeNull();
       expect(record!.latestVersion).toBe(1);
-      const profile = await evalRepo.getProfile("p1", 1);
-      expect(profile).not.toBeNull();
-      expect(profile!.version).toBe(1);
+      const rubric = await evalRepo.getRubricVersion("r1", 1);
+      expect(rubric).not.toBeNull();
+      expect(rubric!.version).toBe(1);
+    });
+
+    it("rejects creating a rubric whose first version is not 1", async () => {
+      await expect(
+        evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1", 2)),
+      ).rejects.toThrow(/first version/i);
+    });
+
+    it("rejects creating a rubric when the id already exists", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await expect(evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"))).rejects.toThrow(
+        /already exists/i,
+      );
     });
 
     it("appends a new version and advances latestVersion", async () => {
-      await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1"));
-      const rev = await evalRepo.appendProfileVersion(
-        makeProfileRecord("p1"),
-        makeProfile("p1", 2),
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      const rev = await evalRepo.appendRubricVersion(
+        makeRubricRecord("r1"),
+        makeRubric("r1", 2),
         0,
       );
       expect(rev).toBe(1);
-      const record = await evalRepo.getProfileRecord("p1");
+      const record = await evalRepo.getRubricRecord("r1");
       expect(record!.latestVersion).toBe(2);
-      const v1 = await evalRepo.getProfile("p1", 1);
-      const v2 = await evalRepo.getProfile("p1", 2);
+      const v1 = await evalRepo.getRubricVersion("r1", 1);
+      const v2 = await evalRepo.getRubricVersion("r1", 2);
       expect(v1).not.toBeNull();
       expect(v2).not.toBeNull();
     });
 
-    it("archive/restore mutates only ProfileRecord, not versions", async () => {
-      await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1"));
-      await evalRepo.setProfileArchived("p1", true, 0);
-      const record = await evalRepo.getProfileRecord("p1");
-      expect(record!.archivedAt).not.toBeNull();
-      // Version is still retrievable.
-      const profile = await evalRepo.getProfile("p1", 1);
-      expect(profile).not.toBeNull();
-      // No new version was created.
-      expect(record!.latestVersion).toBe(1);
-      // Archived profile is hidden from listProfiles by default.
-      const visible = await evalRepo.listProfiles();
-      expect(visible).toHaveLength(0);
-      const all = await evalRepo.listProfiles(true);
-      expect(all).toHaveLength(1);
+    it("rejects stale revision on appendRubricVersion (CAS)", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await expect(
+        evalRepo.appendRubricVersion(makeRubricRecord("r1"), makeRubric("r1", 2), 99),
+      ).rejects.toThrow(/stale/i);
     });
 
-    it("rejects stale revision on appendProfileVersion", async () => {
-      await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1"));
-      await expect(
-        evalRepo.appendProfileVersion(makeProfileRecord("p1"), makeProfile("p1", 2), 99),
-      ).rejects.toThrow(/stale/i);
+    it("immutable history: prior versions remain retrievable after append", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1", 1));
+      await evalRepo.appendRubricVersion(makeRubricRecord("r1"), makeRubric("r1", 2), 0);
+      await evalRepo.appendRubricVersion(makeRubricRecord("r1"), makeRubric("r1", 3), 1);
+      const v1 = await evalRepo.getRubricVersion("r1", 1);
+      const v2 = await evalRepo.getRubricVersion("r1", 2);
+      const v3 = await evalRepo.getRubricVersion("r1", 3);
+      expect(v1).not.toBeNull();
+      expect(v2).not.toBeNull();
+      expect(v3).not.toBeNull();
+      expect(v1!.version).toBe(1);
+      expect(v3!.version).toBe(3);
+    });
+
+    it("archival cycle: archive then restore clears archivedAt without a new version", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      const archiveRev = await evalRepo.archiveRubric("r1", 0);
+      expect(archiveRev).toBe(1);
+      const archived = await evalRepo.getRubricRecord("r1");
+      expect(archived!.archivedAt).not.toBeNull();
+      expect(archived!.latestVersion).toBe(1);
+      // Version is still retrievable while archived.
+      const rubric = await evalRepo.getRubricVersion("r1", 1);
+      expect(rubric).not.toBeNull();
+      // Archived rubric is hidden from listRubrics by default.
+      const visible = await evalRepo.listRubrics();
+      expect(visible).toHaveLength(0);
+      const all = await evalRepo.listRubrics(true);
+      expect(all).toHaveLength(1);
+      // Restore clears archivedAt.
+      const restoreRev = await evalRepo.restoreRubric("r1", 1);
+      expect(restoreRev).toBe(2);
+      const restored = await evalRepo.getRubricRecord("r1");
+      expect(restored!.archivedAt).toBeNull();
+      expect(restored!.latestVersion).toBe(1);
+      const visibleAfter = await evalRepo.listRubrics();
+      expect(visibleAfter).toHaveLength(1);
+    });
+
+    it("archiveRubric rejects stale revision", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await expect(evalRepo.archiveRubric("r1", 99)).rejects.toThrow(/stale/i);
+    });
+
+    it("restoreRubric rejects stale revision", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await evalRepo.archiveRubric("r1", 0);
+      await expect(evalRepo.restoreRubric("r1", 99)).rejects.toThrow(/stale/i);
+    });
+
+    it("duplicateRubric creates a new identity with version 1 and copied content", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      // Append a second version so we verify duplicate copies the latest.
+      await evalRepo.appendRubricVersion(
+        { ...makeRubricRecord("r1"), latestVersion: 2 },
+        { ...makeRubric("r1", 2), name: "Rubric r1 v2" },
+        0,
+      );
+      await evalRepo.duplicateRubric("r1", "r2");
+      const newRecord = await evalRepo.getRubricRecord("r2");
+      expect(newRecord).not.toBeNull();
+      expect(newRecord!.latestVersion).toBe(1);
+      expect(newRecord!.archivedAt).toBeNull();
+      const newRubric = await evalRepo.getRubricVersion("r2", 1);
+      expect(newRubric).not.toBeNull();
+      expect(newRubric!.version).toBe(1);
+      // Content copied from the source's latest version (v2).
+      expect(newRubric!.name).toBe("Rubric r1 v2");
+      // The new identity is independent — appending to it does not affect the source.
+      await evalRepo.appendRubricVersion(
+        { ...makeRubricRecord("r2"), latestVersion: 1 },
+        makeRubric("r2", 2),
+        0,
+      );
+      const sourceRecord = await evalRepo.getRubricRecord("r1");
+      expect(sourceRecord!.latestVersion).toBe(2);
+      const dupRecord = await evalRepo.getRubricRecord("r2");
+      expect(dupRecord!.latestVersion).toBe(2);
+    });
+
+    it("duplicateRubric rejects an unknown source id", async () => {
+      await expect(evalRepo.duplicateRubric("missing", "r2")).rejects.toThrow(/not found/i);
+    });
+
+    it("duplicateRubric rejects when the new id already exists", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await evalRepo.createRubric(makeRubricRecord("r2"), makeRubric("r2"));
+      await expect(evalRepo.duplicateRubric("r1", "r2")).rejects.toThrow(/already exists/i);
+    });
+
+    it("listRubrics returns newest first and hides archived by default", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await evalRepo.archiveRubric("r1", 0);
+      await evalRepo.createRubric(makeRubricRecord("r2"), makeRubric("r2"));
+      const visible = await evalRepo.listRubrics();
+      expect(visible).toHaveLength(1);
+      expect(visible[0].id).toBe("r2");
+      const all = await evalRepo.listRubrics(true);
+      expect(all).toHaveLength(2);
+    });
+
+    it("loads a manually seeded legacy profile/profileVersion row via canonical API", async () => {
+      // Seed the physical `profiles` / `profileVersions` stores directly,
+      // simulating a row written by the pre-canonical code path. The canonical
+      // API must read it without migration or copies.
+      const legacyRecord: RubricRecord = {
+        id: "legacy-1",
+        revision: 3,
+        latestVersion: 2,
+        createdAt: 500,
+        updatedAt: 900,
+        archivedAt: null,
+      };
+      const legacyV1: EvaluationRubric = {
+        ...makeRubric("legacy-1", 1),
+        name: "Legacy v1",
+        createdAt: 500,
+        updatedAt: 600,
+      };
+      const legacyV2: EvaluationRubric = {
+        ...makeRubric("legacy-1", 2),
+        name: "Legacy v2",
+        createdAt: 700,
+        updatedAt: 900,
+      };
+      await db.profiles.put({
+        id: "legacy-1",
+        record: legacyRecord,
+        revision: legacyRecord.revision,
+        latestVersion: legacyRecord.latestVersion,
+        updatedAt: legacyRecord.updatedAt,
+        archivedAt: legacyRecord.archivedAt,
+      });
+      await db.profileVersions.put({
+        id: "legacy-1",
+        version: 1,
+        profile: legacyV1,
+        updatedAt: legacyV1.updatedAt,
+      });
+      await db.profileVersions.put({
+        id: "legacy-1",
+        version: 2,
+        profile: legacyV2,
+        updatedAt: legacyV2.updatedAt,
+      });
+
+      // Canonical reads.
+      const record = await evalRepo.getRubricRecord("legacy-1");
+      expect(record).not.toBeNull();
+      expect(record!.revision).toBe(3);
+      expect(record!.latestVersion).toBe(2);
+      const v1 = await evalRepo.getRubricVersion("legacy-1", 1);
+      const v2 = await evalRepo.getRubricVersion("legacy-1", 2);
+      expect(v1).not.toBeNull();
+      expect(v1!.name).toBe("Legacy v1");
+      expect(v2).not.toBeNull();
+      expect(v2!.name).toBe("Legacy v2");
+      const listed = await evalRepo.listRubrics();
+      expect(listed.some((r) => r.id === "legacy-1")).toBe(true);
+      // Append a new version over the legacy row using CAS at revision 3.
+      const rev = await evalRepo.appendRubricVersion(
+        { ...legacyRecord, latestVersion: 2 },
+        makeRubric("legacy-1", 3),
+        3,
+      );
+      expect(rev).toBe(4);
+      const after = await evalRepo.getRubricRecord("legacy-1");
+      expect(after!.latestVersion).toBe(3);
+      expect(after!.revision).toBe(4);
+      // Prior legacy versions are still immutable and retrievable.
+      expect((await evalRepo.getRubricVersion("legacy-1", 1))!.name).toBe("Legacy v1");
+    });
+  });
+
+  describe("Task Set materialization lookup", () => {
+    it("gets a persisted materialization by id and returns null when missing", async () => {
+      const record = makeMaterialization("mat-1");
+      await evalRepo.persistTaskSetMaterialization(record);
+      expect(await evalRepo.getTaskSetMaterialization("mat-1")).toEqual(record);
+      expect(await evalRepo.getTaskSetMaterialization("mat-missing")).toBeNull();
+    });
+
+    it("returns null for a stored materialization missing tasks, slots, judge, or rubrics", async () => {
+      await db.taskSetMaterializations.put({
+        id: "mat-incomplete-1",
+        taskSetId: "set-1",
+        taskSetVersion: 1,
+        protocolFingerprint: "sha256:materialization-identity",
+        snapshot: {
+          taskSetId: "set-1",
+          taskSetVersion: 1,
+          protocolFingerprint: "sha256:materialization-identity",
+        },
+        createdAt: 1000,
+      });
+      expect(await evalRepo.getTaskSetMaterialization("mat-incomplete-1")).toBeNull();
+    });
+  });
+
+  describe("Deprecated Profile adapter surface", () => {
+    it("listProfiles forwards to listRubrics", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      const viaLegacy = await evalRepo.listProfiles();
+      const viaCanonical = await evalRepo.listRubrics();
+      expect(viaLegacy).toEqual(viaCanonical);
+      expect(viaLegacy[0].id).toBe("r1");
+    });
+
+    it("getProfileRecord / getProfile forward to canonical getters", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      const record = await evalRepo.getProfileRecord("r1");
+      expect(record).toEqual(await evalRepo.getRubricRecord("r1"));
+      const rubric = await evalRepo.getProfile("r1", 1);
+      expect(rubric).toEqual(await evalRepo.getRubricVersion("r1", 1));
+    });
+
+    it("createProfile / appendProfileVersion forward to canonical writers", async () => {
+      await evalRepo.createProfile(makeRubricRecord("r1"), makeRubric("r1"));
+      const rev = await evalRepo.appendProfileVersion(
+        makeRubricRecord("r1"),
+        makeRubric("r1", 2),
+        0,
+      );
+      expect(rev).toBe(1);
+      const record = await evalRepo.getRubricRecord("r1");
+      expect(record!.latestVersion).toBe(2);
+    });
+
+    it("setProfileArchived forwards to archiveRubric / restoreRubric", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await evalRepo.setProfileArchived("r1", true, 0);
+      expect((await evalRepo.getRubricRecord("r1"))!.archivedAt).not.toBeNull();
+      await evalRepo.setProfileArchived("r1", false, 1);
+      expect((await evalRepo.getRubricRecord("r1"))!.archivedAt).toBeNull();
     });
   });
 
@@ -331,6 +640,15 @@ describe("EvaluationRepository (Dexie-backed)", () => {
       const exp = makeExperiment("e1", "s1");
       await evalRepo.createExperiment(exp);
       await expect(evalRepo.updateExperiment(exp, 99)).rejects.toThrow(/stale/i);
+    });
+
+    it("deleteExperiment removes the row and is idempotent", async () => {
+      await evalRepo.saveSuite(makeSuite("s1"), 0);
+      await evalRepo.createExperiment(makeExperiment("e1", "s1"));
+      await evalRepo.deleteExperiment("e1");
+      expect(await evalRepo.getExperiment("e1")).toBeNull();
+      // Deleting a missing row is a no-op.
+      await expect(evalRepo.deleteExperiment("e1")).resolves.toBeUndefined();
     });
   });
 
@@ -470,40 +788,100 @@ describe("EvaluationRepository (In-memory)", () => {
     await expect(evalRepo.saveSuite(makeSuite("s1"), 0)).rejects.toThrow(/stale/i);
   });
 
-  it("profile create + append version + archive", async () => {
-    await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1"));
-    await evalRepo.appendProfileVersion(makeProfileRecord("p1"), makeProfile("p1", 2), 0);
-    const record = await evalRepo.getProfileRecord("p1");
-    expect(record!.latestVersion).toBe(2);
-    await evalRepo.setProfileArchived("p1", true, 1);
-    const visible = await evalRepo.listProfiles();
-    expect(visible).toHaveLength(0);
+  describe("Rubric repository API", () => {
+    it("creates a rubric with version 1 and retrieves it", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      const record = await evalRepo.getRubricRecord("r1");
+      expect(record).not.toBeNull();
+      expect(record!.latestVersion).toBe(1);
+      const rubric = await evalRepo.getRubricVersion("r1", 1);
+      expect(rubric).not.toBeNull();
+      expect(rubric!.version).toBe(1);
+    });
+
+    it("rubric create + append version + archival cycle", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await evalRepo.appendRubricVersion(makeRubricRecord("r1"), makeRubric("r1", 2), 0);
+      const record = await evalRepo.getRubricRecord("r1");
+      expect(record!.latestVersion).toBe(2);
+      await evalRepo.archiveRubric("r1", 1);
+      const visible = await evalRepo.listRubrics();
+      expect(visible).toHaveLength(0);
+      await evalRepo.restoreRubric("r1", 2);
+      const restored = await evalRepo.getRubricRecord("r1");
+      expect(restored!.archivedAt).toBeNull();
+      const visibleAfter = await evalRepo.listRubrics();
+      expect(visibleAfter).toHaveLength(1);
+    });
+
+    it("rubric version immutability: prior versions remain retrievable after append", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1", 1));
+      await evalRepo.appendRubricVersion(makeRubricRecord("r1"), makeRubric("r1", 2), 0);
+      await evalRepo.appendRubricVersion(makeRubricRecord("r1"), makeRubric("r1", 3), 1);
+      const v1 = await evalRepo.getRubricVersion("r1", 1);
+      const v2 = await evalRepo.getRubricVersion("r1", 2);
+      const v3 = await evalRepo.getRubricVersion("r1", 3);
+      expect(v1).not.toBeNull();
+      expect(v2).not.toBeNull();
+      expect(v3).not.toBeNull();
+      expect(v1!.version).toBe(1);
+      expect(v3!.version).toBe(3);
+    });
+
+    it("archive/restore does not create a new rubric version", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1", 1));
+      await evalRepo.archiveRubric("r1", 0);
+      const record = await evalRepo.getRubricRecord("r1");
+      expect(record!.latestVersion).toBe(1);
+      expect(record!.archivedAt).not.toBeNull();
+      await evalRepo.restoreRubric("r1", 1);
+      const restored = await evalRepo.getRubricRecord("r1");
+      expect(restored!.latestVersion).toBe(1);
+      expect(restored!.archivedAt).toBeNull();
+    });
+
+    it("rejects stale revision on appendRubricVersion (CAS)", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await expect(
+        evalRepo.appendRubricVersion(makeRubricRecord("r1"), makeRubric("r1", 2), 99),
+      ).rejects.toThrow(/stale/i);
+    });
+
+    it("duplicateRubric creates a new identity with copied content", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await evalRepo.duplicateRubric("r1", "r2");
+      const newRecord = await evalRepo.getRubricRecord("r2");
+      expect(newRecord).not.toBeNull();
+      expect(newRecord!.latestVersion).toBe(1);
+      const newRubric = await evalRepo.getRubricVersion("r2", 1);
+      expect(newRubric).not.toBeNull();
+      expect(newRubric!.version).toBe(1);
+      expect(newRubric!.name).toBe("Rubric r1");
+    });
+
+    it("duplicateRubric rejects an unknown source id", async () => {
+      await expect(evalRepo.duplicateRubric("missing", "r2")).rejects.toThrow(/not found/i);
+    });
+
+    it("duplicateRubric rejects when the new id already exists", async () => {
+      await evalRepo.createRubric(makeRubricRecord("r1"), makeRubric("r1"));
+      await evalRepo.createRubric(makeRubricRecord("r2"), makeRubric("r2"));
+      await expect(evalRepo.duplicateRubric("r1", "r2")).rejects.toThrow(/already exists/i);
+    });
   });
 
-  it("profile version immutability: prior versions remain retrievable after append", async () => {
-    await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1", 1));
-    await evalRepo.appendProfileVersion(makeProfileRecord("p1"), makeProfile("p1", 2), 0);
-    await evalRepo.appendProfileVersion(makeProfileRecord("p1"), makeProfile("p1", 3), 1);
-    const v1 = await evalRepo.getProfile("p1", 1);
-    const v2 = await evalRepo.getProfile("p1", 2);
-    const v3 = await evalRepo.getProfile("p1", 3);
-    expect(v1).not.toBeNull();
-    expect(v2).not.toBeNull();
-    expect(v3).not.toBeNull();
-    expect(v1!.version).toBe(1);
-    expect(v3!.version).toBe(3);
-  });
-
-  it("archive/restore does not create a new profile version", async () => {
-    await evalRepo.createProfile(makeProfileRecord("p1"), makeProfile("p1", 1));
-    await evalRepo.setProfileArchived("p1", true, 0);
-    const record = await evalRepo.getProfileRecord("p1");
-    expect(record!.latestVersion).toBe(1);
-    expect(record!.archivedAt).not.toBeNull();
-    await evalRepo.setProfileArchived("p1", false, 1);
-    const restored = await evalRepo.getProfileRecord("p1");
-    expect(restored!.latestVersion).toBe(1);
-    expect(restored!.archivedAt).toBeNull();
+  describe("Deprecated Profile adapter surface", () => {
+    it("legacy methods forward to canonical Rubric methods", async () => {
+      await evalRepo.createProfile(makeRubricRecord("r1"), makeRubric("r1"));
+      await evalRepo.appendProfileVersion(makeRubricRecord("r1"), makeRubric("r1", 2), 0);
+      expect((await evalRepo.getProfileRecord("r1"))!.latestVersion).toBe(2);
+      await evalRepo.setProfileArchived("r1", true, 1);
+      expect(await evalRepo.listProfiles()).toHaveLength(0);
+      await evalRepo.setProfileArchived("r1", false, 2);
+      expect(await evalRepo.listProfiles()).toHaveLength(1);
+      // Canonical and legacy reads agree.
+      expect(await evalRepo.getProfile("r1", 1)).toEqual(await evalRepo.getRubricVersion("r1", 1));
+    });
   });
 
   it("persists a non-executable draft, matching the Dexie contract", async () => {
@@ -513,5 +891,29 @@ describe("EvaluationRepository (In-memory)", () => {
     const bad = makeSuite("bad");
     (bad.tasks[0] as unknown as Record<string, unknown>).order = "zero";
     await expect(evalRepo.saveSuite(bad, 0)).rejects.toThrow(/invalid suite/i);
+  });
+
+  it("gets a persisted materialization by id and returns null when missing", async () => {
+    const record = makeMaterialization("mat-mem-1");
+    await evalRepo.persistTaskSetMaterialization(record);
+    expect(await evalRepo.getTaskSetMaterialization("mat-mem-1")).toEqual(record);
+    expect(await evalRepo.getTaskSetMaterialization("mat-missing")).toBeNull();
+  });
+
+  it("returns null for a stored materialization missing tasks, slots, judge, or rubrics", async () => {
+    const record = makeMaterialization("mat-incomplete-mem-1");
+    await evalRepo.persistTaskSetMaterialization(record);
+    const store = evalRepo as unknown as {
+      taskSetMaterializations: Map<string, TaskSetMaterializationRecord>;
+    };
+    const stored = store.taskSetMaterializations.get("mat-incomplete-mem-1");
+    expect(stored).toBeDefined();
+    if (stored) {
+      Reflect.deleteProperty(stored.snapshot, "tasks");
+      Reflect.deleteProperty(stored.snapshot, "defaultModelSlots");
+      Reflect.deleteProperty(stored.snapshot, "defaultJudge");
+      Reflect.deleteProperty(stored.snapshot, "rubrics");
+    }
+    expect(await evalRepo.getTaskSetMaterialization("mat-incomplete-mem-1")).toBeNull();
   });
 });

@@ -38,7 +38,8 @@ import {
   HOLISTIC_EVALUATION,
   deepCopyEvaluationConfig,
   type AdHocEvaluationConfig,
-} from "./lib/evaluations/evaluation-profile-adhoc";
+} from "./lib/evaluations/evaluation-rubric-adhoc";
+import type { ComparisonTaskBinding } from "./lib/compare/comparison-result-types";
 
 export type StageStatus = "idle" | "running" | "done" | "error";
 
@@ -73,6 +74,12 @@ export interface RunEvaluationContext {
   attachmentsToJudge: boolean;
   /** Immutable candidate/Judge effort requested for this run. */
   reasoningPolicy?: ReasoningPolicy;
+  /** Task binding of the comparison (spec §3, §5). */
+  taskBinding?: ComparisonTaskBinding | null;
+  /** Content-addressed immutable input snapshot ref (spec §3, §5). */
+  inputSnapshotRef?: string | null;
+  /** Canonical Task Instance id (spec §3, §5). Null for ad-hoc. */
+  taskInstanceId?: string | null;
 }
 
 export interface StudioState {
@@ -94,7 +101,8 @@ export interface StudioState {
    *  (prompts stay byte-identical to the pre-instruction baseline). */
   judgeInstruction: string;
   reasoningPolicy: ReasoningPolicy;
-
+  /** Current task binding (canonical Task or ad-hoc). */
+  taskBinding?: ComparisonTaskBinding | null;
   // --- task attachments (attachments spec §4) ---
   /** In-memory attachment set for the current task. Bytes/text never persist
    *  to localStorage or history (metadata only, phase 7.7). */
@@ -143,6 +151,7 @@ export type Action =
   | { type: "SET_MODE"; mode: Mode }
   // --- command ---
   | { type: "SET_PROMPT"; value: string }
+  | { type: "SET_TASK_BINDING"; binding: ComparisonTaskBinding | null }
   | { type: "LOAD_EXAMPLE"; force?: boolean }
   | { type: "SET_EVALUATION"; config: AdHocEvaluationConfig }
   | { type: "ADD_SLOT"; slot: ModelSlot }
@@ -322,6 +331,8 @@ export function reducer(state: StudioState, action: Action): StudioState {
     case "SET_PROMPT":
       return { ...state, prompt: action.value };
 
+    case "SET_TASK_BINDING":
+      return { ...state, taskBinding: action.binding };
     case "LOAD_EXAMPLE": {
       // Guard against silently destroying meaningful USER text. Filling is
       // allowed without `force` only when:
@@ -508,6 +519,9 @@ export function reducer(state: StudioState, action: Action): StudioState {
           reasoningPolicy: action.context.reasoningPolicy
             ? { ...action.context.reasoningPolicy }
             : undefined,
+          taskBinding: action.context.taskBinding ?? state.taskBinding ?? null,
+          inputSnapshotRef: action.context.inputSnapshotRef ?? null,
+          taskInstanceId: action.context.taskInstanceId ?? null,
         },
         audit: logAudit(
           state.audit,
@@ -724,6 +738,7 @@ export function reducer(state: StudioState, action: Action): StudioState {
         mode: state.mode,
         slots: state.slots,
         critic: state.critic,
+        taskBinding: null,
       };
 
     case "LEASE_LOST":
@@ -857,4 +872,5 @@ export const initialState: StudioState = {
   fusionError: null,
   fusedText: null,
   audit: [],
+  taskBinding: null,
 };

@@ -142,6 +142,20 @@ describe("migrateLegacyHistory", () => {
     expect(first!.scoresByModelKey["openrouter:gpt-4"]).toBe(4.5);
     expect(first!.winnerKeys).toEqual(["openrouter:gpt-4"]);
   });
+  it("preserves validated raw payload and explicit import metadata", async () => {
+    await migrateLegacyHistory(repo);
+    const summaries = await repo.list({ source: "legacy" });
+    const first = summaries.find(
+      (s) => s.kind === "legacy" && s.taskExcerpt === "Write a 600-word article",
+    ) as LegacyRunSummary | undefined;
+    expect(first).toBeTruthy();
+    expect(first!.rawPayload).toEqual(validEntry({ timestamp: 1700000000000 }));
+    expect(first!.importMetadata).toEqual({
+      importedAt: expect.any(Number),
+      format: "1-import",
+      importer: "localStorage:rsemble.runHistory.v1",
+    });
+  });
 
   it("does not fabricate status, mode, source, Judge, or evaluation fields", async () => {
     await migrateLegacyHistory(repo);

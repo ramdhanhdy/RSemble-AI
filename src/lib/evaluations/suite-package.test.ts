@@ -2,11 +2,11 @@
 // RSemble AI — Suite package tests
 //
 // Parse validation, normalization (identity minting, conflict suffixes, ref
-// remapping, local-profile pinning, draft notes), and the import writer.
+// remapping, local-rubric pinning, draft notes), and the import writer.
 // =============================================================================
 
 import "fake-indexeddb/auto";
-import type { EvaluationProfile } from "./evaluation-types";
+import type { EvaluationRubric } from "./evaluation-types";
 import { afterEach, describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "../persistence/database";
 import { importSuitePackage } from "../persistence/suite-package-import";
@@ -16,7 +16,7 @@ import {
   parseSuitePackage,
   validateSuitePackageBytes,
   type SuitePackageV1,
-  type SuitePackageProfile,
+  type SuitePackageRubric,
 } from "./suite-package";
 
 function criterion(id: string) {
@@ -78,14 +78,14 @@ describe("parseSuitePackage", () => {
     expect(parseSuitePackage(makePkg({ defaultJudge: {} as never })).ok).toBe(false);
   });
 
-  it("rejects profiles with empty criteria", () => {
+  it("rejects rubrics with empty criteria", () => {
     const result = parseSuitePackage(makePkg({ profiles: [{ name: "P", criteria: [] }] }));
     expect(result.ok).toBe(false);
   });
 });
 
 describe("normalizeSuitePackage", () => {
-  const baseOpts = () => ({ takenIds: new Set<string>(), existingProfileIds: new Set<string>() });
+  const baseOpts = () => ({ takenIds: new Set<string>(), existingRubricIds: new Set<string>() });
 
   it("mints ids for missing entries and indexes tasks by order", () => {
     let counter = 0;
@@ -110,7 +110,7 @@ describe("normalizeSuitePackage", () => {
     const taken = new Set(["task-custom"]);
     const result = normalizeSuitePackage(makePkg(), {
       takenIds: taken,
-      existingProfileIds: new Set(),
+      existingRubricIds: new Set(),
       generateId: () => "abcd1234-ffff",
     });
     expect(result.ok).toBe(true);
@@ -120,54 +120,54 @@ describe("normalizeSuitePackage", () => {
     expect(result.result.notes.some((n) => n.includes("task-custom"))).toBe(true);
   });
 
-  it("remaps embedded profile references to minted ids", () => {
+  it("remaps embedded rubric references to minted ids", () => {
     const pkg = makePkg({
-      profiles: [{ id: "pkg-profile", name: "P", criteria: [criterion("c1")] }],
+      profiles: [{ id: "pkg-rubric", name: "P", criteria: [criterion("c1")] }],
       tasks: [
         {
           title: "T",
           prompt: "p",
-          evaluation: { kind: "profile", profile: { id: "pkg-profile", version: 1 } },
+          evaluation: { kind: "profile", profile: { id: "pkg-rubric", version: 1 } },
         },
       ],
-      defaultEvaluation: { kind: "profile", profile: { id: "pkg-profile", version: 1 } },
+      defaultEvaluation: { kind: "profile", profile: { id: "pkg-rubric", version: 1 } },
     });
     const result = normalizeSuitePackage(pkg, { ...baseOpts(), generateId: () => "minted-1" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // Provided id is free — kept; refs remap through the id map to version 1.
-    expect(result.result.profiles[0].profile.id).toBe("pkg-profile");
+    expect(result.result.profiles[0].profile.id).toBe("pkg-rubric");
     const taskEval = result.result.suite.tasks[0].evaluation;
-    expect(taskEval).toEqual({ kind: "profile", profile: { id: "pkg-profile", version: 1 } });
+    expect(taskEval).toEqual({ kind: "profile", profile: { id: "pkg-rubric", version: 1 } });
     expect(result.result.suite.defaultEvaluation).toEqual({
       kind: "profile",
-      profile: { id: "pkg-profile", version: 1 },
+      profile: { id: "pkg-rubric", version: 1 },
     });
   });
 
-  it("leaves references to existing local profiles untouched", () => {
+  it("leaves references to existing local rubrics untouched", () => {
     const pkg = makePkg({
       tasks: [
         {
           title: "T",
           prompt: "p",
-          evaluation: { kind: "profile", profile: { id: "local-profile", version: 3 } },
+          evaluation: { kind: "profile", profile: { id: "local-rubric", version: 3 } },
         },
       ],
     });
     const result = normalizeSuitePackage(pkg, {
       takenIds: new Set(),
-      existingProfileIds: new Set(["local-profile"]),
+      existingRubricIds: new Set(["local-rubric"]),
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.result.suite.tasks[0].evaluation).toEqual({
       kind: "profile",
-      profile: { id: "local-profile", version: 3 },
+      profile: { id: "local-rubric", version: 3 },
     });
   });
 
-  it("errors when a task pins a profile that is neither embedded nor local", () => {
+  it("errors when a task pins a rubric that is neither embedded nor local", () => {
     const pkg = makePkg({
       tasks: [
         {
@@ -183,7 +183,7 @@ describe("normalizeSuitePackage", () => {
     expect(result.errors[0]).toContain("ghost");
   });
 
-  it("rejects embedded profiles with invalid criteria at the record guard", () => {
+  it("rejects embedded rubrics with invalid criteria at the record guard", () => {
     const pkg = makePkg({
       profiles: [
         {
@@ -220,13 +220,13 @@ describe("importSuitePackage", () => {
     }
   });
 
-  it("writes profiles and suite transactionally; second import creates new entities", async () => {
+  it("writes rubrics and suite transactionally; second import creates new entities", async () => {
     const db = new RSembleEvaluationDB(`pkg-test-${crypto.randomUUID()}`);
     dbs.push(db);
     const pkg = makePkg({ profiles: [{ id: "p1", name: "P", criteria: [criterion("c1")] }] });
     const first = normalizeSuitePackage(pkg, {
       takenIds: new Set(),
-      existingProfileIds: new Set(),
+      existingRubricIds: new Set(),
       generateId: () => crypto.randomUUID(),
     });
     if (!first.ok) throw new Error("normalize failed");
@@ -236,8 +236,8 @@ describe("importSuitePackage", () => {
 
     // Same package again — suffixed, never skipped.
     const second = normalizeSuitePackage(pkg, {
-      takenIds: new Set([result1.suiteId, ...result1.profileIds, "p1"]),
-      existingProfileIds: new Set(),
+      takenIds: new Set([result1.suiteId, ...result1.rubricIds, "p1"]),
+      existingRubricIds: new Set(),
       generateId: () => crypto.randomUUID(),
     });
     if (!second.ok) throw new Error("normalize failed");
@@ -251,21 +251,21 @@ describe("importSuitePackage", () => {
     const pkg = makePkg({ profiles: [{ name: "P", criteria: [criterion("c1")] }] });
     const normalized = normalizeSuitePackage(pkg, {
       takenIds: new Set(),
-      existingProfileIds: new Set(),
+      existingRubricIds: new Set(),
     });
     if (!normalized.ok) throw new Error("normalize failed");
     const result = await repo.importSuitePackage(normalized.result);
     expect((await repo.getSuite(result.suiteId))?.name).toBe("Pkg Suite");
-    expect(await repo.getProfile(result.profileIds[0], 1)).not.toBeNull();
+    expect(await repo.getRubricVersion(result.rubricIds[0], 1)).not.toBeNull();
     // Conflict is an error, not a silent skip.
     await expect(repo.importSuitePackage(normalized.result)).rejects.toThrow(/already exists/);
   });
 });
 
-describe("hybrid profile round-trip through suite packages", () => {
-  const baseOpts = () => ({ takenIds: new Set<string>(), existingProfileIds: new Set<string>() });
+describe("hybrid rubric round-trip through suite packages", () => {
+  const baseOpts = () => ({ takenIds: new Set<string>(), existingRubricIds: new Set<string>() });
 
-  function hybridProfile(): SuitePackageProfile {
+  function hybridRubric(): SuitePackageRubric {
     return {
       id: "pkg-hybrid",
       name: "Hybrid P",
@@ -297,28 +297,28 @@ describe("hybrid profile round-trip through suite packages", () => {
   }
 
   it("preserves requirementGroups and complianceInfluence through import", () => {
-    const pkg = makePkg({ profiles: [hybridProfile()] });
+    const pkg = makePkg({ profiles: [hybridRubric()] });
     const result = normalizeSuitePackage(pkg, baseOpts());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const profile = result.result.profiles[0].profile;
-    expect(profile.requirementGroups).toHaveLength(1);
-    expect(profile.requirementGroups?.[0]).toMatchObject({
+    const rubric = result.result.profiles[0].profile;
+    expect(rubric.requirementGroups).toHaveLength(1);
+    expect(rubric.requirementGroups?.[0]).toMatchObject({
       id: "g1",
       checkIds: ["uses-itt"],
       weight: 1,
       mode: "ALL",
     });
-    expect(profile.complianceInfluence).toBe(0.5);
+    expect(rubric.complianceInfluence).toBe(0.5);
   });
 
   it("rejects an ungrouped binary check at import (exactly-one membership)", () => {
-    // validateProfile (now run inside normalizeSuitePackage) requires every
+    // validateRubric (now run inside normalizeSuitePackage) requires every
     // binary check to belong to exactly one requirement group.
     const pkg = makePkg({
       profiles: [
         {
-          ...hybridProfile(),
+          ...hybridRubric(),
           requirementGroups: undefined,
           complianceInfluence: 0.5,
         },
@@ -332,14 +332,14 @@ describe("hybrid profile round-trip through suite packages", () => {
     );
   });
 
-  it("rejects a package profile carrying kind:'gate' (structural guard drops it)", () => {
+  it("rejects a package rubric carrying kind:'gate' (structural guard drops it)", () => {
     const pkg = makePkg({
       profiles: [
         {
           name: "GateP",
           criteria: [
             { id: "g1", kind: "gate", name: "Gate", description: "d" },
-          ] as unknown as EvaluationProfile["criteria"],
+          ] as unknown as EvaluationRubric["criteria"],
         },
       ],
     });

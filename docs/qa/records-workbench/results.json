@@ -1,0 +1,546 @@
+{
+  "generatedAt": "2026-08-23T06:53:47.134Z",
+  "command": "npm run qa:records",
+  "baseUrl": "http://127.0.0.1:5198/",
+  "runtimeContainment": {
+    "root": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30",
+    "userDataDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-profile-1787468027133",
+    "diskCacheDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-disk-cache-1787468027133",
+    "crashDumpsDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\browser\\chrome-crashes-1787468027133",
+    "tempDir": "E:\\2026\\RSemble-AI\\.qa-runtime\\run30\\temp",
+    "retainedEvidenceDir": "E:\\2026\\RSemble-AI\\docs\\qa\\records-workbench",
+    "verifiedDrive": "E:"
+  },
+  "probes": [
+    {
+      "name": "seed-indexeddb-corpus",
+      "pass": true,
+      "receipt": {
+        "runSummaries": 83,
+        "runDetails": 82,
+        "comparisonResults": 2,
+        "redactedErrorCount": 18
+      }
+    },
+    {
+      "name": "migration-pointer-presence-and-wording",
+      "pass": true,
+      "pointerInfo": {
+        "role": "status",
+        "heading": "Runs moved.",
+        "text": "Exact execution records now live here — same history, same links, new address.",
+        "buttonText": "Got it",
+        "buttonRect": {
+          "width": 56.78125,
+          "height": 44
+        }
+      }
+    },
+    {
+      "name": "migration-pointer-dismissal-persistence",
+      "pass": true,
+      "postDismiss": {
+        "pointerVisible": false,
+        "storageValue": "true"
+      }
+    },
+    {
+      "name": "migration-pointer-never-reappears",
+      "pass": true
+    },
+    {
+      "name": "primary-nav-topology-desktop",
+      "pass": true,
+      "labels": [
+        "Compare",
+        "Evaluations",
+        "Lab",
+        "Models"
+      ],
+      "expected": [
+        "Compare",
+        "Evaluations",
+        "Lab",
+        "Models"
+      ]
+    },
+    {
+      "name": "records-utility-cluster-desktop",
+      "pass": true,
+      "rect": {
+        "width": 99.5625,
+        "height": 44
+      },
+      "popup": "dialog"
+    },
+    {
+      "name": "connections-pill-accessible-name",
+      "pass": true,
+      "accessibleName": "Connection status: Checking. Manage connections."
+    },
+    {
+      "name": "no-runs-in-shell-compare",
+      "pass": true,
+      "runsInNav": false,
+      "hasContent": true
+    },
+    {
+      "name": "no-runs-in-shell-evaluations",
+      "pass": true,
+      "runsInNav": false,
+      "hasContent": true
+    },
+    {
+      "name": "no-runs-in-shell-lab",
+      "pass": true,
+      "runsInNav": false,
+      "hasContent": true
+    },
+    {
+      "name": "no-runs-in-shell-models",
+      "pass": true,
+      "runsInNav": false,
+      "hasContent": true
+    },
+    {
+      "name": "ordinary-history-mobile-runs-detail-copy",
+      "pass": true,
+      "mobileRunsCopy": {
+        "backText": "Back to Records",
+        "hasBackToRecords": true,
+        "visibleRuns": false
+      }
+    },
+    {
+      "name": "records-drawer-open-and-bounds",
+      "pass": true,
+      "drawerInitial": {
+        "isOpen": true,
+        "groupsCount": 5,
+        "groups": [
+          "FROM COMPARE",
+          "FROM EVALUATIONS",
+          "FROM THE LAB",
+          "OBSERVATIONS",
+          "LEGACY & IMPORTED"
+        ],
+        "rowsCount": 14,
+        "hasSearch": true
+      }
+    },
+    {
+      "name": "records-drawer-search-exact-match",
+      "pass": true,
+      "drawerSearch": {
+        "hasExactMatchHeader": true,
+        "matchRowExists": true
+      }
+    },
+    {
+      "name": "records-drawer-escape-and-focus-restore",
+      "pass": true,
+      "drawerClosed": {
+        "drawerClosed": true,
+        "focusRestoredToTrigger": true,
+        "activeTag": "BUTTON"
+      }
+    },
+    {
+      "name": "records-drawer-view-all-navigation",
+      "pass": true,
+      "viewAllNav": {
+        "hash": "#/records",
+        "drawerOpen": false
+      }
+    },
+    {
+      "name": "below-1024-substitution-768-link",
+      "pass": true,
+      "tabletUtility": {
+        "isLink": true,
+        "isButton": false,
+        "href": "#/records"
+      }
+    },
+    {
+      "name": "below-1024-substitution-390-mobile",
+      "pass": true,
+      "mobileUtility": {
+        "isLink": true,
+        "bottomNavExists": true,
+        "bottomNavLabels": [
+          "Compare",
+          "Evaluations",
+          "Lab",
+          "Models"
+        ]
+      }
+    },
+    {
+      "name": "records-list-initial-render-and-filters",
+      "pass": true,
+      "recordsListInfo": {
+        "initialRowCount": 50,
+        "filters": {
+          "search": true,
+          "type": true,
+          "model": true,
+          "status": true,
+          "mode": true,
+          "source": true
+        }
+      }
+    },
+    {
+      "name": "complete-set-status-filtering",
+      "pass": true,
+      "count": 9
+    },
+    {
+      "name": "semantic-vs-exact-distinguishability-triad",
+      "pass": true,
+      "distinctionCheck": {
+        "eyebrow": "COMPARISON",
+        "hasOwnerHint": true,
+        "hasExactLink": true
+      }
+    },
+    {
+      "name": "typed-detail-comparison",
+      "pass": true,
+      "cmpDetail": {
+        "ownerLabel": "Open comparison result",
+        "ownerHref": "#/compare/results/cmp-rank-adhoc-1",
+        "hasPreloadBtn": true,
+        "hasForbiddenVerbs": false
+      }
+    },
+    {
+      "name": "typed-detail-evaluation",
+      "pass": true,
+      "evalDetail": {
+        "ownerLabel": "Open evaluation",
+        "ownerHref": "#/evaluations/results/exp-eval-set-1",
+        "childLinksCount": 46
+      }
+    },
+    {
+      "name": "typed-detail-policy-study",
+      "pass": true,
+      "studyDetail": {
+        "ownerLabel": "Open study",
+        "ownerHref": "#/lab/studies/study-latency-policy",
+        "beneathRowsCount": 20,
+        "hasBeneathList": true,
+        "aggregateExactRunCount": 25
+      }
+    },
+    {
+      "name": "typed-detail-task-execution",
+      "pass": true,
+      "taskExecDetail": {
+        "exists": true,
+        "candidatesCount": 2
+      }
+    },
+    {
+      "name": "typed-detail-observation",
+      "pass": true,
+      "obsDetail": {
+        "ownerLabel": "Open comparison result",
+        "hasDecisionBadge": true
+      }
+    },
+    {
+      "name": "typed-detail-legacy",
+      "pass": true,
+      "legDetail": {
+        "hasLegacyHonesty": true
+      }
+    },
+    {
+      "name": "typed-not-found-recovery",
+      "pass": true,
+      "notFoundInfo": {
+        "exists": true,
+        "recoveryLinks": [
+          "Search Records for similar IDs",
+          "Open Records",
+          "Import data"
+        ]
+      }
+    },
+    {
+      "name": "compare-configuration-preload-flow",
+      "pass": true,
+      "preloadCheck": {
+        "hash": "#/compare",
+        "promptValue": "Optimize quicksort algorithm in Rust with benchmark tests."
+      }
+    },
+    {
+      "name": "legacy-runs-query-redirect",
+      "pass": true,
+      "hash": "#/records?status=failed"
+    },
+    {
+      "name": "legacy-runs-exact-url-preserving",
+      "pass": true,
+      "legacyExactRun": {
+        "hash": "#/runs/run-exact-task-1",
+        "detailRendered": true
+      }
+    },
+    {
+      "name": "data-archive-actions-truthful",
+      "pass": true,
+      "archiveActionsCheck": {
+        "hasExport": true,
+        "hasImport": true,
+        "hasDelete": false
+      }
+    },
+    {
+      "name": "viewport-overflow-desktop-1440",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-overflow-boundary-1024",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 1024,
+        "clientWidth": 1024,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-overflow-tablet-768",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 768,
+        "clientWidth": 768,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-overflow-mobile-390",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-overflow-zoom-200-effective-720",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 720,
+        "clientWidth": 720,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-effective-720-substitution",
+      "pass": true,
+      "sub": {
+        "isLink": true,
+        "isButton": false,
+        "drawerUnmounted": true
+      }
+    },
+    {
+      "name": "viewport-overflow-zoom-200-effective-512",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 512,
+        "clientWidth": 512,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-overflow-zoom-200-effective-384",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 384,
+        "clientWidth": 384,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "viewport-overflow-zoom-200-effective-195",
+      "pass": true,
+      "overflow": {
+        "scrollWidth": 195,
+        "clientWidth": 195,
+        "hasHorizontalOverflow": false
+      }
+    },
+    {
+      "name": "long-id-and-title-containment",
+      "pass": true,
+      "longContainment": {
+        "headingWidth": 71.109375,
+        "docWidth": 1440,
+        "contained": true
+      }
+    },
+    {
+      "name": "keyboard-header-tab-walk",
+      "pass": true,
+      "focusedCount": 9,
+      "focusedElements": [
+        {
+          "tag": "A",
+          "ariaLabel": "",
+          "text": "Compare",
+          "href": "#/compare"
+        },
+        {
+          "tag": "A",
+          "ariaLabel": "",
+          "text": "Evaluations",
+          "href": "#/evaluations"
+        },
+        {
+          "tag": "A",
+          "ariaLabel": "",
+          "text": "Lab",
+          "href": "#/lab"
+        },
+        {
+          "tag": "A",
+          "ariaLabel": "",
+          "text": "Models",
+          "href": "#/models"
+        },
+        {
+          "tag": "BUTTON",
+          "ariaLabel": "Command palette",
+          "text": "⌘\nK",
+          "href": ""
+        },
+        {
+          "tag": "BUTTON",
+          "ariaLabel": "Records",
+          "text": "Records",
+          "href": ""
+        },
+        {
+          "tag": "BUTTON",
+          "ariaLabel": "Connection status: Checking. Manage connections.",
+          "text": "Checking",
+          "href": ""
+        },
+        {
+          "tag": "BUTTON",
+          "ariaLabel": "Keyboard shortcuts",
+          "text": "",
+          "href": ""
+        },
+        {
+          "tag": "BUTTON",
+          "ariaLabel": "",
+          "text": "Run with playbook",
+          "href": ""
+        }
+      ]
+    },
+    {
+      "name": "detail-heading-focus-movement",
+      "pass": true,
+      "detailFocus": {
+        "activeTag": "H2",
+        "isHeading": true,
+        "activeText": "Implement Fibonacci in Rust"
+      }
+    },
+    {
+      "name": "interactive-targets-44px-rule",
+      "pass": true,
+      "targetSizes": {
+        "checkedCount": 75,
+        "violationsCount": 0,
+        "violations": []
+      }
+    },
+    {
+      "name": "reduced-motion-drawer-render",
+      "pass": true,
+      "duration": "0s"
+    },
+    {
+      "name": "secret-token-not-in-dom",
+      "pass": true,
+      "renderedFailedRecord": true,
+      "hashMatchesTarget": true,
+      "titleMatchesTarget": true,
+      "failedStatusVisible": true,
+      "persistedRawSecret": false,
+      "persistedRedaction": true
+    },
+    {
+      "name": "zero-paid-provider-network-egress",
+      "pass": true,
+      "paidCallsCount": 0
+    },
+    {
+      "name": "zero-uncaught-console-errors",
+      "pass": true,
+      "consoleErrors": []
+    }
+  ],
+  "screenshots": [
+    "qa-desktop-1440-migration-pointer.png",
+    "qa-desktop-1440-drawer-open.png",
+    "qa-desktop-1440-drawer-search.png",
+    "qa-mobile-390-bottom-nav.png",
+    "qa-desktop-1440-records-split.png",
+    "qa-desktop-1440-comparison-detail.png",
+    "qa-desktop-1440-evaluation-detail.png",
+    "qa-desktop-1440-policy-study-detail.png",
+    "qa-desktop-1440-task-execution-detail.png",
+    "qa-desktop-1440-observation-detail.png",
+    "qa-desktop-1440-legacy-detail.png",
+    "qa-desktop-1440-not-found.png",
+    "qa-legacy-route-runs-exact.png",
+    "qa-tablet-1024-boundary.png",
+    "qa-tablet-768-records-list.png",
+    "qa-mobile-390-records-list.png",
+    "qa-zoom-200-effective-width.png",
+    "qa-reduced-motion.png"
+  ],
+  "consoleErrors": [],
+  "providerCalls": [],
+  "matrix": {
+    "migrationPointer": true,
+    "primaryNavigation": true,
+    "recordsDrawer": true,
+    "below1024Substitution": true,
+    "recordsListAndFiltering": true,
+    "semanticVsExactDistinction": true,
+    "typedDetails": true,
+    "comparePreload": true,
+    "legacyRouteCompatibility": true,
+    "archiveActions": true,
+    "viewportLadderAndZoom": true,
+    "keyboardAndAccessibility": true,
+    "reducedMotion": true,
+    "secretAndEgressInvariants": true
+  },
+  "summary": {
+    "totalProbes": 49,
+    "passedProbes": 49,
+    "failedProbes": 0,
+    "matrixCellsDeclared": 14,
+    "matrixCellsPassed": 14,
+    "allMatrixCellsTrue": true,
+    "screenshotsCaptured": 18,
+    "allGreen": true
+  }
+}

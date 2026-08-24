@@ -6,7 +6,7 @@ import { SuiteTaskEditor } from "./SuiteTaskEditor";
 import type {
   EvaluationTask,
   EvaluationSelection,
-  ProfileRecord,
+  RubricRecord,
 } from "../../lib/evaluations/evaluation-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -71,7 +71,7 @@ function makeTask(overrides: Partial<EvaluationTask> = {}): EvaluationTask {
   };
 }
 
-function makeProfileRecord(id: string, latestVersion = 2): ProfileRecord {
+function makeRubricRecord(id: string, latestVersion = 2): RubricRecord {
   const now = Date.now();
   return {
     id,
@@ -85,20 +85,20 @@ function makeProfileRecord(id: string, latestVersion = 2): ProfileRecord {
 
 const HOLISTIC_DEFAULT: EvaluationSelection = { kind: "holistic" };
 
-function resolveProfileLabel(ref: { id: string; version: number }): string {
-  return `Profile ${ref.id} v${ref.version}`;
+function resolveRubricLabel(ref: { id: string; version: number }): string {
+  return `Rubric ${ref.id} v${ref.version}`;
 }
 
 /** Stateful wrapper so button clicks propagate the change back into props. */
 function StatefulTaskEditor({
   initialTask,
   suiteDefaultEvaluation = HOLISTIC_DEFAULT,
-  profileRecords = [],
+  rubricRecords = [],
   onChangeSpy,
 }: {
   initialTask: EvaluationTask;
   suiteDefaultEvaluation?: EvaluationSelection;
-  profileRecords?: ProfileRecord[];
+  rubricRecords?: RubricRecord[];
   onChangeSpy?: Mock;
 }) {
   const [task, setTask] = useState(initialTask);
@@ -110,8 +110,8 @@ function StatefulTaskEditor({
         setTask((prev) => ({ ...prev, ...patch }));
         onChangeSpy?.(patch);
       }}
-      profileRecords={profileRecords}
-      resolveProfileLabel={resolveProfileLabel}
+      rubricRecords={rubricRecords}
+      resolveRubricLabel={resolveRubricLabel}
     />
   );
 }
@@ -125,8 +125,8 @@ describe("SuiteTaskEditor — structure", () => {
         task={makeTask()}
         suiteDefaultEvaluation={HOLISTIC_DEFAULT}
         onChange={() => {}}
-        profileRecords={[]}
-        resolveProfileLabel={resolveProfileLabel}
+        rubricRecords={[]}
+        resolveRubricLabel={resolveRubricLabel}
       />,
     );
     expect(h.$("#task-title")).toBeTruthy();
@@ -141,8 +141,8 @@ describe("SuiteTaskEditor — structure", () => {
         task={makeTask()}
         suiteDefaultEvaluation={HOLISTIC_DEFAULT}
         onChange={() => {}}
-        profileRecords={[]}
-        resolveProfileLabel={resolveProfileLabel}
+        rubricRecords={[]}
+        resolveRubricLabel={resolveRubricLabel}
       />,
     );
     expect(h.container.textContent).toMatch(/candidate-visible/i);
@@ -155,8 +155,8 @@ describe("SuiteTaskEditor — structure", () => {
         task={makeTask({ title: "", prompt: "" })}
         suiteDefaultEvaluation={HOLISTIC_DEFAULT}
         onChange={() => {}}
-        profileRecords={[]}
-        resolveProfileLabel={resolveProfileLabel}
+        rubricRecords={[]}
+        resolveRubricLabel={resolveRubricLabel}
       />,
     );
     expect(h.container.textContent).toMatch(/title is required/i);
@@ -172,14 +172,14 @@ describe("SuiteTaskEditor — evaluation tagged choice", () => {
         task={makeTask()}
         suiteDefaultEvaluation={HOLISTIC_DEFAULT}
         onChange={() => {}}
-        profileRecords={[makeProfileRecord("p1")]}
-        resolveProfileLabel={resolveProfileLabel}
+        rubricRecords={[makeRubricRecord("p1")]}
+        resolveRubricLabel={resolveRubricLabel}
       />,
     );
     const text = h.container.textContent ?? "";
     expect(text).toMatch(/inherit suite default/i);
     expect(text).toMatch(/holistic judgment/i);
-    expect(text).toMatch(/pin profile version/i);
+    expect(text).toMatch(/pin rubric version/i);
     cleanup(h);
   });
 
@@ -189,8 +189,8 @@ describe("SuiteTaskEditor — evaluation tagged choice", () => {
         task={makeTask({ evaluation: { kind: "inherit" } })}
         suiteDefaultEvaluation={HOLISTIC_DEFAULT}
         onChange={() => {}}
-        profileRecords={[]}
-        resolveProfileLabel={resolveProfileLabel}
+        rubricRecords={[]}
+        resolveRubricLabel={resolveRubricLabel}
       />,
     );
     expect(h.container.textContent).toMatch(/inherits the suite default/i);
@@ -201,7 +201,7 @@ describe("SuiteTaskEditor — evaluation tagged choice", () => {
     const h = render(
       <StatefulTaskEditor
         initialTask={makeTask({ evaluation: { kind: "inherit" } })}
-        profileRecords={[]}
+        rubricRecords={[]}
       />,
     );
     const buttons = h.$$("button[aria-pressed]");
@@ -215,41 +215,41 @@ describe("SuiteTaskEditor — evaluation tagged choice", () => {
     cleanup(h);
   });
 
-  it("pin profile mode shows profile version picker when profiles exist", () => {
+  it("pin rubric mode shows rubric version picker when rubrics exist", () => {
     const h = render(
       <StatefulTaskEditor
         initialTask={makeTask({ evaluation: { kind: "inherit" } })}
-        profileRecords={[makeProfileRecord("p1", 2)]}
+        rubricRecords={[makeRubricRecord("p1", 2)]}
       />,
     );
     const buttons = h.$$("button[aria-pressed]");
-    const pinBtn = buttons.find((b) => b.textContent?.match(/pin profile version/i));
+    const pinBtn = buttons.find((b) => b.textContent?.match(/pin rubric version/i));
     expect(pinBtn).toBeTruthy();
     act(() => {
       pinBtn!.click();
     });
     const select = h.$(
-      "select[aria-label='Pinned profile version for this task']",
+      "select[aria-label='Pinned rubric version for this task']",
     ) as HTMLSelectElement;
     expect(select).toBeTruthy();
     expect(select.options.length).toBeGreaterThanOrEqual(1);
     cleanup(h);
   });
 
-  it("pin profile mode shows empty state when no profiles", () => {
+  it("pin rubric mode shows empty state when no rubrics", () => {
     const h = render(
       <StatefulTaskEditor
         initialTask={makeTask({ evaluation: { kind: "inherit" } })}
-        profileRecords={[]}
+        rubricRecords={[]}
       />,
     );
     const buttons = h.$$("button[aria-pressed]");
-    const pinBtn = buttons.find((b) => b.textContent?.match(/pin profile version/i));
+    const pinBtn = buttons.find((b) => b.textContent?.match(/pin rubric version/i));
     expect(pinBtn).toBeTruthy();
     act(() => {
       pinBtn!.click();
     });
-    expect(h.container.textContent).toMatch(/no profiles available/i);
+    expect(h.container.textContent).toMatch(/no rubrics available/i);
     cleanup(h);
   });
 });
@@ -261,8 +261,8 @@ describe("SuiteTaskEditor — judge instruction override", () => {
         task={makeTask()}
         suiteDefaultEvaluation={HOLISTIC_DEFAULT}
         onChange={() => {}}
-        profileRecords={[]}
-        resolveProfileLabel={resolveProfileLabel}
+        rubricRecords={[]}
+        resolveRubricLabel={resolveRubricLabel}
       />,
     );
     expect(h.$("#task-judge-override")).toBeTruthy();
@@ -311,8 +311,8 @@ describe("SuiteTaskEditor — accessibility", () => {
         task={makeTask()}
         suiteDefaultEvaluation={HOLISTIC_DEFAULT}
         onChange={() => {}}
-        profileRecords={[makeProfileRecord("p1")]}
-        resolveProfileLabel={resolveProfileLabel}
+        rubricRecords={[makeRubricRecord("p1")]}
+        resolveRubricLabel={resolveRubricLabel}
       />,
     );
     const buttons = h.$$("button");
@@ -329,8 +329,8 @@ describe("SuiteTaskEditor — accessibility", () => {
         task={makeTask()}
         suiteDefaultEvaluation={HOLISTIC_DEFAULT}
         onChange={() => {}}
-        profileRecords={[]}
-        resolveProfileLabel={resolveProfileLabel}
+        rubricRecords={[]}
+        resolveRubricLabel={resolveRubricLabel}
       />,
     );
     const inputs = [h.$("#task-title"), h.$("#task-prompt"), h.$("#task-system-prompt")];

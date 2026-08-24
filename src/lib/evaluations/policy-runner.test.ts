@@ -15,7 +15,7 @@ import type {
 } from "../../studio-data";
 import { FUSION_RECIPE_ANALYSIS_SCORES_V1, type CandidateIdentity } from "./fusion-recipes";
 import { deriveRankWinner, planBlockedPolicies, type BlockedPolicyInput } from "./policy-runner";
-import type { EvaluationProfile } from "./evaluation-types";
+import type { EvaluationRubric } from "./evaluation-types";
 
 const BLIND: BlindCandidate[] = [
   { label: "A", candidateId: "cand-1", content: "Answer A text" },
@@ -80,7 +80,7 @@ const CONSENSUS: ConsensusBreakdown = {
 function input(overrides: Partial<BlockedPolicyInput> = {}): BlockedPolicyInput {
   return {
     prompt: "task",
-    profile: null,
+    rubric: null,
     blindCandidates: BLIND,
     judgeReport: report(3.5, 4.5),
     consensus: CONSENSUS,
@@ -107,13 +107,13 @@ describe("deriveRankWinner", () => {
   });
 });
 
-describe("planBlockedPolicies — profile forwarding (CodeRabbit 3741038015)", () => {
-  // A pinned profile must drive the blocked Rank winner through the same
+describe("planBlockedPolicies — rubric forwarding (CodeRabbit 3741038015)", () => {
+  // A pinned rubric must drive the blocked Rank winner through the same
   // authoritative rankValue contract (Q − λ(1−C)) used by fuse/refine and the
   // experiment matrix. Regression: planBlockedPolicies previously called
   // deriveRankWinner without input.profile, silently using the Judge's
   // holistic overallScore as the Rank baseline.
-  const profile: EvaluationProfile = {
+  const rubric: EvaluationRubric = {
     id: "p1",
     version: 1,
     name: "Pinned",
@@ -143,9 +143,9 @@ describe("planBlockedPolicies — profile forwarding (CodeRabbit 3741038015)", (
     updatedAt: 100,
   };
 
-  it("ranks by rankValue from the pinned profile, not holistic overallScore", () => {
+  it("ranks by rankValue from the pinned rubric, not holistic overallScore", () => {
     // Judge overallScores say cand-1 (3.5) loses to cand-2 (4.5), but the
-    // profile-derived rankValues invert it: cand-1 has Q=4 (score 4, check
+    // rubric-derived rankValues invert it: cand-1 has Q=4 (score 4, check
     // passes → C=1, rankValue=4), cand-2 has Q=1 (score 1, check passes →
     // C=1, rankValue=1). The Rank baseline must use rankValue ⇒ cand-1 wins.
     const evals: Record<string, CandidateEvaluation> = {
@@ -187,7 +187,7 @@ describe("planBlockedPolicies — profile forwarding (CodeRabbit 3741038015)", (
       comparisons: [],
     };
     const plan = planBlockedPolicies(
-      input({ profile, judgeReport }),
+      input({ rubric, judgeReport }),
       FUSION_RECIPE_ANALYSIS_SCORES_V1,
     );
     expect(plan.rank.winnerCandidateId).toBe("cand-1");

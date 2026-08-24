@@ -6,6 +6,12 @@ import { MemoryRouter } from "react-router-dom";
 import RSemble, { canViewCompareRecord, isPreloadNoticeVisible } from "./rsemble";
 import { Header } from "./ui/Header";
 import { ExecutionOwnerProvider } from "./lib/execution-owner-context";
+import { RepositoryContext } from "./lib/persistence/repository-context";
+import { InMemoryStudyRepository } from "./lib/persistence/study-repository";
+import { InMemoryLabAssetRepository } from "./lib/persistence/lab-asset-repository";
+import { InMemoryRunRepository } from "./lib/persistence/run-repository";
+import { DISMISSED_STORAGE_KEY } from "./ui/RecordsMovePointer";
+import type { FullRunSummaryV2, RunRecordV2 } from "./lib/persistence/run-types";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -88,6 +94,8 @@ async function renderAtRoute(initialEntries: string[]): Promise<Harness> {
 }
 
 afterEach(() => {
+  window.localStorage.clear();
+  document.body.innerHTML = "";
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -102,9 +110,9 @@ describe("RSemble workspace shell", () => {
     cleanup(compare);
 
     const runs = await renderAtRoute(["/runs"]);
-    // Runs workspace is an honest placeholder saying the feature is not yet
-    // implemented, with no fake controls.
-    expect(runs.container.textContent).toContain("Runs");
+    // The legacy /runs URL redirects to /records — the ledger is the same
+    // history under its canonical address (Child 08 §D).
+    expect(runs.container.textContent).toContain("Records");
     cleanup(runs);
 
     const evaluations = await renderAtRoute(["/evaluations"]);
@@ -142,9 +150,11 @@ describe("RSemble workspace shell", () => {
 
   it("exactly one desktop nav link has aria-current='page'", async () => {
     const h = await renderAtRoute(["/compare"]);
-    const nav = h.$('nav[aria-label="Primary"]');
-    expect(nav).toBeTruthy();
-    const currentLinks = h.$$('nav[aria-label="Primary"] [aria-current="page"]');
+    // NavLink renders aria-current on every item (React Router contract);
+    // exactly one carries the value "page" for the active destination.
+    const currentLinks = h
+      .$$('nav[aria-label="Primary"] [aria-current="page"]')
+      .filter((el) => el.getAttribute("aria-current") === "page");
     expect(currentLinks).toHaveLength(1);
     cleanup(h);
   });
@@ -167,21 +177,17 @@ describe("RSemble workspace shell", () => {
     cleanup(evaluations);
   });
 
-  it("mobile navigation exposes three visible labels and 44px targets", async () => {
-    // happy-dom doesn't apply CSS, so we check the rendered structure: the
-    // mobile nav exists, has three links with visible text, and each has a
-    // min-height style or class indicating 44px. We verify the three labels.
+  it("mobile navigation exposes four visible labels and 44px targets", async () => {
     const h = await renderAtRoute(["/compare"]);
-    // Look for the mobile nav — it should be a nav with an aria-label
-    // containing "Workspace" and visible only on small screens.
-    const mobileNavs = h.$$('nav[aria-label*="Workspace" i], nav[data-mobile="true"]');
-    // The mobile nav should exist in the DOM (even if hidden by CSS on desktop).
-    expect(mobileNavs.length).toBeGreaterThanOrEqual(1);
+    // Look for the mobile nav — it is the fixed bottom nav with data-mobile.
+    const mobileNavs = h.$$('nav[data-mobile="true"]');
+    expect(mobileNavs.length).toBe(1);
     const mobileNav = mobileNavs[0];
     const links = [...mobileNav.querySelectorAll<HTMLAnchorElement>("a")];
-    expect(links).toHaveLength(3);
+    expect(links).toHaveLength(4);
     const labels = links.map((l) => l.textContent?.trim()).filter(Boolean);
-    expect(labels).toEqual(expect.arrayContaining(["Compare", "Runs", "Evaluations"]));
+    expect(labels).toEqual(["Compare", "Evaluations", "Lab", "Models"]);
+    expect(labels).not.toContain("Runs");
     cleanup(h);
   });
 
@@ -200,19 +206,19 @@ describe("RSemble workspace shell", () => {
     // Verify the prompt was set before navigating.
     expect(h.container.textContent).toContain("Test prompt for persistence");
 
-    // Navigate to /runs via the desktop nav link.
-    const runsLink = [...h.container.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (a) => a.getAttribute("href") === "/runs",
+    // Navigate to /evaluations via the desktop nav link.
+    const evalsLink = [...h.container.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (a) => a.getAttribute("href") === "/evaluations",
     );
-    expect(runsLink).toBeTruthy();
+    expect(evalsLink).toBeTruthy();
     act(() => {
-      runsLink!.click();
+      evalsLink!.click();
     });
     await settleLazy();
 
-    // On /runs the command pane (with textarea) is gone — the Runs workspace shows.
+    // On /evaluations the command pane (with textarea) is gone — the
+    // Evaluations workspace shows.
     expect(h.$('[aria-label="Command"]')).toBeFalsy();
-    // Runs workspace renders (no longer a placeholder)
     expect(h.container.textContent).not.toContain("not yet implemented");
 
     // Navigate back to /compare via the desktop nav link.
@@ -323,5 +329,451 @@ describe("Compare → historical preload notice lifecycle (Slice 5)", () => {
     expect(isPreloadNoticeVisible(null, null)).toBe(false);
     expect(isPreloadNoticeVisible(null, "cmp-new")).toBe(false);
     expect(isPreloadNoticeVisible(null, "run-hist-123")).toBe(false);
+  });
+});
+
+describe("Compare → Run with Playbook integration", () => {
+  it("renders Run with playbook action when study and lab repositories are available and opens the dialog", async () => {
+    const studyRepo = new InMemoryStudyRepository();
+    const labAssetRepo = new InMemoryLabAssetRepository();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo: null,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo,
+            labAssetRepo,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+
+    const button = h.$("[data-action='open-run-with-playbook']");
+    expect(button).not.toBeNull();
+    expect(button!.textContent).toContain("Run with playbook");
+
+    // Clicking the button opens the dialog
+    act(() => {
+      button!.click();
+    });
+    await settleLazy();
+
+    expect(document.body.textContent).toContain("Run with Policy Playbook");
+    cleanup(h);
+  });
+});
+
+describe("Records migration pointer (spec §O.1)", () => {
+  function seedRunRecord(id: string): { record: RunRecordV2; summary: FullRunSummaryV2 } {
+    const now = Date.now();
+    return {
+      summary: {
+        kind: "full",
+        schemaVersion: 2,
+        id,
+        revision: 1,
+        createdAt: now,
+        completedAt: now + 500,
+        status: "completed",
+        mode: "rank",
+        source: { kind: "adhoc" },
+        taskTitle: `Task ${id}`,
+        taskExcerpt: `Excerpt ${id}`,
+        modelKeys: ["openrouter:gpt-4o"],
+        winnerKeys: ["openrouter:gpt-4o"],
+        scoresByModelKey: { "openrouter:gpt-4o": 4.5 },
+        judgeModelKey: "openrouter:judge",
+        evaluationProfileId: null,
+        evaluationProfileVersion: null,
+        detailAvailable: true,
+        searchText: `task ${id}`,
+      },
+      record: {
+        schemaVersion: 2,
+        id,
+        revision: 1,
+        execution: { ownerId: "test", leaseId: "test", fence: 1 },
+        createdAt: now,
+        updatedAt: now,
+        completedAt: now + 500,
+        status: "completed",
+        mode: "rank",
+        source: { kind: "adhoc" },
+        task: { title: `Task ${id}`, prompt: "Test prompt", systemPrompt: "", temperature: 0.7 },
+        evaluation: { profile: null, candidateMessages: [] },
+        candidates: [],
+        judge: {
+          status: "done",
+          acceptedAttemptId: null,
+          report: null,
+          consensus: null,
+          attempts: [],
+        },
+        fusion: {
+          status: "done",
+          acceptedAttemptId: null,
+          attempts: [],
+        },
+        winnerKeys: [],
+      },
+    };
+  }
+  it("renders one-time pointer in shell when run records exist and not dismissed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
+    const runRepo = new InMemoryRunRepository();
+    const { record, summary } = seedRunRecord("run-1");
+    await runRepo.create(record, summary);
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+    const pointer = h.$("[role='status']");
+    expect(pointer).not.toBeNull();
+    expect(pointer?.textContent).toContain("Runs moved.");
+    expect(pointer?.textContent).toContain("Exact execution records now live here");
+
+    // Dismiss via Got it button
+    const gotItBtn = pointer?.querySelector("button");
+    expect(gotItBtn).not.toBeNull();
+    expect(gotItBtn?.textContent?.trim()).toBe("Got it");
+    act(() => {
+      gotItBtn?.click();
+    });
+
+    expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBe("true");
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("does not render pointer when database has 0 run records", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
+    const runRepo = new InMemoryRunRepository();
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("does not render pointer when already dismissed in localStorage even with run records", async () => {
+    window.localStorage.setItem(DISMISSED_STORAGE_KEY, "true");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
+    const runRepo = new InMemoryRunRepository();
+    const { record, summary } = seedRunRecord("run-1");
+    await runRepo.create(record, summary);
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("opening records drawer in shell dismisses the pointer forever", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    // >=1024px to enable drawer trigger
+    vi.stubGlobal("matchMedia", (q: string) => ({
+      matches: q.includes("1024"),
+      media: q,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+
+    const runRepo = new InMemoryRunRepository();
+    const { record, summary } = seedRunRecord("run-1");
+    await runRepo.create(record, summary);
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(h.$("[role='status']")).not.toBeNull();
+
+    // Click Records button to open drawer
+    const recordsBtn = h.$('button[aria-label="Records"]');
+    expect(recordsBtn).not.toBeNull();
+    act(() => {
+      recordsBtn?.click();
+    });
+    await settleLazy();
+
+    expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBe("true");
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
+  });
+
+  it("navigating to another route in shell dismisses the pointer forever", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(""),
+        }),
+      ),
+    );
+    if (!window.matchMedia) {
+      vi.stubGlobal("matchMedia", (q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }));
+    }
+
+    const runRepo = new InMemoryRunRepository();
+    const { record, summary } = seedRunRecord("run-1");
+    await runRepo.create(record, summary);
+
+    const h = render(
+      <MemoryRouter initialEntries={["/compare"]}>
+        <RepositoryContext.Provider
+          value={{
+            runRepo,
+            evalRepo: null,
+            fusionRepo: null,
+            taskRepo: null,
+            studyRepo: null,
+            labAssetRepo: null,
+            db: null,
+            storageState: "ready",
+            retry: () => undefined,
+          }}
+        >
+          <ExecutionOwnerProvider>
+            <RSemble />
+          </ExecutionOwnerProvider>
+        </RepositoryContext.Provider>
+      </MemoryRouter>,
+    );
+    await settleLazy();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(h.$("[role='status']")).not.toBeNull();
+
+    // Click desktop nav link to /evaluations
+    const evalsLink = [...h.container.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (a) => a.getAttribute("href") === "/evaluations",
+    );
+    expect(evalsLink).toBeTruthy();
+    act(() => {
+      evalsLink?.click();
+    });
+    await settleLazy();
+
+    expect(window.localStorage.getItem(DISMISSED_STORAGE_KEY)).toBe("true");
+    expect(h.$("[role='status']")).toBeNull();
+    cleanup(h);
   });
 });

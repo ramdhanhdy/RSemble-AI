@@ -2,7 +2,7 @@
 // =============================================================================
 // input-background regression (Phase 8, Task 8.3 audit)
 //
-// Audit finding: suite/profile editor inputs used the class `bg-input`, which
+// Audit finding: suite/rubric editor inputs used the class `bg-input`, which
 // is NOT a theme token (tailwind.config.js defines no `input` color). The
 // class was dead, so textareas fell back to the UA default white background
 // while text stayed near-white — unreadable. These tests render each affected
@@ -111,8 +111,8 @@ describe("editor form controls use defined dark background tokens", () => {
         task={task}
         suiteDefaultEvaluation={suite.defaultEvaluation}
         onChange={() => undefined}
-        profileRecords={[]}
-        resolveProfileLabel={() => "profile"}
+        rubricRecords={[]}
+        resolveRubricLabel={() => "profile"}
       />,
     );
     expect(controlsWithUndefinedBg(h)).toEqual([]);
@@ -126,8 +126,8 @@ describe("editor form controls use defined dark background tokens", () => {
           suite={makeSuite()}
           models={[]}
           onChange={() => undefined}
-          profileRecords={[]}
-          resolveProfileLabel={() => "profile"}
+          rubricRecords={[]}
+          resolveRubricLabel={() => "profile"}
         />
       </ModelProbeProvider>,
     );

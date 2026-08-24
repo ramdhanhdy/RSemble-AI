@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildExportMarkdown } from "./export-markdown";
 import type { StudioState } from "../studio-engine";
-import { HOLISTIC_EVALUATION } from "./evaluations/evaluation-profile-adhoc";
+import { HOLISTIC_EVALUATION } from "./evaluations/evaluation-rubric-adhoc";
 
 const baseState: StudioState = {
   mode: "rank",

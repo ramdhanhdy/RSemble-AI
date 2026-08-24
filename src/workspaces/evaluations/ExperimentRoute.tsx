@@ -51,7 +51,11 @@ export function ExperimentRoute({
   availableProviderIds = [],
   executionOwner: ownerProp,
 }: ExperimentRouteProps) {
-  const { experimentId } = useParams<{ experimentId: string }>();
+  const { evaluationExecutionId, experimentId } = useParams<{
+    evaluationExecutionId?: string;
+    experimentId?: string;
+  }>();
+  const effectiveId = evaluationExecutionId ?? experimentId;
   const evalRepo = useEvaluationRepository();
   const runRepo = useRunRepository();
   const controller = useExperimentController();
@@ -64,24 +68,24 @@ export function ExperimentRoute({
   const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
-    if (!evalRepo || !experimentId) {
+    if (!evalRepo || !effectiveId) {
       setExperiment(null);
       setLoading(false);
       return;
     }
     const id = ++requestIdRef.current;
     try {
-      const record = await evalRepo.getExperiment(experimentId);
+      const record = await evalRepo.getExperiment(effectiveId);
       if (id !== requestIdRef.current) return;
       setExperiment(record);
-      setLoadError(record ? null : "Experiment not found.");
+      setLoadError(record ? null : "Evaluation not found.");
     } catch (err: unknown) {
       if (id !== requestIdRef.current) return;
-      setLoadError(err instanceof Error ? err.message : "Failed to load experiment.");
+      setLoadError(err instanceof Error ? err.message : "Failed to load evaluation.");
     } finally {
       if (id === requestIdRef.current) setLoading(false);
     }
-  }, [evalRepo, experimentId]);
+  }, [evalRepo, effectiveId]);
 
   useEffect(() => {
     setLoading(true);
@@ -118,7 +122,7 @@ export function ExperimentRoute({
         className="flex min-h-[120px] flex-1 items-center justify-center p-8 text-sm text-text-muted"
         role="status"
       >
-        Loading experiment…
+        Loading evaluation…
       </div>
     );
   }
@@ -126,9 +130,9 @@ export function ExperimentRoute({
   if (!experiment) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-sm text-text-secondary">{loadError ?? "Experiment not found."}</p>
+        <p className="text-sm text-text-secondary">{loadError ?? "Evaluation not found."}</p>
         <Link
-          to="/evaluations"
+          to="/evaluations/sets"
           className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-4 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           Back to Evaluations

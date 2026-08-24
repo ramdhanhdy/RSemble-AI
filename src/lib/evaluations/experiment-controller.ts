@@ -29,9 +29,10 @@ import { createExecutionHeartbeat, type ExecutionHeartbeat } from "../execution-
 import type { ExecutionOwnerRegistry } from "../execution-owner";
 import type { RunExecutor, RunExecutorEvents } from "../run-executor";
 import {
+  isEvaluationSuite,
   type EvaluationSuite,
   type EvaluationTask,
-  type EvaluationProfileSnapshot,
+  type RubricSnapshot,
   type EvaluationSelection,
   type ExperimentRecord,
   type ExperimentTaskState,
@@ -39,6 +40,7 @@ import {
   type ExperimentRepairPlan,
   type ExperimentTaskExecutionPlan,
 } from "./evaluation-types";
+import type { MaterializedWorkloadSnapshot } from "./workload-manifest";
 import {
   createExperimentEngine,
   createExperimentRecord,
@@ -56,7 +58,7 @@ import type {
   RunSource,
   ExecutionFence,
 } from "../persistence/run-types";
-import { type AdHocEvaluationConfig, HOLISTIC_EVALUATION } from "./evaluation-profile-adhoc";
+import { type AdHocEvaluationConfig, HOLISTIC_EVALUATION } from "./evaluation-rubric-adhoc";
 import { type Candidate, type ModelSlot } from "../../studio-data";
 import type { ProviderId } from "../providers/types";
 import { devTerminalLog } from "../dev-terminal-log";
@@ -85,6 +87,20 @@ export interface ExperimentControllerDeps {
   generateId: () => string;
   now: () => number;
   heartbeatMs: number;
+  /**
+   * Optional post-commit seam (evidence derivation, spec §4): invoked once
+   * AFTER the source run + attempt transaction committed and the experiment
+   * status synced. Fired-and-forgotten — a hook failure never rolls back or
+   * changes the exact result and never touches the paid-execution owner or
+   * the experiment unit of work.
+   */
+  onTaskTerminalCommitted?: (event: {
+    taskId: string;
+    attemptId: string;
+    runId: string;
+    runRevision: number;
+    status: RunStatus;
+  }) => void;
 }
 
 // --- Helpers ------------------------------------------------------------------
@@ -143,18 +159,82 @@ function pinnedSuiteFromSnapshot(record: ExperimentRecord): EvaluationSuite {
   };
 }
 
+/**
+ * Project one durable Task Set materialization into the EvaluationSuite +
+ * rubric snapshots that createExperimentRecord already consumes. Execution
+ * content comes only from the frozen snapshot — never a later live Suite.
+ */
+function projectMaterializationToSuite(snapshot: MaterializedWorkloadSnapshot): EvaluationSuite {
+  const tasks: EvaluationTask[] = snapshot.tasks.map((member) => ({
+    id: member.memberId,
+    title: member.task.title,
+    prompt: member.task.candidateInstruction,
+    systemPrompt: "",
+    evaluation: member.evaluation,
+    judgeInstructionOverride: member.judgeInstructionOverride ?? "",
+    order: member.order,
+    ...(member.verification ? { verification: { ...member.verification } } : {}),
+    taskVersionRef: { ...member.taskVersionRef },
+    source: { ...member.task.source },
+  }));
+  return {
+    id: snapshot.taskSetId,
+    revision: 0,
+    version: snapshot.taskSetVersion,
+    name: `Task Set ${snapshot.taskSetId}`,
+    description: "",
+    tasks,
+    modelSlots: snapshot.defaultModelSlots.map((slot) => ({ ...slot })),
+    defaultJudge: {
+      providerId: snapshot.defaultJudge.providerId,
+      model: snapshot.defaultJudge.model,
+    },
+    defaultEvaluation: snapshot.defaultRubricRef
+      ? { kind: "profile", profile: { ...snapshot.defaultRubricRef } }
+      : { kind: "holistic" },
+    ...(snapshot.protocolDefaults.reasoningPolicy
+      ? { reasoningPolicy: { ...snapshot.protocolDefaults.reasoningPolicy } }
+      : {}),
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.createdAt,
+    archivedAt: null,
+  };
+}
+
+function rubricSelectionHasSnapshot(
+  selection: EvaluationSelection,
+  rubrics: RubricSnapshot[],
+): boolean {
+  if (selection.kind !== "profile") return true;
+  return rubrics.some(
+    (rubric) => rubric.id === selection.profile.id && rubric.version === selection.profile.version,
+  );
+}
+
+function projectedRubricSelectionsResolve(
+  suite: EvaluationSuite,
+  rubrics: RubricSnapshot[],
+): boolean {
+  if (!rubricSelectionHasSnapshot(suite.defaultEvaluation, rubrics)) return false;
+  return suite.tasks.every((task) => {
+    const selection: EvaluationSelection =
+      task.evaluation.kind === "inherit" ? suite.defaultEvaluation : task.evaluation;
+    return rubricSelectionHasSnapshot(selection, rubrics);
+  });
+}
+
 /** Resolve a task's evaluation selection to an AdHocEvaluationConfig for the
  *  executor. Inherits the suite default when the task says "inherit". */
 function taskEvaluationConfig(
   task: EvaluationTask,
   suite: EvaluationSuite,
-  profiles: EvaluationProfileSnapshot[],
+  rubrics: RubricSnapshot[],
 ): AdHocEvaluationConfig {
   const sel: EvaluationSelection =
     task.evaluation.kind === "inherit" ? suite.defaultEvaluation : task.evaluation;
   if (sel.kind === "holistic") return HOLISTIC_EVALUATION;
-  // Profile selection: find the pinned snapshot by { id, version }.
-  const snapshot = profiles.find(
+  // Rubric selection: find the pinned snapshot by { id, version }.
+  const snapshot = rubrics.find(
     (p) => p.id === sel.profile.id && p.version === sel.profile.version,
   );
   if (!snapshot) return HOLISTIC_EVALUATION;
@@ -457,10 +537,27 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       },
       "info",
     );
-
     // Sync experiment status (completed, completed_with_failures, paused).
     await syncExperimentStatus(persistedExperimentRevision);
 
+    // Post-commit seam: derivation/indexing runs strictly after the source
+    // transaction committed. A hook failure is contained — the exact result
+    // and the paid-execution ownership are unaffected (spec §4, §13).
+    try {
+      deps.onTaskTerminalCommitted?.({
+        taskId,
+        attemptId,
+        runId: finalRun.id,
+        runRevision: commitRev.runRevision,
+        status: finalRun.status,
+      });
+    } catch (err) {
+      devTerminalLog(
+        "experiment.task.postCommitHookFailed",
+        { error: err instanceof Error ? err.message : String(err) },
+        "warn",
+      );
+    }
     emit({ kind: "task-terminal", taskId, attemptId, status: finalRun.status });
   }
 
@@ -770,15 +867,68 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 
   // --- Public API -------------------------------------------------------------
 
-  async function start(suiteId: string): Promise<StartResult> {
-    // Load suite.
-    const loadedSuite = await evalRepo.getSuite(suiteId);
-    if (!loadedSuite) return { ok: false, error: `Suite ${suiteId} not found` };
+  async function start(materializationId: string): Promise<StartResult> {
+    const loaded = await evalRepo.getTaskSetMaterialization(materializationId);
+    if (!loaded) {
+      return { ok: false, error: `Materialization ${materializationId} not found` };
+    }
+    if (
+      loaded.snapshot.taskSetId !== loaded.taskSetId ||
+      loaded.snapshot.taskSetVersion !== loaded.taskSetVersion ||
+      loaded.snapshot.protocolFingerprint !== loaded.protocolFingerprint
+    ) {
+      return { ok: false, error: `Materialization ${materializationId} is corrupt or mismatched` };
+    }
 
-    // Acquire cross-tab lease.
+    const existing = await evalRepo.listExperiments();
+    if (existing.some((experiment) => experiment.materializationId === materializationId)) {
+      return { ok: false, error: `Materialization ${materializationId} has already been used` };
+    }
+
+    let projected: EvaluationSuite;
+    let rubrics: RubricSnapshot[];
+    try {
+      projected = projectMaterializationToSuite(loaded.snapshot);
+      rubrics = loaded.snapshot.rubrics.map((rubric) => ({ ...rubric }));
+    } catch {
+      return { ok: false, error: `Materialization ${materializationId} is invalid or malformed` };
+    }
+    if (
+      !isEvaluationSuite(projected) ||
+      projected.id !== loaded.taskSetId ||
+      projected.version !== loaded.taskSetVersion
+    ) {
+      return {
+        ok: false,
+        error: `Materialization ${materializationId} projected an invalid suite`,
+      };
+    }
+    if (!projectedRubricSelectionsResolve(projected, rubrics)) {
+      return {
+        ok: false,
+        error: `Materialization ${materializationId} has an unresolved rubric selection`,
+      };
+    }
+
+    const id = `exp-${generateId()}`;
+    const draft: ExperimentRecord = {
+      ...createExperimentRecord({ id, suite: projected, rubrics, now: now() }),
+      materializationId,
+    };
+    if (draft.suiteId !== loaded.taskSetId || draft.suiteVersion !== loaded.taskSetVersion) {
+      return {
+        ok: false,
+        error: `Materialization ${materializationId} projected a mismatched suite`,
+      };
+    }
+
+    // Acquire cross-tab lease keyed by Task Set identity, not materialization id.
     let leaseInfo: LeaseInfo;
     try {
-      leaseInfo = await lease.acquire({ kind: "experiment", executionId: suiteId });
+      leaseInfo = await lease.acquire({
+        kind: "experiment",
+        executionId: loaded.snapshot.taskSetId,
+      });
       activeLease = leaseInfo;
     } catch (err) {
       if (err instanceof LeaseError) {
@@ -787,68 +937,69 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       throw err;
     }
 
-    // Create experiment record.
-    const id = `exp-${generateId()}`;
-    const profiles: EvaluationProfileSnapshot[] = [];
-    // Resolve pinned profiles from the suite's tasks.
-    for (const task of loadedSuite.tasks) {
-      if (task.evaluation.kind === "profile") {
-        const p = await evalRepo.getProfile(
-          task.evaluation.profile.id,
-          task.evaluation.profile.version,
-        );
-        if (p && !profiles.find((x) => x.id === p.id && x.version === p.version)) {
-          profiles.push(p);
-        }
-      }
-    }
-    // Also resolve the suite default if it's a profile.
-    if (loadedSuite.defaultEvaluation.kind === "profile") {
-      const ref = loadedSuite.defaultEvaluation.profile;
-      const p = await evalRepo.getProfile(ref.id, ref.version);
-      if (p && !profiles.find((x) => x.id === p.id && x.version === p.version)) {
-        profiles.push(p);
-      }
-    }
-
-    const record = createExperimentRecord({ id, suite: loadedSuite, profiles, now: now() });
-    await evalRepo.createExperiment(record);
-    persistedExperimentRevision = record.revision;
-
-    // Acquire in-tab ownership.
+    // Acquire in-tab ownership BEFORE any persisted side effect: an owner-busy
+    // start must never write a draft experiment or burn the materialization.
     if (!owner.tryAcquire({ kind: "experiment", id })) {
       await releaseLeaseToken();
       return { ok: false, error: "Another execution is active" };
     }
 
-    // Initialize engine.
-    engine = createExperimentEngine(record);
     experimentId = id;
-    suite = loadedSuite;
 
-    // Start the engine.
-    const fence: ExecutionFence = {
-      ownerId: leaseInfo.ownerId,
-      fence: leaseInfo.fence,
-      ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
-    };
-    const startResult = engine.start(fence, now());
-    if (!startResult.ok) {
-      releaseExecution();
-      engine = null;
-      experimentId = null;
-      suite = null;
-      return { ok: false, error: startResult.reason ?? "Failed to start" };
+    let transferredToRunLoop = false;
+    // Set only after createExperiment resolves: an id collision throws before
+    // this invocation writes a row, so the rollback must never delete a
+    // pre-existing experiment.
+    let createdDraft = false;
+    try {
+      await evalRepo.createExperiment(draft);
+      createdDraft = true;
+      persistedExperimentRevision = draft.revision;
+
+      // Initialize engine.
+      engine = createExperimentEngine(draft);
+      suite = projected;
+
+      // Start the engine.
+      const fence: ExecutionFence = {
+        ownerId: leaseInfo.ownerId,
+        fence: leaseInfo.fence,
+        ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
+      };
+      const startResult = engine.start(fence, now());
+      if (!startResult.ok) {
+        return { ok: false, error: startResult.reason ?? "Failed to start" };
+      }
+
+      // Persist the running status.
+      await syncExperimentStatus(persistedExperimentRevision);
+
+      // Start heartbeat and task loop.
+      startHeartbeat();
+      transferredToRunLoop = true;
+      void runLoop(fence);
+
+      return { ok: true, experimentId: id };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (!transferredToRunLoop) {
+        if (createdDraft) {
+          // Best-effort roll back the just-created draft so a post-create sync
+          // failure neither orphans a draft row nor permanently burns the
+          // materialization (spec §11.2).
+          try {
+            await evalRepo.deleteExperiment(id);
+          } catch {
+            // Best-effort — the store may itself be the cause of the failure.
+          }
+        }
+        releaseExecution();
+        engine = null;
+        experimentId = null;
+        suite = null;
+      }
     }
-
-    // Persist the running status.
-    await syncExperimentStatus(persistedExperimentRevision);
-
-    // Start heartbeat and task loop.
-    startHeartbeat();
-    void runLoop(fence);
-
-    return { ok: true, experimentId: id };
   }
 
   async function requestPause(): Promise<void> {
@@ -871,6 +1022,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     if (!engine || !experimentId) {
       return { ok: false, error: "No experiment to resume" };
     }
+    const expId = experimentId;
     if (engine.record.status !== "paused") {
       return { ok: false, error: `Cannot resume from status ${engine.record.status}` };
     }
@@ -888,15 +1040,54 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       fence: leaseInfo.fence,
       ...(leaseInfo.leaseId ? { leaseId: leaseInfo.leaseId } : {}),
     };
+    // Snapshot the paused state so a failed post-resume sync can restore it.
+    const preResumeSnapshot = engine.snapshot();
     const result = engine.resume(fence, now());
     if (!result.ok) {
       return { ok: false, error: result.reason ?? "Failed to resume" };
     }
 
-    await syncExperimentStatus(persistedExperimentRevision);
-    startHeartbeat();
-    void runLoop(fence);
-    return { ok: true };
+    let transferredToRunLoop = false;
+    try {
+      await syncExperimentStatus(persistedExperimentRevision);
+      startHeartbeat();
+      transferredToRunLoop = true;
+      void runLoop(fence);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (!transferredToRunLoop) {
+        // A post-resume sync failure must not revoke the takeover lease nor
+        // strand a paused record: restore the pre-resume paused state and
+        // retain ownership + lease while the durable record is still 'paused'
+        // so a subsequent resume succeeds.
+        engine.restore(preResumeSnapshot);
+        let durablePaused = true;
+        try {
+          durablePaused = (await evalRepo.getExperiment(expId))?.status === "paused";
+        } catch {
+          // Store unreachable — the failed sync leaves the durable record
+          // 'paused' by construction, so retain ownership + lease.
+        }
+        if (!durablePaused) {
+          // The durable record diverged from 'paused' — tear down, releasing
+          // the lease only when its token is verified current.
+          stopHeartbeat();
+          owner.release(expId);
+          try {
+            if (await lease.verify(activeLease ?? undefined)) {
+              await releaseLeaseToken();
+            }
+          } catch {
+            // Best-effort teardown — never override the resume failure result.
+          }
+          engine = null;
+          experimentId = null;
+          suite = null;
+        }
+      }
+    }
   }
 
   async function abort(): Promise<void> {
@@ -952,10 +1143,23 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
       return { ok: false, error: result.reason ?? "Failed to retry" };
     }
 
-    await syncExperimentStatus(persistedExperimentRevision);
-    startHeartbeat();
-    void runLoop(fence);
-    return { ok: true };
+    let transferredToRunLoop = false;
+    try {
+      await syncExperimentStatus(persistedExperimentRevision);
+      startHeartbeat();
+      transferredToRunLoop = true;
+      void runLoop(fence);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      if (!transferredToRunLoop) {
+        releaseExecution();
+        engine = null;
+        experimentId = null;
+        suite = null;
+      }
+    }
   }
 
   // --- Recovery ---------------------------------------------------------------
@@ -976,6 +1180,14 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
     try {
       const experiments = await evalRepo.listExperiments();
       for (const exp of experiments) {
+        if (exp.status === "draft") {
+          // A stranded draft (created but never transitioned to running) holds
+          // the materialization forever; roll it back so the materialization
+          // becomes reusable (spec §11.2).
+          await evalRepo.deleteExperiment(exp.id);
+          recovered++;
+          continue;
+        }
         if (exp.status !== "running" && exp.status !== "paused") continue;
 
         // We acquired the lease, so any running/paused experiment's prior
@@ -1523,7 +1735,7 @@ export function createExperimentController(deps: ExperimentControllerDeps) {
 }
 
 export interface ExperimentController {
-  start(suiteId: string): Promise<StartResult>;
+  start(materializationId: string): Promise<StartResult>;
   requestPause(): Promise<void>;
   resume(): Promise<SimpleResult>;
   abort(): Promise<void>;

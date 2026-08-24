@@ -5,16 +5,16 @@ import { EvaluationDisclosure } from "./EvaluationDisclosure";
 import {
   HOLISTIC_EVALUATION,
   type AdHocEvaluationConfig,
-} from "../lib/evaluations/evaluation-profile-adhoc";
-import type { EvaluationProfile } from "../lib/evaluations/evaluation-types";
+} from "../lib/evaluations/evaluation-rubric-adhoc";
+import type { EvaluationRubric } from "../lib/evaluations/evaluation-types";
 import type { Action } from "../studio-engine";
 
-function makeProfile(name: string, criteriaCount = 1): EvaluationProfile {
+function makeRubric(name: string, criteriaCount = 1): EvaluationRubric {
   return {
     id: "p1",
     version: 1,
     name,
-    description: "test profile",
+    description: "test rubric",
     judgeInstruction: "",
     criteria: Array.from({ length: criteriaCount }, (_, i) => ({
       id: `c${i + 1}`,
@@ -28,12 +28,12 @@ function makeProfile(name: string, criteriaCount = 1): EvaluationProfile {
   };
 }
 
-function makeCustomConfig(profile: EvaluationProfile): AdHocEvaluationConfig {
-  return { kind: "custom", profile };
+function makeCustomConfig(rubric: EvaluationRubric): AdHocEvaluationConfig {
+  return { kind: "custom", profile: rubric };
 }
 
-function makeProfileConfig(profile: EvaluationProfile): AdHocEvaluationConfig {
-  return { kind: "profile", ref: { id: profile.id, version: profile.version }, profile };
+function makeRubricConfig(rubric: EvaluationRubric): AdHocEvaluationConfig {
+  return { kind: "profile", ref: { id: rubric.id, version: rubric.version }, profile: rubric };
 }
 
 const noopDispatch = vi.fn() as unknown as React.Dispatch<Action>;
@@ -46,19 +46,19 @@ describe("EvaluationDisclosure — summary", () => {
     expect(html).toContain("Holistic judgment");
   });
 
-  it("reports saved profile name and version when a profile is selected", () => {
-    const profile = makeProfile("Writing Quality");
+  it("reports saved rubric name and version when a rubric is selected", () => {
+    const rubric = makeRubric("Writing Quality");
     const html = renderToStaticMarkup(
-      <EvaluationDisclosure evaluation={makeProfileConfig(profile)} dispatch={noopDispatch} />,
+      <EvaluationDisclosure evaluation={makeRubricConfig(rubric)} dispatch={noopDispatch} />,
     );
     expect(html).toContain("Writing Quality");
     expect(html).toContain("v1");
   });
 
   it("reports custom criterion count", () => {
-    const profile = makeProfile("Custom", 3);
+    const rubric = makeRubric("Custom", 3);
     const html = renderToStaticMarkup(
-      <EvaluationDisclosure evaluation={makeCustomConfig(profile)} dispatch={noopDispatch} />,
+      <EvaluationDisclosure evaluation={makeCustomConfig(rubric)} dispatch={noopDispatch} />,
     );
     expect(html).toContain("3");
     expect(html).toContain("Custom");

@@ -22,7 +22,10 @@ export default tseslint.config(
     ignores: [
       "dist/**",
       "coverage/**",
-      "node_modules/**",
+      // Local hermes tooling output (gitignored, generated).
+      ".hermes/**",
+      // RLM harness state (gitignored, generated scratch/repro artifacts).
+      ".omp/**",
       // Emitted from vite.config.ts / vitest.config.ts by `tsc -b`.
       "vite.config.js",
       "vite.config.d.ts",

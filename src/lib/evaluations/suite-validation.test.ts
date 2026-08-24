@@ -9,7 +9,7 @@ import {
   canonicalJsonString,
   createExperimentSnapshot,
 } from "./protocol-fingerprint";
-import type { EvaluationSuite, EvaluationTask, EvaluationProfile } from "./evaluation-types";
+import type { EvaluationSuite, EvaluationTask, EvaluationRubric } from "./evaluation-types";
 import type { ModelSlot } from "../../studio-data";
 
 function makeSlot(id: string, slug: string, providerId = "openrouter", enabled = true): ModelSlot {
@@ -54,11 +54,11 @@ function makeSuite(overrides: Partial<EvaluationSuite> = {}): EvaluationSuite {
   };
 }
 
-function makeProfile(id: string): EvaluationProfile {
+function makeRubric(id: string): EvaluationRubric {
   return {
     id,
     version: 1,
-    name: `Profile ${id}`,
+    name: `Rubric ${id}`,
     description: "test",
     judgeInstruction: "",
     criteria: [],
@@ -233,11 +233,11 @@ describe("computeProtocolFingerprint", () => {
     expect(computeProtocolFingerprint(suite1, [])).not.toBe(computeProtocolFingerprint(suite2, []));
   });
 
-  it("changes when profile criteria change", () => {
+  it("changes when rubric criteria change", () => {
     const suite = makeSuite();
-    const profile1 = makeProfile("p1");
-    const profile2: EvaluationProfile = {
-      ...profile1,
+    const rubric1 = makeRubric("p1");
+    const rubric2: EvaluationRubric = {
+      ...rubric1,
       criteria: [
         {
           id: "c1",
@@ -248,8 +248,8 @@ describe("computeProtocolFingerprint", () => {
         },
       ],
     };
-    expect(computeProtocolFingerprint(suite, [profile1])).not.toBe(
-      computeProtocolFingerprint(suite, [profile2]),
+    expect(computeProtocolFingerprint(suite, [rubric1])).not.toBe(
+      computeProtocolFingerprint(suite, [rubric2]),
     );
   });
 
@@ -261,20 +261,20 @@ describe("computeProtocolFingerprint", () => {
 });
 
 describe("createExperimentSnapshot", () => {
-  it("deep-copies suite, profiles, and Judge", () => {
+  it("deep-copies suite, rubrics, and Judge", () => {
     const suite = makeSuite();
-    const profile = makeProfile("p1");
-    const snapshot = createExperimentSnapshot(suite, [profile], 5000);
+    const rubric = makeRubric("p1");
+    const snapshot = createExperimentSnapshot(suite, [rubric], 5000);
 
     // Mutating originals should not affect snapshot
     suite.name = "Changed";
-    profile.name = "Changed";
+    rubric.name = "Changed";
     suite.modelSlots[0].model = "Changed";
 
     expect(snapshot.suiteId).toBe("s1");
     expect(snapshot.tasks[0].title).toBe("Task t1");
     expect(snapshot.modelSlots[0].model).toBe("Model m1");
-    expect(snapshot.profiles[0].name).toBe("Profile p1");
+    expect(snapshot.profiles[0].name).toBe("Rubric p1");
   });
 
   it("includes protocol fingerprint", () => {

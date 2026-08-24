@@ -1,22 +1,62 @@
 // =============================================================================
-// RSemble AI — Workbench archive (plan 8.1, spec §13/§18/§20)
+// RSemble AI — Workbench archive (plan 8.1, spec §13/§18/§20; Child 02 §8.5)
 //
-// Whole-workbench export/import across run summaries/details, profiles,
-// suites, and experiments. Export is allowlisted by construction — only
-// guard-passing domain records leave the database. Import validates every
-// centralized v1 limit (bytes, counts, string size, depth, safe IDs) plus
-// every record guard BEFORE any mutation, then writes inside one Dexie
-// transaction: canonically identical records are skipped, same-ID different
-// content is reported as conflicting and never written, and any thrown error
-// rolls the whole import back.
+// Whole-workbench export/import behind two explicit adapters that share the
+// core Run/Rubric/Suite/Experiment reads:
+//
+//  - v1 (`exportWorkbenchArchive` / `parseWorkbenchArchive` /
+//    `importWorkbenchArchive`): the established schemaVersion-1 shape. Export
+//    is allowlisted by construction — only guard-passing domain records leave
+//    the database. Import validates every centralized v1 limit (bytes, counts,
+//    string size, depth, safe IDs) plus every record guard BEFORE any
+//    mutation, then writes inside one Dexie transaction: canonically identical
+//    records are skipped, same-ID different content is reported as conflicting
+//    and never written, and any thrown error rolls the whole import back.
+//
+//  - v2 (`exportWorkbenchArchiveV2`, Child 02 Task 10B; extended by Child 03
+//    Task 11): the task-first envelope (`WorkbenchArchiveV2`). Exports every
+//    canonical Child 02 collection — exact Runs/Experiments, Rubrics, all
+//    seven Fusion stores, Tasks/versions/artifacts+bytes/instances/families/
+//    assignments/relations/facet annotations/crosswalks — plus the Child 03
+//    Task Set collections (records, versions, materializations, ownership
+//    crosswalks) as an optional top-level `taskSets` payload, in deterministic
+//    order with exact counts and an integrity digest. Before delivery it scans
+//    structured fields and artifact bytes for prohibited credential/auth
+//    material and blocks safely with entity/type diagnostics, never echoing a
+//    matched value. Disposable caches/indexes and unrestricted `storageMeta`
+//    are never read. Supports progress reporting and cancellation before
+//    final delivery.
+//
+//  - v2 import (`previewWorkbenchArchive` + `commitPreviewWorkbenchArchiveV2`):
+//    the validated preview classifies every entity as create/reuse/collision/
+//    invalid; the commit re-checks every CREATE destination inside one Dexie
+//    transaction and aborts BEFORE any write on a non-identical same-key
+//    collision. The seven Fusion stores stay separately typed and unconverted;
+//    Task Set ownership crosswalks reference Fusion studies without altering
+//    their payloads.
 // =============================================================================
-
+import type { Table } from "dexie";
+import { createSearchIndexRepository, type SearchIndexRepository } from "./search-index-repository";
+import { createDexieSearchSourceResolver, rebuildSearchIndex } from "../search/search-reindex";
 import {
   RSembleEvaluationDB,
   StorageError,
   classifyStorageError,
   type RunDetailRow,
   type RunSummaryRow,
+  type TaskSetOwnershipCrosswalkRow,
+  type ModelConfigurationRow,
+  type EvidenceObservationRow,
+  type EvidenceDecisionRow,
+  type EvidenceIndexJobRow,
+  type VerifierOutcomeRow,
+  type FusionRecipeRow,
+  type PoolManifestRow,
+  type FusionStudyRow,
+  type FusionTrialRow,
+  type FusionAttemptRow,
+  type FusionObservationRow,
+  type FusionPlaybookRow,
 } from "./database";
 import {
   isFullRunSummaryV2,
@@ -30,14 +70,14 @@ import {
   type RunSummary,
 } from "./run-types";
 import {
-  isEvaluationProfile,
+  isEvaluationRubric,
   isEvaluationSuite,
   isExperimentRecord,
-  isProfileRecord,
-  type EvaluationProfile,
+  isRubricRecord,
+  type EvaluationRubric,
   type EvaluationSuite,
   type ExperimentRecord,
-  type ProfileRecord,
+  type RubricRecord,
 } from "../evaluations/evaluation-types";
 import { canonicalJsonString } from "../evaluations/protocol-fingerprint";
 import {
@@ -48,17 +88,149 @@ import {
   getComplianceInfluence,
   rankScoreOf,
   isFloored,
-} from "../evaluations/evaluation-profile";
+} from "../evaluations/evaluation-rubric";
 import { REDACTED } from "./error-redaction";
 import { inputUsageLabel } from "../cost";
+import { computeArtifactDigest } from "../tasks/task-instance";
+import {
+  ARCHIVE_V2_FORMAT_VERSION,
+  ARCHIVE_V2_STORAGE_VERSION,
+  computeArchiveV2PayloadDigest,
+  isWorkbenchArchiveV2,
+  validateArchiveV2,
+  type ArchiveV2TaskArtifactBytes,
+  type ArchiveV2ComparisonInputSnapshot,
+  type WorkbenchArchiveV2,
+} from "./archive-v2-types";
+import {
+  ARCHIVE_V3_FORMAT_VERSION,
+  ARCHIVE_V3_STORAGE_VERSION,
+  CREDENTIAL_LIKE_INLINE,
+  computeArchiveV3ContentDigests,
+  computeArchiveV3PayloadDigest,
+  containsCredentialMaterial,
+  detectLegacyFusionArchive,
+  isWorkbenchArchiveV3,
+  normalizeLegacyArchiveV3,
+  redactCredentialMaterial,
+  validateArchiveV3,
+  type ArchiveUnsupportedFusionReceipt,
+  type ArchiveV3ComparisonInputSnapshot,
+  type ArchiveV3EntityCounts,
+  type ArchiveV3PolicyPlaybook,
+  type ArchiveV3TaskArtifactBytes,
+  type WorkbenchArchiveV3,
+} from "./archive-v3-types";
+import {
+  isLabRecipeRecord,
+  isLabRecipeVersion,
+  type LabRecipeRecord,
+  type LabRecipeVersion,
+} from "../studies/lab-recipe-types";
+import {
+  isModelPoolRecord,
+  isModelPoolVersion,
+  type ModelPoolRecord,
+  type ModelPoolVersion,
+} from "../studies/model-pool-types";
+import {
+  isPolicyReportPayload,
+  isPolicyStudyObservation,
+  isPolicyStudyRecord,
+  isPolicyStudyTrial,
+  type PolicyStudyObservation,
+  type PolicyStudyRecord,
+  type PolicyStudyTrial,
+} from "../studies/policy/policy-study-types";
+import { isStudyAttempt, type StudyAttempt } from "../studies/study-types";
+import { fingerprintStudyValue } from "../studies/study-fingerprint";
+import {
+  isEvaluationObservation,
+  isFusionAttempt,
+  isFusionPlaybook,
+  isFusionRecipeVersion,
+  isFusionStudy,
+  isFusionTrial,
+  isPoolManifestVersion,
+  type EvaluationObservation,
+  type FusionAttempt,
+  type FusionPlaybook,
+  type FusionRecipeVersion,
+  type FusionStudy,
+  type FusionTrial,
+  type PoolManifestVersion,
+} from "../evaluations/fusion-study-types";
+import {
+  isTaskArtifact,
+  isTaskFacetAnnotation,
+  isTaskFamily,
+  isTaskFamilyAssignment,
+  isTaskInstance,
+  isTaskRecord,
+  isTaskVersion,
+} from "../tasks/task-validation";
+import {
+  type TaskArtifact,
+  TaskFacetAnnotation,
+  TaskFamily,
+  TaskFamilyAssignment,
+  TaskFamilyRelation,
+  TaskInstance,
+  TaskRecord,
+  TaskVersion,
+  VersionRef,
+} from "../tasks/task-types";
+import type { TaskMigrationCrosswalk } from "../tasks/task-references";
+import {
+  isTaskSetRecord,
+  isTaskSetVersion,
+  type TaskSetRecord,
+  type TaskSetVersion,
+} from "../evaluations/task-set-types";
+import type { TaskSetMaterializationRecord } from "./evaluation-repository";
 
+import type {
+  ModelConfigurationSnapshot,
+  Observation,
+  EligibilityDecision,
+  ExecutedVerifierOutcome,
+} from "../evidence/evidence-types";
+import {
+  isModelConfigurationSnapshot,
+  isObservation,
+  isEligibilityDecision,
+  isExecutedVerifierOutcome,
+  observationIdFor,
+  observationSourceKey,
+} from "../evidence/evidence-validation";
+import type { EvidenceIndexJob, EvidenceIndexJobSummary } from "./evidence-repository";
+import type { ComparisonResultIndex } from "../compare/comparison-result-types";
+import { isComparisonResultIndex } from "../compare/comparison-result-validation";
+import type { ComparisonMigrationLimitation } from "./comparison-result-migration";
+import {
+  fusionToResearchLabReceiptKey,
+  getFusionToResearchLabReceipt,
+} from "../migrations/fusion-to-research-lab";
+import { isZeroCorpusBootstrapReceipt } from "../migrations/fusion-to-research-lab-receipt";
+import {
+  computeModelRollupMemberManifestDigest,
+  isModelRollupRecord,
+  isModelRollupVersion,
+  type ModelRollupRecord,
+  type ModelRollupVersion,
+} from "../model-rollups/model-rollup-types";
+import { EVIDENCE_RULE_VERSION } from "../evidence/evidence-eligibility";
+import {
+  QUERY_AGGREGATION_RULE_VERSION,
+  QUERY_UNCERTAINTY_RULE_VERSION,
+} from "../model-profiles/model-evidence-query";
 // --- Archive shape -------------------------------------------------------------
 
 export interface WorkbenchArchiveV1 {
   schemaVersion: 1;
   exportedAt: number;
   runs: { summaries: RunSummary[]; details: RunRecordV2[] };
-  profiles: { identities: ProfileRecord[]; versions: EvaluationProfile[] };
+  profiles: { identities: RubricRecord[]; versions: EvaluationRubric[] };
   suites: EvaluationSuite[];
   experiments: ExperimentRecord[];
 }
@@ -68,8 +240,8 @@ export const IMPORT_LIMITS = {
   ARCHIVE_BYTES: 268435456,
   RUN_SUMMARIES: 25000,
   RUN_DETAILS: 25000,
-  PROFILE_IDENTITIES: 5000,
-  PROFILE_REVISIONS: 10000,
+  RUBRIC_IDENTITIES: 5000,
+  RUBRIC_REVISIONS: 10000,
   SUITES: 5000,
   EXPERIMENTS: 25000,
   STRING_BYTES: 8388608,
@@ -256,8 +428,8 @@ export function parseWorkbenchArchive(
   const countChecks: Array<[string, number, number]> = [
     ["runs.summaries", lists.summaries.length, IMPORT_LIMITS.RUN_SUMMARIES],
     ["runs.details", lists.details.length, IMPORT_LIMITS.RUN_DETAILS],
-    ["profiles.identities", lists.identities.length, IMPORT_LIMITS.PROFILE_IDENTITIES],
-    ["profiles.versions", lists.versions.length, IMPORT_LIMITS.PROFILE_REVISIONS],
+    ["profiles.identities", lists.identities.length, IMPORT_LIMITS.RUBRIC_IDENTITIES],
+    ["profiles.versions", lists.versions.length, IMPORT_LIMITS.RUBRIC_REVISIONS],
     ["suites", lists.suites.length, IMPORT_LIMITS.SUITES],
     ["experiments", lists.experiments.length, IMPORT_LIMITS.EXPERIMENTS],
   ];
@@ -292,14 +464,14 @@ export function parseWorkbenchArchive(
     if (compatible) details.push(compatible);
     else errors.push(guardError("runs.details", i, entry));
   });
-  const identities: ProfileRecord[] = [];
+  const identities: RubricRecord[] = [];
   lists.identities.forEach((entry, i) => {
-    if (isProfileRecord(entry)) identities.push(entry);
+    if (isRubricRecord(entry)) identities.push(entry);
     else errors.push(guardError("profiles.identities", i, entry));
   });
-  const versions: EvaluationProfile[] = [];
+  const versions: EvaluationRubric[] = [];
   lists.versions.forEach((entry, i) => {
-    if (isEvaluationProfile(entry)) versions.push(entry);
+    if (isEvaluationRubric(entry)) versions.push(entry);
     else errors.push(guardError("profiles.versions", i, entry));
   });
   const suites: EvaluationSuite[] = [];
@@ -336,8 +508,8 @@ export function parseWorkbenchArchive(
 export async function exportWorkbenchArchive(db: RSembleEvaluationDB): Promise<WorkbenchArchiveV1> {
   const summaries: RunSummary[] = [];
   const details: RunRecordV2[] = [];
-  const identities: ProfileRecord[] = [];
-  const versions: EvaluationProfile[] = [];
+  const identities: RubricRecord[] = [];
+  const versions: EvaluationRubric[] = [];
   const suites: EvaluationSuite[] = [];
   const experiments: ExperimentRecord[] = [];
   try {
@@ -351,10 +523,10 @@ export async function exportWorkbenchArchive(db: RSembleEvaluationDB): Promise<W
       if (compatible) details.push(compatible);
     });
     await db.profiles.orderBy("updatedAt").each((row) => {
-      if (isProfileRecord(row.record)) identities.push(row.record);
+      if (isRubricRecord(row.record)) identities.push(row.record);
     });
     await db.profileVersions.orderBy("updatedAt").each((row) => {
-      if (isEvaluationProfile(row.profile)) versions.push(row.profile);
+      if (isEvaluationRubric(row.profile)) versions.push(row.profile);
     });
     await db.suites.orderBy("updatedAt").each((row) => {
       if (isEvaluationSuite(row.suite)) suites.push(row.suite);
@@ -486,7 +658,7 @@ export async function importWorkbenchArchive(
           created.push(legacy.id);
         }
 
-        // Profile identities.
+        // Rubric identities.
         for (const record of a.profiles.identities) {
           const existing = await db.profiles.get(record.id);
           if (existing) {
@@ -505,20 +677,20 @@ export async function importWorkbenchArchive(
           created.push(record.id);
         }
 
-        // Profile versions — conflict/skip at the [id+version] composite key.
-        for (const profile of a.profiles.versions) {
-          const key = `${profile.id}@${profile.version}`;
-          const existing = await db.profileVersions.get([profile.id, profile.version]);
+        // Rubric versions — conflict/skip at the [id+version] composite key.
+        for (const rubric of a.profiles.versions) {
+          const key = `${rubric.id}@${rubric.version}`;
+          const existing = await db.profileVersions.get([rubric.id, rubric.version]);
           if (existing) {
-            if (canon(existing.profile) === canon(profile)) skipped.push(key);
+            if (canon(existing.profile) === canon(rubric)) skipped.push(key);
             else conflicting.push(key);
             continue;
           }
           await db.profileVersions.put({
-            id: profile.id,
-            version: profile.version,
-            profile,
-            updatedAt: profile.updatedAt,
+            id: rubric.id,
+            version: rubric.version,
+            profile: rubric,
+            updatedAt: rubric.updatedAt,
           });
           created.push(key);
         }
@@ -576,6 +748,12 @@ export async function importWorkbenchArchive(
 
 /** Classified recovery guidance for archive failures (spec §20). */
 export function archiveFailureGuidance(err: unknown): string {
+  if (err instanceof ArchiveExportCancelledError) {
+    return "Export was cancelled — no archive was delivered.";
+  }
+  if (err instanceof ArchiveImportCancelledError) {
+    return "Import was cancelled — nothing was imported.";
+  }
   if (err instanceof StorageError) {
     switch (err.kind) {
       case "quota":
@@ -677,20 +855,20 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       if (!evaluation) continue;
       const candidate = record.candidates.find((c) => c.candidateId === candidateId);
       const name = candidate ? mdSafe(candidate.model) : candidateId;
-      const profile = record.evaluation.profile;
-      const rv = profile ? rankValueFromResults(evaluation.criterionScores, profile) : null;
+      const rubric = record.evaluation.profile;
+      const rv = rubric ? rankValueFromResults(evaluation.criterionScores, rubric) : null;
       // Domain-aware headline: compliance-only profiles render C as a percentage
       // (no /5, no floor); graded/legacy/holistic keep the 1–5 /5 suffix.
       const headline =
         rv !== null
-          ? formatRankValueDisplay(rv, profile)
+          ? formatRankValueDisplay(rv, rubric)
           : `${evaluation.overallScore.toFixed(1)}/5`;
       lines.push(`### ${name} (Candidate ${label}) — ${headline}`, ``);
       lines.push(`Position: ${mdSafe(evaluation.position)}`, ``);
       lines.push(`Why this score: ${mdSafe(evaluation.rationale)}`, ``);
 
       // Scoring derivation (spec §18): Q, C, λ, rankValue, rankScore, floor marker.
-      if (profile && rv !== null) {
+      if (rubric && rv !== null) {
         const numericScores: Record<string, number> = {};
         const booleanResults: Record<string, boolean> = {};
         for (const cs of evaluation.criterionScores) {
@@ -700,9 +878,9 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
             numericScores[cs.criterionId] = cs.score;
           }
         }
-        const Q = qualityScore(numericScores, profile);
-        const comp = complianceScore(booleanResults, profile);
-        const lambda = getComplianceInfluence(profile);
+        const Q = qualityScore(numericScores, rubric);
+        const comp = complianceScore(booleanResults, rubric);
+        const lambda = getComplianceInfluence(rubric);
         const C = comp?.C ?? null;
         const rs = rankScoreOf(rv);
         const floored = isFloored(rv);
@@ -741,7 +919,7 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
           `- Compliance (C): ${cStr}`,
           `- Compliance influence (λ): ${lambda.toFixed(2)}`,
           ...(complianceOnly
-            ? [`- Compliance: ${(C! * 100).toFixed(0)}% (compliance-only profile, §16.3)`]
+            ? [`- Compliance: ${(C! * 100).toFixed(0)}% (compliance-only rubric, §16.3)`]
             : [
                 `- Rank Value: ${rv.toFixed(3)}${floored ? " (floored)" : ""}`,
                 `- Rank Score: ${rs !== null ? rs.toFixed(1) : "—"}${floored ? "*" : ""}`,
@@ -773,8 +951,8 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
       if (evaluation.criterionScores.length > 0) {
         // Build a lookup of group membership for binary criteria context.
         const groupLookup = new Map<string, string>();
-        if (profile?.requirementGroups) {
-          for (const g of profile.requirementGroups) {
+        if (rubric?.requirementGroups) {
+          for (const g of rubric.requirementGroups) {
             for (const checkId of g.checkIds) {
               groupLookup.set(checkId, g.name);
             }
@@ -836,4 +1014,6642 @@ export function buildRunExportMarkdown(record: RunRecordV2): string {
   }
 
   return lines.join("\n");
+}
+
+// =============================================================================
+// Archive v2 export adapter (Child 02 Task 10B)
+//
+// The task-first, deterministic, secret-safe export. Shares the guard-passing
+// read shape with the v1 adapter, adds the seven Fusion stores and every
+// canonical Task collection, sorts each collection by its deterministic key,
+// attaches artifact bytes, scans structured fields and bytes for prohibited
+// credential/auth material BEFORE delivery, and supports progress reporting
+// and cancellation with an AbortSignal.
+// =============================================================================
+
+/** A stage of the v2 export pipeline. Stages run in declaration order:
+ *  collection reads first, artifact byte encoding, the pre-delivery secret
+ *  scan, then finalize. */
+export type ArchiveExportStage =
+  | "runs"
+  | "rubrics"
+  | "suites"
+  | "experiments"
+  | "fusion"
+  | "tasks"
+  | "task-sets"
+  | "evidence"
+  | "comparisons"
+  | "artifact-bytes"
+  | "scan"
+  | "finalize";
+
+/** One progress observation for the v2 export. `done`/`total` count collections
+ *  completed; both are monotonic non-decreasing and `done === total` only when
+ *  the finalize stage completes (the archive is ready to deliver). */
+export interface ArchiveExportProgress {
+  /** One of `ArchiveExportStage`; widened to string so observers can compare
+   *  stages and build stage sets over plain string literals. */
+  stage: string;
+  done: number;
+  total: number;
+}
+
+/** Rejection raised when an export is cancelled before delivery. Distinct from
+ *  StorageError so callers can classify it (see `archiveFailureGuidance`). */
+export class ArchiveExportCancelledError extends Error {
+  constructor() {
+    super("Export was cancelled — no archive was delivered.");
+    this.name = "ArchiveExportCancelledError";
+  }
+}
+
+/** Options for `exportWorkbenchArchiveV2`. */
+export interface ArchiveExportV2Options {
+  /** Deterministic clock for tests; defaults to Date.now. */
+  now?: () => number;
+  /** Receives monotonic per-stage progress before the archive resolves. */
+  onProgress?: (progress: ArchiveExportProgress) => void;
+  /** Abort before or during the export to reject without delivering. */
+  signal?: AbortSignal;
+}
+
+/** Ordered export stage list — `total` counts these stages. */
+const ARCHIVE_V2_STAGES: ArchiveExportStage[] = [
+  "runs",
+  "rubrics",
+  "suites",
+  "experiments",
+  "fusion",
+  "tasks",
+  "task-sets",
+  "evidence",
+  "comparisons",
+  "artifact-bytes",
+  "scan",
+  "finalize",
+];
+
+const ARCHIVE_V2_DISCLOSURE_NOTES = "Local workbench export. No remote transport metadata.";
+
+function v2OrderingKeyString(a: unknown, b: unknown): number {
+  const ka = typeof a === "string" ? a : "";
+  const kb = typeof b === "string" ? b : "";
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+
+function v2SortById<T extends { id: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.id, b.id));
+}
+
+function v2SortByIdVersion<T extends { id: string; version: number }>(items: T[]): T[] {
+  const key = (t: T) => `${t.id} ${t.version.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v2SortByTaskIdVersion<T extends { taskId: string; version: number }>(items: T[]): T[] {
+  const key = (t: T) => `${t.taskId} ${t.version.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v2SortByLegacyScopeKey<T extends { legacyScopeKey: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.legacyScopeKey, b.legacyScopeKey));
+}
+
+function v2SortByTaskSetIdVersion<T extends { taskSetId: string; version: number }>(
+  items: T[],
+): T[] {
+  const key = (t: T) => `${t.taskSetId}\u0000${t.version.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v2SortByKey<T extends { key: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.key, b.key));
+}
+
+function v2SortByObservationIdRuleVersion<T extends { observationId: string; ruleVersion: number }>(
+  items: T[],
+): T[] {
+  const key = (t: T) => `${t.observationId}\u0000${t.ruleVersion.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v2SortBySourceResultId<T extends { sourceResultId: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.sourceResultId, b.sourceResultId));
+}
+function v2SortByRunId<T extends { runId: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => v2OrderingKeyString(a.runId, b.runId));
+}
+function v2SortByVerifierOutcomeKey<
+  T extends { runId: string; taskId: string; modelKey: string; executedAt: number },
+>(items: T[]): T[] {
+  const key = (t: T) => `${t.runId}::${t.taskId}::${t.modelKey}::${t.executedAt}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+function v3SortByRecipeIdVersion<T extends { recipeId: string; version: number }>(items: T[]): T[] {
+  const key = (t: T) => `${t.recipeId}\u0000${t.version.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+function v3SortByPoolIdVersion<T extends { poolId: string; version: number }>(items: T[]): T[] {
+  const key = (t: T) => `${t.poolId}\u0000${t.version.toString().padStart(10, "0")}`;
+  return [...items].sort((a, b) => v2OrderingKeyString(key(a), key(b)));
+}
+
+const JOB_STATUSES: ReadonlySet<string> = new Set(["queued", "running", "complete", "error"]);
+
+function isEvidenceIndexJob(job: unknown): job is EvidenceIndexJob {
+  if (!isRecord(job)) return false;
+  if (typeof job.sourceResultId !== "string" || job.sourceResultId.trim().length === 0)
+    return false;
+  if (job.sourceKind !== "comparison" && job.sourceKind !== "evaluation") return false;
+  if (!JOB_STATUSES.has(job.status as string)) return false;
+  if (!Number.isInteger(job.ruleVersion) || (job.ruleVersion as number) < 1) return false;
+  if (!Number.isInteger(job.sourceRevision) || (job.sourceRevision as number) < 0) return false;
+  if (
+    typeof job.updatedAt !== "number" ||
+    !Number.isFinite(job.updatedAt) ||
+    (job.updatedAt as number) < 0
+  )
+    return false;
+  if (job.errorKind !== null && typeof job.errorKind !== "string") return false;
+  if (job.errorMessage !== null && typeof job.errorMessage !== "string") return false;
+  const summary = job.summary;
+  if (summary !== null && summary !== undefined) {
+    if (!isRecord(summary) || Array.isArray(summary)) return false;
+    for (const field of ["observationCount", "gapCount", "limitationCount"]) {
+      const value = summary[field];
+      if (!Number.isInteger(value) || (value as number) < 0) return false;
+    }
+    if (
+      !Array.isArray(summary.integrityIssues) ||
+      !summary.integrityIssues.every((issue) => typeof issue === "string")
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function fromJobRow(row: EvidenceIndexJobRow): EvidenceIndexJob {
+  return {
+    sourceResultId: row.sourceResultId,
+    sourceKind: row.sourceKind,
+    status: row.status,
+    ruleVersion: row.ruleVersion,
+    sourceRevision: row.sourceRevision,
+    updatedAt: row.updatedAt,
+    errorKind: row.errorKind,
+    errorMessage: row.errorMessage,
+    summary: row.summary as EvidenceIndexJobSummary | null,
+  };
+}
+
+function toJobRow(job: EvidenceIndexJob): EvidenceIndexJobRow {
+  return { ...job, summary: job.summary };
+}
+
+function fromVerifierRow(row: VerifierOutcomeRow): ExecutedVerifierOutcome {
+  return {
+    taskId: row.taskId,
+    modelKey: row.modelKey,
+    runId: row.runId,
+    kind: row.kind,
+    configurationDigest: row.configurationDigest,
+    verifierRef: row.verifierRef,
+    passed: row.passed,
+    executedAt: row.executedAt,
+  };
+}
+
+function verifierOutcomeKey(outcome: ExecutedVerifierOutcome): string {
+  return `${outcome.runId}::${outcome.taskId}::${outcome.modelKey}::${outcome.executedAt}`;
+}
+
+function toVerifierRow(outcome: ExecutedVerifierOutcome): VerifierOutcomeRow {
+  return { id: verifierOutcomeKey(outcome), ...outcome };
+}
+
+/** Collects export guard-failing rows so the export can abort with redacted
+ *  diagnostics. Dexie's `Collection.each()` does not propagate a synchronous
+ *  throw from its callback; the violation is recorded here and a single
+ *  StorageError is thrown after all reads complete. The diagnostic names the
+ *  entity/collection + deterministic ID (when extractable) and never echoes a
+ *  matched secret-shaped value. */
+function recordGuardFailure(
+  label: string,
+  id: string,
+  collection: string,
+  violations: string[],
+): void {
+  const where = id === "" ? `${label}` : `${label}[${id}]`;
+  violations.push(
+    `Export blocked: ${where} (collection ${collection}) failed its record guard and could not be safely archived. No archive was delivered.`,
+  );
+}
+
+/**
+ * Archive-boundary allowlist guard for task family relations, shared by the
+ * v2 export and the v2 import preview/commit. This is deliberately NOT the
+ * canonical authoring guard (`isTaskFamilyRelation`): the domain
+ * no-self-relation rule constrains what may be AUTHORED, not what may be
+ * reported or restored. Persisted legacy self-relations are real entities and
+ * must round-trip through the archive faithfully — only structurally unsafe
+ * rows (bad identifiers, unknown kind, prohibited credential/transport keys)
+ * are excluded, mirroring the v1 allowlist construction.
+ */
+function isExportableTaskFamilyRelation(v: unknown): v is TaskFamilyRelation {
+  if (!isRecord(v)) return false;
+  if (typeof v.id !== "string" || !IMPORT_LIMITS.ID_PATTERN.test(v.id)) return false;
+  if (typeof v.fromFamilyId !== "string" || !IMPORT_LIMITS.ID_PATTERN.test(v.fromFamilyId)) {
+    return false;
+  }
+  if (typeof v.toFamilyId !== "string" || !IMPORT_LIMITS.ID_PATTERN.test(v.toFamilyId)) {
+    return false;
+  }
+  if (v.kind !== "overlap" && v.kind !== "parent" && v.kind !== "derivative") return false;
+  if (typeof v.createdAt !== "number") return false;
+  return findProhibitedKey(v) === null;
+}
+
+/** Archive-boundary guard for a Task Set ownership crosswalk row. Structural
+ *  safety only (identity fields + prohibited-key scan); the domain migration
+ *  owns the richer authoring rules. */
+function isTaskSetOwnershipCrosswalkRow(v: unknown): v is TaskSetOwnershipCrosswalkRow {
+  if (!isRecord(v)) return false;
+  if (typeof v.key !== "string" || v.key.length === 0) return false;
+  if (v.kind !== "suite-manifest" && v.kind !== "experiment-owner" && v.kind !== "fusion-owner") {
+    return false;
+  }
+  if (typeof v.taskSetId !== "string" || v.taskSetId.length === 0) return false;
+  if (
+    v.version !== null &&
+    (typeof v.version !== "number" || !Number.isInteger(v.version) || v.version <= 0)
+  ) {
+    return false;
+  }
+  if (v.digest !== null && v.digest !== undefined && typeof v.digest !== "string") return false;
+  if (v.status !== "resolved" && v.status !== "unresolved") return false;
+  if (typeof v.updatedAt !== "number") return false;
+  return findProhibitedKey(v) === null;
+}
+
+/** Archive-boundary guard for an immutable Task Set materialization record.
+ *  Structural safety only (identity fields + prohibited-key scan). */
+function isTaskSetMaterializationRecord(v: unknown): v is TaskSetMaterializationRecord {
+  if (!isRecord(v)) return false;
+  if (typeof v.id !== "string" || v.id.length === 0) return false;
+  if (typeof v.taskSetId !== "string" || v.taskSetId.length === 0) return false;
+  if (
+    typeof v.taskSetVersion !== "number" ||
+    !Number.isInteger(v.taskSetVersion) ||
+    v.taskSetVersion <= 0
+  ) {
+    return false;
+  }
+  if (typeof v.protocolFingerprint !== "string" || v.protocolFingerprint.length === 0) return false;
+  if (typeof v.createdAt !== "number") return false;
+  if (!isRecord(v.snapshot)) return false;
+  return findProhibitedKey(v) === null;
+}
+
+/** Local, deterministic base64 encoder — matches the fixture wire encoding
+ *  byte-for-byte (no runtime or Buffer dependency). */
+function v2BytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/**
+ * Export the complete canonical workbench as a v2 envelope.
+ *
+ * Behavior contract (fixed by the RED tests):
+ *  - Reads every Child 02 canonical collection and requires EVERY persisted
+ *    canonical row to pass its guard. A guard-failing or corrupt row ABORTS
+ *    the export with a redacted validation diagnostic (never silently
+ *    dropped, never a partial/omitted archive presented as complete).
+ *  - Deterministic: explicit ascending sort per collection, exact 23-key
+ *    counts, recomputable payload digest.
+ *  - Secret-safe: scans structured fields AND decoded artifact bytes for
+ *    prohibited keys/credential-like values BEFORE delivery; blocks with a
+ *    validation StorageError naming entity/collection + ID, never echoing a
+ *    matched value.
+ *  - Cancel-safe: an already-aborted signal rejects immediately without any
+ *    progress callback; abort during `scan` (or any stage) rejects with
+ *    ArchiveExportCancelledError and delivers no archive.
+ */
+export async function exportWorkbenchArchiveV2(
+  db: RSembleEvaluationDB,
+  options: ArchiveExportV2Options = {},
+): Promise<WorkbenchArchiveV2> {
+  const now = options.now ?? (() => Date.now());
+  const onProgress = options.onProgress;
+  const signal = options.signal;
+
+  // Already-aborted: reject before any read or progress callback.
+  if (signal?.aborted) throw new ArchiveExportCancelledError();
+
+  const total = ARCHIVE_V2_STAGES.length;
+  let done = 0;
+
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveExportCancelledError();
+  };
+  const emit = (stage: ArchiveExportStage) => {
+    if (onProgress) onProgress({ stage, done, total });
+  };
+  const completeStage = (stage: ArchiveExportStage) => {
+    done += 1;
+    emit(stage);
+    throwIfAborted();
+  };
+
+  try {
+    // Guard violations from read stages; a single validation StorageError is
+    // thrown after reads so exact store coverage is guaranteed.
+    const guardViolations: string[] = [];
+    // --- runs ---
+    emit("runs");
+    throwIfAborted();
+    const summaries: RunSummary[] = [];
+    await db.runSummaries.orderBy("id").each((row) => {
+      if (isRunSummary(row.summary)) summaries.push(row.summary);
+      else recordGuardFailure("runs.summaries", row.id, "runSummaries", guardViolations);
+    });
+    const details: RunRecordV2[] = [];
+    await db.runDetails.orderBy("id").each((row) => {
+      const compatible =
+        repairRunRecordForCompatibility(row.record) ??
+        (isRunRecordV2(row.record) ? row.record : null);
+      if (compatible) details.push(compatible);
+      else recordGuardFailure("runs.details", row.id, "runDetails", guardViolations);
+    });
+    completeStage("runs");
+
+    // --- rubrics ---
+    emit("rubrics");
+    throwIfAborted();
+    const identities: RubricRecord[] = [];
+    await db.profiles.orderBy("id").each((row) => {
+      if (isRubricRecord(row.record)) identities.push(row.record);
+      else recordGuardFailure("rubrics.identities", row.id, "profiles", guardViolations);
+    });
+    const versions: EvaluationRubric[] = [];
+    await db.profileVersions.orderBy("id").each((row) => {
+      if (isEvaluationRubric(row.profile)) versions.push(row.profile);
+      else recordGuardFailure("rubrics.versions", row.id, "profileVersions", guardViolations);
+    });
+    completeStage("rubrics");
+
+    // --- suites ---
+    emit("suites");
+    throwIfAborted();
+    const suites: EvaluationSuite[] = [];
+    await db.suites.orderBy("id").each((row) => {
+      if (isEvaluationSuite(row.suite)) suites.push(row.suite);
+      else recordGuardFailure("suites", row.id, "suites", guardViolations);
+    });
+    completeStage("suites");
+
+    // --- experiments ---
+    emit("experiments");
+    throwIfAborted();
+    const experiments: ExperimentRecord[] = [];
+    await db.experiments.orderBy("id").each((row) => {
+      if (isExperimentRecord(row.experiment)) experiments.push(row.experiment);
+      else recordGuardFailure("experiments", row.id, "experiments", guardViolations);
+    });
+    completeStage("experiments");
+
+    // --- fusion (seven stores, legacy v2) ---
+    emit("fusion");
+    throwIfAborted();
+    const recipes: FusionRecipeVersion[] = [];
+    const poolManifests: PoolManifestVersion[] = [];
+    const studies: FusionStudy[] = [];
+    const trials: FusionTrial[] = [];
+    const attempts: FusionAttempt[] = [];
+    const observations: EvaluationObservation[] = [];
+    const playbooks: FusionPlaybook[] = [];
+
+    const hasFusionStores = db.tables.some((t) => t.name === "fusionRecipes");
+    if (hasFusionStores) {
+      await db
+        .table<FusionRecipeRow, [string, number]>("fusionRecipes")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionRecipeVersion(row.recipe)) recipes.push(row.recipe);
+          else recordGuardFailure("fusion.recipes", row.id, "fusionRecipes", guardViolations);
+        });
+      await db
+        .table<PoolManifestRow, [string, number]>("poolManifests")
+        .orderBy("id")
+        .each((row) => {
+          if (isPoolManifestVersion(row.manifest)) poolManifests.push(row.manifest);
+          else recordGuardFailure("fusion.poolManifests", row.id, "poolManifests", guardViolations);
+        });
+      await db
+        .table<FusionStudyRow, string>("fusionStudies")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionStudy(row.study)) studies.push(row.study);
+          else recordGuardFailure("fusion.studies", row.id, "fusionStudies", guardViolations);
+        });
+      await db
+        .table<FusionTrialRow, string>("fusionTrials")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionTrial(row.trial)) trials.push(row.trial);
+          else recordGuardFailure("fusion.trials", row.id, "fusionTrials", guardViolations);
+        });
+      await db
+        .table<FusionAttemptRow, string>("fusionAttempts")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionAttempt(row.attempt)) attempts.push(row.attempt);
+          else recordGuardFailure("fusion.attempts", row.id, "fusionAttempts", guardViolations);
+        });
+      await db
+        .table<FusionObservationRow, string>("fusionObservations")
+        .orderBy("id")
+        .each((row) => {
+          if (isEvaluationObservation(row.observation)) observations.push(row.observation);
+          else
+            recordGuardFailure(
+              "fusion.observations",
+              row.id,
+              "fusionObservations",
+              guardViolations,
+            );
+        });
+      await db
+        .table<FusionPlaybookRow, string>("fusionPlaybooks")
+        .orderBy("id")
+        .each((row) => {
+          if (isFusionPlaybook(row.playbook)) playbooks.push(row.playbook);
+          else recordGuardFailure("fusion.playbooks", row.id, "fusionPlaybooks", guardViolations);
+        });
+    }
+    completeStage("fusion");
+
+    // --- tasks (every canonical collection) ---
+    emit("tasks");
+    throwIfAborted();
+    const taskRecords: TaskRecord[] = [];
+    await db.tasks.orderBy("id").each((row) => {
+      if (isTaskRecord(row.record)) taskRecords.push(row.record);
+      else recordGuardFailure("tasks.tasks", row.id, "tasks", guardViolations);
+    });
+    const taskVersions: TaskVersion[] = [];
+    await db.taskVersions.orderBy("taskId").each((row) => {
+      if (isTaskVersion(row.version_)) taskVersions.push(row.version_);
+      else
+        recordGuardFailure(
+          "tasks.taskVersions",
+          `${row.taskId}@${row.version}`,
+          "taskVersions",
+          guardViolations,
+        );
+    });
+    const taskArtifacts: TaskArtifact[] = [];
+    const artifactIdsValid = new Set<string>();
+    await db.taskArtifacts.orderBy("id").each((row) => {
+      const artifact: unknown = row;
+      if (isTaskArtifact(artifact)) {
+        taskArtifacts.push(artifact);
+        artifactIdsValid.add(artifact.id);
+      } else {
+        recordGuardFailure(
+          "tasks.taskArtifacts",
+          (row as { id?: string }).id ?? "",
+          "taskArtifacts",
+          guardViolations,
+        );
+      }
+    });
+    const taskInstances: TaskInstance[] = [];
+    await db.taskInstances.orderBy("id").each((row) => {
+      if (isTaskInstance(row.instance)) taskInstances.push(row.instance);
+      else recordGuardFailure("tasks.taskInstances", row.id, "taskInstances", guardViolations);
+    });
+    const taskFamilies: TaskFamily[] = [];
+    await db.taskFamilies.orderBy("id").each((row) => {
+      if (isTaskFamily(row.family)) taskFamilies.push(row.family);
+      else recordGuardFailure("tasks.taskFamilies", row.id, "taskFamilies", guardViolations);
+    });
+    const taskFamilyAssignments: TaskFamilyAssignment[] = [];
+    await db.taskFamilyAssignments.orderBy("id").each((row) => {
+      if (isTaskFamilyAssignment(row.assignment)) taskFamilyAssignments.push(row.assignment);
+      else
+        recordGuardFailure(
+          "tasks.taskFamilyAssignments",
+          row.id,
+          "taskFamilyAssignments",
+          guardViolations,
+        );
+    });
+    const taskFamilyRelations: TaskFamilyRelation[] = [];
+    await db.taskFamilyRelations.orderBy("id").each((row) => {
+      if (isExportableTaskFamilyRelation(row.relation)) taskFamilyRelations.push(row.relation);
+      else
+        recordGuardFailure(
+          "tasks.taskFamilyRelations",
+          row.id,
+          "taskFamilyRelations",
+          guardViolations,
+        );
+    });
+    const taskFacetAnnotations: TaskFacetAnnotation[] = [];
+    await db.taskFacetAnnotations.orderBy("id").each((row) => {
+      if (isTaskFacetAnnotation(row.annotation)) taskFacetAnnotations.push(row.annotation);
+      else
+        recordGuardFailure(
+          "tasks.taskFacetAnnotations",
+          row.id,
+          "taskFacetAnnotations",
+          guardViolations,
+        );
+    });
+    const taskRecordsById = new Map(taskRecords.map((t) => [t.id, t]));
+    const taskMigrationCrosswalks: TaskMigrationCrosswalk[] = [];
+    await db.taskMigrationCrosswalk.orderBy("legacyScopeKey").each((row) => {
+      const cw: TaskMigrationCrosswalk = {
+        legacyScopeKey: row.legacyScopeKey,
+        taskId: row.taskId,
+        taskVersion: row.taskVersion,
+      };
+      // Keep only crosswalks that reference a guard-passing canonical
+      // task/version — a dangling crosswalk is a disposable index, not a
+      // canonical entity (its removal is a reference-integrity filter, not the
+      // silent dropping of a guard-failing row).
+      const record = taskRecordsById.get(cw.taskId);
+      if (record !== undefined && cw.taskVersion <= record.latestVersion) {
+        taskMigrationCrosswalks.push(cw);
+      }
+    });
+    completeStage("tasks");
+
+    // --- task sets (records/versions/materializations/ownership crosswalks) ---
+    emit("task-sets");
+    throwIfAborted();
+    const taskSetRecords: TaskSetRecord[] = [];
+    await db.taskSets.orderBy("id").each((row) => {
+      if (isTaskSetRecord(row.record)) taskSetRecords.push(row.record);
+      else recordGuardFailure("taskSets.records", row.id, "taskSets", guardViolations);
+    });
+    const taskSetVersions: TaskSetVersion[] = [];
+    await db.taskSetVersions.orderBy("taskSetId").each((row) => {
+      if (isTaskSetVersion(row.version_)) taskSetVersions.push(row.version_);
+      else
+        recordGuardFailure(
+          "taskSets.versions",
+          `${row.taskSetId}@${row.version}`,
+          "taskSetVersions",
+          guardViolations,
+        );
+    });
+    const taskSetMaterializations: TaskSetMaterializationRecord[] = [];
+    await db.taskSetMaterializations.orderBy("id").each((row) => {
+      if (isTaskSetMaterializationRecord(row)) taskSetMaterializations.push(row);
+      else
+        recordGuardFailure(
+          "taskSets.materializations",
+          row.id,
+          "taskSetMaterializations",
+          guardViolations,
+        );
+    });
+    const taskSetOwnershipCrosswalks: TaskSetOwnershipCrosswalkRow[] = [];
+    await db.taskSetOwnershipCrosswalk.orderBy("key").each((row) => {
+      const key = (row as TaskSetOwnershipCrosswalkRow).key;
+      if (isTaskSetOwnershipCrosswalkRow(row)) taskSetOwnershipCrosswalks.push(row);
+      else
+        recordGuardFailure(
+          "taskSets.ownershipCrosswalks",
+          key ?? "",
+          "taskSetOwnershipCrosswalk",
+          guardViolations,
+        );
+    });
+    completeStage("task-sets");
+    // --- evidence (modelConfigurations, observations, evidenceDecisions, evidenceIndexJobs, verifierOutcomes) ---
+    emit("evidence");
+    throwIfAborted();
+    const modelConfigurations: ModelConfigurationSnapshot[] = [];
+    await db.modelConfigurations.orderBy("id").each((row) => {
+      if (isModelConfigurationSnapshot(row.snapshot)) modelConfigurations.push(row.snapshot);
+      else
+        recordGuardFailure(
+          "evidence.modelConfigurations",
+          row.id,
+          "modelConfigurations",
+          guardViolations,
+        );
+    });
+    const evidenceObservations: Observation[] = [];
+    await db.observations.orderBy("id").each((row) => {
+      if (isObservation(row.observation)) evidenceObservations.push(row.observation);
+      else recordGuardFailure("evidence.observations", row.id, "observations", guardViolations);
+    });
+    const evidenceDecisions: EligibilityDecision[] = [];
+    await db.evidenceDecisions.orderBy("id").each((row) => {
+      if (isEligibilityDecision(row.decision)) evidenceDecisions.push(row.decision);
+      else
+        recordGuardFailure(
+          "evidence.evidenceDecisions",
+          row.id,
+          "evidenceDecisions",
+          guardViolations,
+        );
+    });
+    const evidenceIndexJobs: EvidenceIndexJob[] = [];
+    await db.evidenceIndexJobs.orderBy("sourceResultId").each((row) => {
+      const job = fromJobRow(row);
+      if (isEvidenceIndexJob(job)) evidenceIndexJobs.push(job);
+      else
+        recordGuardFailure(
+          "evidence.evidenceIndexJobs",
+          row.sourceResultId,
+          "evidenceIndexJobs",
+          guardViolations,
+        );
+    });
+    const verifierOutcomes: ExecutedVerifierOutcome[] = [];
+    await db.verifierOutcomes.orderBy("id").each((row) => {
+      const outcome = fromVerifierRow(row);
+      if (isExecutedVerifierOutcome(outcome)) verifierOutcomes.push(outcome);
+      else
+        recordGuardFailure(
+          "evidence.verifierOutcomes",
+          row.id,
+          "verifierOutcomes",
+          guardViolations,
+        );
+    });
+    completeStage("evidence");
+    // --- comparisons (indexes, input snapshots, limitations) -------------------
+    emit("comparisons");
+    throwIfAborted();
+    const comparisonIndexes: ComparisonResultIndex[] = [];
+    await db.comparisonResults.orderBy("id").each((row) => {
+      if (isComparisonResultIndex(row)) comparisonIndexes.push(row);
+      else
+        recordGuardFailure(
+          "comparisons.indexes",
+          (row as { id?: string }).id ?? "",
+          "comparisonResults",
+          guardViolations,
+        );
+    });
+    // Immutable input-snapshot metadata/artifact references derived from
+    // durable state only: the binding's snapshot ref (ad-hoc), or the
+    // Task Instance id + its canonical artifact refs (canonical). Migration
+    // limitations are derived for non-resolving `migrated:` refs; the exact
+    // RunRecordV2 payload is never copied or read here.
+    const inputSnapshots: ArchiveV2ComparisonInputSnapshot[] = [];
+    const comparisonLimitations: ComparisonMigrationLimitation[] = [];
+    const instanceById = new Map(taskInstances.map((i) => [i.id, i]));
+    for (const index of comparisonIndexes) {
+      const binding = index.taskBinding;
+      if (binding.kind === "ad_hoc") {
+        const snapMatch = /^snap:sha256:([0-9a-f]{64})$/.exec(binding.inputSnapshotRef);
+        if (snapMatch) {
+          inputSnapshots.push({
+            runId: index.id,
+            kind: "input_snapshot",
+            inputRef: binding.inputSnapshotRef,
+            inputDigest: `sha256:${snapMatch[1]}`,
+            artifactRefs: [],
+            limitation: null,
+          });
+        } else {
+          // Non-resolving migration-era ref: explicit limitation.
+          inputSnapshots.push({
+            runId: index.id,
+            kind: "input_snapshot",
+            inputRef: binding.inputSnapshotRef,
+            inputDigest: null,
+            artifactRefs: [],
+            limitation: "instance_input_incomplete",
+          });
+          comparisonLimitations.push({
+            runId: index.id,
+            reason: "instance_input_incomplete",
+          });
+        }
+      } else if (index.taskInstanceId !== null) {
+        const instance = instanceById.get(index.taskInstanceId);
+        inputSnapshots.push({
+          runId: index.id,
+          kind: "task_instance",
+          inputRef: index.taskInstanceId,
+          inputDigest: null,
+          artifactRefs: instance ? [...instance.normalizedInput.artifactIds].sort() : [],
+          limitation: null,
+        });
+      } else {
+        inputSnapshots.push({
+          runId: index.id,
+          kind: "task_version",
+          inputRef: `${binding.taskId}@${binding.taskVersion}`,
+          inputDigest: null,
+          artifactRefs: [],
+          limitation: null,
+        });
+      }
+    }
+    completeStage("comparisons");
+
+    // Exact store coverage: any persisted canononical row that fails its
+    // record guard blocks the whole export. Dexie `.each()` swallows a
+    // synchronous callback throw, so violations are collected during reads and
+    // converted to a single redacted validation StorageError here, before any
+    // artifact-bytes encoding. No archive is delivered.
+    if (guardViolations.length > 0) {
+      throw new StorageError("validation", guardViolations.join("; "));
+    }
+
+    // --- artifact bytes (encoded alongside the canonical task payload) ---
+    emit("artifact-bytes");
+    throwIfAborted();
+    const artifactRows = await db.taskArtifactBytes.toArray();
+    const artifactRowById = new Map(artifactRows.map((row) => [row.id, row]));
+    const taskArtifactBytes: ArchiveV2TaskArtifactBytes[] = [];
+    const blockedBytes: string[] = [];
+    for (const artifact of taskArtifacts) {
+      const row = artifactRowById.get(artifact.id);
+      if (row === undefined) {
+        throw new StorageError(
+          "validation",
+          `tasks.taskArtifacts[${artifact.id}] is missing bytes payload.`,
+        );
+      }
+      const text = new TextDecoder("utf-8", { fatal: false }).decode(row.bytes);
+      if (CREDENTIAL_LIKE_INLINE.test(text)) {
+        blockedBytes.push(
+          `tasks.taskArtifactBytes[${artifact.id}] carries credential-like material (value ${REDACTED})`,
+        );
+        continue;
+      }
+      taskArtifactBytes.push({ id: artifact.id, bytesBase64: v2BytesToBase64(row.bytes) });
+    }
+    completeStage("artifact-bytes");
+
+    // --- scan (structured fields, BEFORE finalizing counts/digest) ---
+    emit("scan");
+    throwIfAborted();
+
+    const violations: string[] = [...blockedBytes];
+    // Guard-passing entities already carry no prohibited KEY names; the
+    // pre-delivery safety net is a deep credential-VALUE scan of every
+    // structured record. Identity-key fields are skipped (they legitimately
+    // repeat entity ids). Diagnostics name entity/collection + id, never the
+    // matched value or its content.
+    const scanStructured = (label: string, id: string, entity: unknown) => {
+      if (containsCredentialMaterial(entity)) {
+        // The label is redacted too — an entity ID may itself be the smuggled
+        // secret, and diagnostics never echo matched material.
+        violations.push(
+          `${redactCredentialMaterial(`${label}[${id}]`)} contains credential-like material (value ${REDACTED})`,
+        );
+      }
+    };
+    for (const s of summaries) scanStructured("runs.summaries", s.id, s);
+    for (const d of details) scanStructured("runs.details", d.id, d);
+    for (const r of identities) scanStructured("rubrics.identities", r.id, r);
+    for (const r of versions) scanStructured("rubrics.versions", `${r.id}@${r.version}`, r);
+    for (const s of suites) scanStructured("suites", s.id, s);
+    for (const e of experiments) scanStructured("experiments", e.id, e);
+    for (const r of recipes) scanStructured("fusion.recipes", `${r.id}@${r.version}`, r);
+    for (const p of poolManifests)
+      scanStructured("fusion.poolManifests", `${p.id}@${p.version}`, p);
+    for (const s of studies) scanStructured("fusion.studies", s.id, s);
+    for (const t of trials) scanStructured("fusion.trials", t.id, t);
+    for (const a of attempts) scanStructured("fusion.attempts", a.id, a);
+    for (const o of observations) scanStructured("fusion.observations", o.id, o);
+    for (const p of playbooks) scanStructured("fusion.playbooks", p.id, p);
+    for (const t of taskRecords) scanStructured("tasks.tasks", t.id, t);
+    for (const v of taskVersions)
+      scanStructured("tasks.taskVersions", `${v.taskId}@${v.version}`, v);
+    for (const a of taskArtifacts) scanStructured("tasks.taskArtifacts", a.id, a);
+    for (const i of taskInstances) scanStructured("tasks.taskInstances", i.id, i);
+    for (const f of taskFamilies) scanStructured("tasks.taskFamilies", f.id, f);
+    for (const a of taskFamilyAssignments) scanStructured("tasks.taskFamilyAssignments", a.id, a);
+    for (const r of taskFamilyRelations) scanStructured("tasks.taskFamilyRelations", r.id, r);
+    for (const a of taskFacetAnnotations) scanStructured("tasks.taskFacetAnnotations", a.id, a);
+    for (const c of taskMigrationCrosswalks)
+      scanStructured("tasks.taskMigrationCrosswalks", c.legacyScopeKey, c);
+    for (const r of taskSetRecords) scanStructured("taskSets.records", r.id, r);
+    for (const v of taskSetVersions)
+      scanStructured("taskSets.versions", `${v.taskSetId}@${v.version}`, v);
+    for (const m of taskSetMaterializations) scanStructured("taskSets.materializations", m.id, m);
+    for (const c of taskSetOwnershipCrosswalks)
+      scanStructured("taskSets.ownershipCrosswalks", c.key, c);
+    for (const mc of modelConfigurations) scanStructured("evidence.modelConfigurations", mc.id, mc);
+    for (const obs of evidenceObservations) scanStructured("evidence.observations", obs.id, obs);
+    for (const d of evidenceDecisions)
+      scanStructured("evidence.evidenceDecisions", `${d.observationId}#${d.ruleVersion}`, d);
+    for (const j of evidenceIndexJobs)
+      scanStructured("evidence.evidenceIndexJobs", j.sourceResultId, j);
+    for (const vo of verifierOutcomes)
+      scanStructured("evidence.verifierOutcomes", verifierOutcomeKey(vo), vo);
+    for (const index of comparisonIndexes) scanStructured("comparisons.indexes", index.id, index);
+    for (const snap of inputSnapshots)
+      scanStructured("comparisons.inputSnapshots", snap.runId, snap);
+    for (const limitation of comparisonLimitations)
+      scanStructured("comparisons.limitations", limitation.runId, limitation);
+
+    completeStage("scan");
+
+    if (violations.length > 0) {
+      throw new StorageError(
+        "validation",
+        `Export blocked: prohibited credential/auth material found. ${violations.join("; ")}`,
+      );
+    }
+
+    // --- finalize ---
+    emit("finalize");
+
+    const archive: WorkbenchArchiveV2 = {
+      manifest: {
+        formatVersion: ARCHIVE_V2_FORMAT_VERSION,
+        storageVersion: ARCHIVE_V2_STORAGE_VERSION,
+        exportedAt: now(),
+        producer: "rsemble-ai",
+        counts: {
+          runSummaries: summaries.length,
+          runDetails: details.length,
+          rubricIdentities: identities.length,
+          rubricVersions: versions.length,
+          suites: suites.length,
+          experiments: experiments.length,
+          fusionRecipes: recipes.length,
+          poolManifests: poolManifests.length,
+          fusionStudies: studies.length,
+          fusionTrials: trials.length,
+          fusionAttempts: attempts.length,
+          fusionObservations: observations.length,
+          fusionPlaybooks: playbooks.length,
+          tasks: taskRecords.length,
+          taskVersions: taskVersions.length,
+          taskArtifacts: taskArtifacts.length,
+          taskArtifactBytes: taskArtifactBytes.length,
+          taskInstances: taskInstances.length,
+          taskFamilies: taskFamilies.length,
+          taskFamilyAssignments: taskFamilyAssignments.length,
+          taskFamilyRelations: taskFamilyRelations.length,
+          taskFacetAnnotations: taskFacetAnnotations.length,
+          taskMigrationCrosswalks: taskMigrationCrosswalks.length,
+          taskSets: taskSetRecords.length,
+          taskSetVersions: taskSetVersions.length,
+          taskSetMaterializations: taskSetMaterializations.length,
+          taskSetOwnershipCrosswalks: taskSetOwnershipCrosswalks.length,
+          modelConfigurations: modelConfigurations.length,
+          observations: evidenceObservations.length,
+          evidenceDecisions: evidenceDecisions.length,
+          evidenceIndexJobs: evidenceIndexJobs.length,
+          verifierOutcomes: verifierOutcomes.length,
+          comparisonIndexes: comparisonIndexes.length,
+          comparisonInputSnapshots: inputSnapshots.length,
+          comparisonLimitations: comparisonLimitations.length,
+        },
+        payloadDigest: "",
+        disclosure: { scope: "local", notes: ARCHIVE_V2_DISCLOSURE_NOTES },
+      },
+      runs: {
+        summaries: v2SortById(summaries),
+        details: v2SortById(details),
+      },
+      rubrics: {
+        identities: v2SortById(identities),
+        versions: v2SortByIdVersion(versions),
+      },
+      suites: v2SortById(suites),
+      experiments: v2SortById(experiments),
+      fusion: {
+        recipes: v2SortByIdVersion(recipes),
+        poolManifests: v2SortByIdVersion(poolManifests),
+        studies: v2SortById(studies),
+        trials: v2SortById(trials),
+        attempts: v2SortById(attempts),
+        observations: v2SortById(observations),
+        playbooks: v2SortById(playbooks),
+      },
+      tasks: {
+        tasks: v2SortById(taskRecords),
+        taskVersions: v2SortByTaskIdVersion(taskVersions),
+        taskArtifacts: v2SortById(taskArtifacts),
+        taskArtifactBytes: v2SortById(taskArtifactBytes),
+        taskInstances: v2SortById(taskInstances),
+        taskFamilies: v2SortById(taskFamilies),
+        taskFamilyAssignments: v2SortById(taskFamilyAssignments),
+        taskFamilyRelations: v2SortById(taskFamilyRelations),
+        taskFacetAnnotations: v2SortById(taskFacetAnnotations),
+        taskMigrationCrosswalks: v2SortByLegacyScopeKey(taskMigrationCrosswalks),
+      },
+      taskSets: {
+        records: v2SortById(taskSetRecords),
+        versions: v2SortByTaskSetIdVersion(taskSetVersions),
+        materializations: v2SortById(taskSetMaterializations),
+        ownershipCrosswalks: v2SortByKey(taskSetOwnershipCrosswalks),
+      },
+      evidence: {
+        modelConfigurations: v2SortById(modelConfigurations),
+        observations: v2SortById(evidenceObservations),
+        evidenceDecisions: v2SortByObservationIdRuleVersion(evidenceDecisions),
+        evidenceIndexJobs: v2SortBySourceResultId(evidenceIndexJobs),
+        verifierOutcomes: v2SortByVerifierOutcomeKey(verifierOutcomes),
+      },
+      comparisons: {
+        indexes: v2SortById(comparisonIndexes),
+        inputSnapshots: v2SortByRunId(inputSnapshots),
+        limitations: v2SortByRunId(comparisonLimitations),
+      },
+    };
+    // Digest is computed over the final payload (collections only — the
+    // manifest carries the digest itself).
+    archive.manifest.payloadDigest = computeArchiveV2PayloadDigest(archive);
+
+    completeStage("finalize");
+    return archive;
+  } catch (err) {
+    if (err instanceof ArchiveExportCancelledError) throw err;
+    if (err instanceof StorageError) throw err;
+    throw classifyStorageError(err);
+  }
+}
+
+export const ARCHIVE_V3_STAGES = [
+  "runs",
+  "rubrics",
+  "suites",
+  "experiments",
+  "tasks",
+  "taskSets",
+  "evidence",
+  "comparisons",
+  "lab",
+  "scan",
+  "seal",
+] as const;
+
+export type ArchiveExportV3Stage = (typeof ARCHIVE_V3_STAGES)[number];
+
+export interface ArchiveExportV3Progress {
+  stage: ArchiveExportV3Stage;
+  done: number;
+  total: number;
+}
+
+export interface ArchiveExportV3Options {
+  now?: number | (() => number);
+  signal?: AbortSignal;
+  onProgress?: (progress: ArchiveExportV3Progress) => void;
+}
+
+/**
+ * Export the complete canonical workbench as a v3 envelope (REV-1 / REV-2).
+ */
+export async function exportWorkbenchArchiveV3(
+  db: RSembleEvaluationDB,
+  options: ArchiveExportV3Options = {},
+): Promise<WorkbenchArchiveV3> {
+  const nowTimestamp =
+    typeof options.now === "function"
+      ? options.now()
+      : typeof options.now === "number"
+        ? options.now
+        : Date.now();
+  const onProgress = options.onProgress;
+  const signal = options.signal;
+
+  if (signal?.aborted) throw new ArchiveExportCancelledError();
+
+  const total = ARCHIVE_V3_STAGES.length;
+  let done = 0;
+
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveExportCancelledError();
+  };
+  const emit = (stage: ArchiveExportV3Stage) => {
+    if (onProgress) onProgress({ stage, done, total });
+  };
+  const completeStage = (stage: ArchiveExportV3Stage) => {
+    done += 1;
+    emit(stage);
+    throwIfAborted();
+  };
+
+  db.assertWritable();
+
+  try {
+    const guardViolations: string[] = [];
+
+    // --- runs ---
+    emit("runs");
+    throwIfAborted();
+    const summaries: RunSummary[] = [];
+    await db.runSummaries.orderBy("id").each((row) => {
+      if (isRunSummary(row.summary)) summaries.push(row.summary);
+      else recordGuardFailure("runs.summaries", row.id, "runSummaries", guardViolations);
+    });
+    const details: RunRecordV2[] = [];
+    await db.runDetails.orderBy("id").each((row) => {
+      const compatible =
+        repairRunRecordForCompatibility(row.record) ??
+        (isRunRecordV2(row.record) ? row.record : null);
+      if (compatible) details.push(compatible);
+      else recordGuardFailure("runs.details", row.id, "runDetails", guardViolations);
+    });
+    completeStage("runs");
+
+    // --- rubrics ---
+    emit("rubrics");
+    throwIfAborted();
+    const identities: RubricRecord[] = [];
+    await db.profiles.orderBy("id").each((row) => {
+      if (isRubricRecord(row.record)) identities.push(row.record);
+      else recordGuardFailure("rubrics.identities", row.id, "profiles", guardViolations);
+    });
+    const versions: EvaluationRubric[] = [];
+    await db.profileVersions.orderBy("id").each((row) => {
+      if (isEvaluationRubric(row.profile)) versions.push(row.profile);
+      else recordGuardFailure("rubrics.versions", row.id, "profileVersions", guardViolations);
+    });
+    completeStage("rubrics");
+
+    // --- suites ---
+    emit("suites");
+    throwIfAborted();
+    const suites: EvaluationSuite[] = [];
+    await db.suites.orderBy("id").each((row) => {
+      if (isEvaluationSuite(row.suite)) suites.push(row.suite);
+      else recordGuardFailure("suites", row.id, "suites", guardViolations);
+    });
+    completeStage("suites");
+
+    // --- experiments ---
+    emit("experiments");
+    throwIfAborted();
+    const experiments: ExperimentRecord[] = [];
+    await db.experiments.orderBy("id").each((row) => {
+      if (isExperimentRecord(row.experiment)) experiments.push(row.experiment);
+      else recordGuardFailure("experiments", row.id, "experiments", guardViolations);
+    });
+    completeStage("experiments");
+
+    // --- tasks ---
+    emit("tasks");
+    throwIfAborted();
+    const taskRecords: TaskRecord[] = [];
+    await db.tasks.orderBy("id").each((row) => {
+      if (isTaskRecord(row.record)) taskRecords.push(row.record);
+      else recordGuardFailure("tasks.tasks", row.id, "tasks", guardViolations);
+    });
+    const taskVersions: TaskVersion[] = [];
+    await db.taskVersions.orderBy("taskId").each((row) => {
+      if (isTaskVersion(row.version_)) taskVersions.push(row.version_);
+      else
+        recordGuardFailure(
+          "tasks.taskVersions",
+          `${row.taskId}@${row.version}`,
+          "taskVersions",
+          guardViolations,
+        );
+    });
+    const taskArtifacts: TaskArtifact[] = [];
+    const artifactIdsValid = new Set<string>();
+    await db.taskArtifacts.orderBy("id").each((row) => {
+      const artifact: unknown = row;
+      if (isTaskArtifact(artifact)) {
+        taskArtifacts.push(artifact);
+        artifactIdsValid.add(artifact.id);
+      } else {
+        recordGuardFailure(
+          "tasks.taskArtifacts",
+          (row as { id?: string }).id ?? "",
+          "taskArtifacts",
+          guardViolations,
+        );
+      }
+    });
+    const taskInstances: TaskInstance[] = [];
+    await db.taskInstances.orderBy("id").each((row) => {
+      if (isTaskInstance(row.instance)) taskInstances.push(row.instance);
+      else recordGuardFailure("tasks.taskInstances", row.id, "taskInstances", guardViolations);
+    });
+    const taskFamilies: TaskFamily[] = [];
+    await db.taskFamilies.orderBy("id").each((row) => {
+      if (isTaskFamily(row.family)) taskFamilies.push(row.family);
+      else recordGuardFailure("tasks.taskFamilies", row.id, "taskFamilies", guardViolations);
+    });
+    const taskFamilyAssignments: TaskFamilyAssignment[] = [];
+    await db.taskFamilyAssignments.orderBy("id").each((row) => {
+      if (isTaskFamilyAssignment(row.assignment)) taskFamilyAssignments.push(row.assignment);
+      else
+        recordGuardFailure(
+          "tasks.taskFamilyAssignments",
+          row.id,
+          "taskFamilyAssignments",
+          guardViolations,
+        );
+    });
+    const taskFamilyRelations: TaskFamilyRelation[] = [];
+    await db.taskFamilyRelations.orderBy("id").each((row) => {
+      if (isExportableTaskFamilyRelation(row.relation)) taskFamilyRelations.push(row.relation);
+      else
+        recordGuardFailure(
+          "tasks.taskFamilyRelations",
+          row.id,
+          "taskFamilyRelations",
+          guardViolations,
+        );
+    });
+    const taskFacetAnnotations: TaskFacetAnnotation[] = [];
+    await db.taskFacetAnnotations.orderBy("id").each((row) => {
+      if (isTaskFacetAnnotation(row.annotation)) taskFacetAnnotations.push(row.annotation);
+      else
+        recordGuardFailure(
+          "tasks.taskFacetAnnotations",
+          row.id,
+          "taskFacetAnnotations",
+          guardViolations,
+        );
+    });
+    const taskMigrationCrosswalks: TaskMigrationCrosswalk[] = [];
+    await db.taskMigrationCrosswalk.orderBy("legacyScopeKey").each((row) => {
+      taskMigrationCrosswalks.push({
+        legacyScopeKey: row.legacyScopeKey,
+        taskId: row.taskId,
+        taskVersion: row.taskVersion,
+      });
+    });
+
+    const taskArtifactBytes: ArchiveV3TaskArtifactBytes[] = [];
+    await db.taskArtifactBytes.orderBy("id").each((row) => {
+      if (artifactIdsValid.has(row.id)) {
+        taskArtifactBytes.push({
+          id: row.id,
+          bytesBase64: v2BytesToBase64(row.bytes),
+        });
+      }
+    });
+    completeStage("tasks");
+
+    // --- taskSets ---
+    emit("taskSets");
+    throwIfAborted();
+    const taskSetRecords: TaskSetRecord[] = [];
+    await db.taskSets.orderBy("id").each((row) => {
+      if (isTaskSetRecord(row.record)) taskSetRecords.push(row.record);
+      else recordGuardFailure("taskSets.records", row.id, "taskSets", guardViolations);
+    });
+    const taskSetVersions: TaskSetVersion[] = [];
+    await db.taskSetVersions.orderBy("taskSetId").each((row) => {
+      if (isTaskSetVersion(row.version_)) taskSetVersions.push(row.version_);
+      else
+        recordGuardFailure(
+          "taskSets.versions",
+          `${row.taskSetId}@${row.version}`,
+          "taskSetVersions",
+          guardViolations,
+        );
+    });
+    const taskSetMaterializations: TaskSetMaterializationRecord[] = [];
+    await db.taskSetMaterializations.orderBy("id").each((row) => {
+      if (isTaskSetMaterializationRecord(row)) taskSetMaterializations.push(row);
+      else
+        recordGuardFailure(
+          "taskSets.materializations",
+          row.id,
+          "taskSetMaterializations",
+          guardViolations,
+        );
+    });
+    const taskSetOwnershipCrosswalks: TaskSetOwnershipCrosswalkRow[] = [];
+    await db.taskSetOwnershipCrosswalk.orderBy("key").each((row) => {
+      if (isTaskSetOwnershipCrosswalkRow(row)) taskSetOwnershipCrosswalks.push(row);
+      else
+        recordGuardFailure(
+          "taskSets.ownershipCrosswalks",
+          (row as { key?: string })?.key ?? "",
+          "taskSetOwnershipCrosswalk",
+          guardViolations,
+        );
+    });
+    completeStage("taskSets");
+
+    // --- evidence ---
+    emit("evidence");
+    throwIfAborted();
+    const modelConfigurations: ModelConfigurationSnapshot[] = [];
+    await db.modelConfigurations.orderBy("id").each((row) => {
+      if (isModelConfigurationSnapshot(row.snapshot)) modelConfigurations.push(row.snapshot);
+      else
+        recordGuardFailure(
+          "evidence.modelConfigurations",
+          row.id,
+          "modelConfigurations",
+          guardViolations,
+        );
+    });
+    const evidenceObservations: Observation[] = [];
+    await db.observations.orderBy("id").each((row) => {
+      if (isObservation(row.observation)) evidenceObservations.push(row.observation);
+      else recordGuardFailure("evidence.observations", row.id, "observations", guardViolations);
+    });
+    const evidenceDecisions: EligibilityDecision[] = [];
+    await db.evidenceDecisions.orderBy("id").each((row) => {
+      if (isEligibilityDecision(row.decision)) evidenceDecisions.push(row.decision);
+      else
+        recordGuardFailure(
+          "evidence.evidenceDecisions",
+          row.id,
+          "evidenceDecisions",
+          guardViolations,
+        );
+    });
+    const evidenceIndexJobs: EvidenceIndexJob[] = [];
+    await db.evidenceIndexJobs.orderBy("sourceResultId").each((row) => {
+      const job = fromJobRow(row);
+      if (isEvidenceIndexJob(job)) evidenceIndexJobs.push(job);
+      else
+        recordGuardFailure(
+          "evidence.evidenceIndexJobs",
+          row.sourceResultId,
+          "evidenceIndexJobs",
+          guardViolations,
+        );
+    });
+    const verifierOutcomes: ExecutedVerifierOutcome[] = [];
+    await db.verifierOutcomes.orderBy("id").each((row) => {
+      const vo = fromVerifierRow(row);
+      if (isExecutedVerifierOutcome(vo)) verifierOutcomes.push(vo);
+      else
+        recordGuardFailure(
+          "evidence.verifierOutcomes",
+          row.id,
+          "verifierOutcomes",
+          guardViolations,
+        );
+    });
+    const modelRollupRecords: ModelRollupRecord[] = [];
+    if (db.modelRollups !== undefined) {
+      await db.modelRollups.orderBy("id").each((row) => {
+        if (isModelRollupRecord(row.record)) modelRollupRecords.push(row.record);
+        else recordGuardFailure("modelRollups.records", row.id, "modelRollups", guardViolations);
+      });
+    }
+    const modelRollupVersions: ModelRollupVersion[] = [];
+    if (db.modelRollupVersions !== undefined) {
+      await db.modelRollupVersions.orderBy("rollupId").each((row) => {
+        if (isModelRollupVersion(row.version_)) modelRollupVersions.push(row.version_);
+        else
+          recordGuardFailure(
+            "modelRollups.versions",
+            `${row.rollupId}@${row.version}`,
+            "modelRollupVersions",
+            guardViolations,
+          );
+      });
+    }
+    completeStage("evidence");
+
+    // --- comparisons ---
+    emit("comparisons");
+    throwIfAborted();
+    const comparisonIndexes: ComparisonResultIndex[] = [];
+    await db.comparisonResults.orderBy("id").each((row) => {
+      if (isComparisonResultIndex(row)) comparisonIndexes.push(row);
+      else
+        recordGuardFailure(
+          "comparisons.indexes",
+          (row as { id?: string })?.id ?? "",
+          "comparisonResults",
+          guardViolations,
+        );
+    });
+    const inputSnapshots: ArchiveV3ComparisonInputSnapshot[] = [];
+    const comparisonLimitations: ComparisonMigrationLimitation[] = [];
+    for (const index of comparisonIndexes) {
+      const binding = index.taskBinding;
+      if (binding.kind === "ad_hoc") {
+        inputSnapshots.push({
+          runId: index.id,
+          snapshotKind: "input_snapshot",
+          snapshotRef: binding.inputSnapshotRef,
+          taskId: null,
+          taskVersion: null,
+          taskInstanceId: null,
+          completeness: "partial",
+          capturedAt: index.createdAt,
+        });
+        // Migration-limitation derivation ported from v2 (spec §9): a
+        // non-resolving `migrated:` snapshot ref carries the matching
+        // explicit limitation and count.
+        if (binding.inputSnapshotRef.startsWith("migrated:")) {
+          comparisonLimitations.push({
+            runId: index.id,
+            reason: "instance_input_incomplete",
+          });
+        }
+      } else {
+        inputSnapshots.push({
+          runId: index.id,
+          snapshotKind: "task_instance",
+          snapshotRef: index.taskInstanceId ?? `${binding.taskId}@${binding.taskVersion}`,
+          taskId: binding.taskId,
+          taskVersion: binding.taskVersion,
+          taskInstanceId: index.taskInstanceId,
+          completeness: "exact",
+          capturedAt: index.createdAt,
+        });
+      }
+    }
+    completeStage("comparisons");
+
+    // --- lab (Child 06 canonical collections) ---
+    emit("lab");
+    throwIfAborted();
+    const cutoverReceipt = await getFusionToResearchLabReceipt(db);
+    if (cutoverReceipt === null) {
+      throw new StorageError(
+        "validation",
+        "Archive v3 export requires the canonical Fusion-to-Research-Lab cutover receipt.",
+      );
+    }
+    const recipeRecords: LabRecipeRecord[] = [];
+    await db.labRecipeRecords.orderBy("id").each((row) => {
+      if (isLabRecipeRecord(row.record)) recipeRecords.push(row.record);
+      else recordGuardFailure("lab.recipeRecords", row.id, "labRecipeRecords", guardViolations);
+    });
+    const recipeVersions: LabRecipeVersion[] = [];
+    await db.labRecipeVersions.orderBy("recipeId").each((row) => {
+      if (isLabRecipeVersion(row.version_)) recipeVersions.push(row.version_);
+      else
+        recordGuardFailure(
+          "lab.recipeVersions",
+          `${row.recipeId}@${row.version}`,
+          "labRecipeVersions",
+          guardViolations,
+        );
+    });
+    const poolRecords: ModelPoolRecord[] = [];
+    await db.modelPoolRecords.orderBy("id").each((row) => {
+      if (isModelPoolRecord(row.record)) poolRecords.push(row.record);
+      else recordGuardFailure("lab.poolRecords", row.id, "modelPoolRecords", guardViolations);
+    });
+    const poolVersions: ModelPoolVersion[] = [];
+    await db.modelPoolVersions.orderBy("poolId").each((row) => {
+      if (isModelPoolVersion(row.version_)) poolVersions.push(row.version_);
+      else
+        recordGuardFailure(
+          "lab.poolVersions",
+          `${row.poolId}@${row.version}`,
+          "modelPoolVersions",
+          guardViolations,
+        );
+    });
+    const studies: PolicyStudyRecord[] = [];
+    await db.studies.orderBy("id").each((row) => {
+      if (isPolicyStudyRecord(row.record)) studies.push(row.record);
+      else recordGuardFailure("lab.studies", row.id, "studies", guardViolations);
+    });
+    const trials: PolicyStudyTrial[] = [];
+    await db.studyTrials.orderBy("id").each((row) => {
+      if (isPolicyStudyTrial(row.trial)) trials.push(row.trial);
+      else recordGuardFailure("lab.trials", row.id, "studyTrials", guardViolations);
+    });
+    const attempts: StudyAttempt[] = [];
+    await db.studyAttempts.orderBy("id").each((row) => {
+      if (isStudyAttempt(row.attempt)) attempts.push(row.attempt);
+      else recordGuardFailure("lab.attempts", row.id, "studyAttempts", guardViolations);
+    });
+    const observations: PolicyStudyObservation[] = [];
+    await db.studyObservations.orderBy("id").each((row) => {
+      if (isPolicyStudyObservation(row.observation)) observations.push(row.observation);
+      else recordGuardFailure("lab.observations", row.id, "studyObservations", guardViolations);
+    });
+    const playbooks: ArchiveV3PolicyPlaybook[] = [];
+    await db.policyPlaybooks.orderBy("id").each((row) => {
+      if (isPolicyReportPayload(row.playbook))
+        playbooks.push({ id: row.id, playbook: row.playbook });
+      else recordGuardFailure("lab.playbooks", row.id, "policyPlaybooks", guardViolations);
+    });
+    completeStage("lab");
+
+    if (guardViolations.length > 0) {
+      throw new StorageError("validation", guardViolations[0]);
+    }
+
+    emit("scan");
+    throwIfAborted();
+
+    const violations: string[] = [];
+    // Scan artifact bytes for credential-like material
+    for (const ab of taskArtifactBytes) {
+      const decoded = decodeBase64Bytes(ab.bytesBase64);
+      if (decoded !== null) {
+        const text = new TextDecoder("utf-8", { fatal: false }).decode(decoded);
+        if (CREDENTIAL_LIKE_INLINE.test(text)) {
+          violations.push(
+            `${redactCredentialMaterial(`tasks.taskArtifactBytes[${ab.id}]`)} carries credential-like material (value ${REDACTED})`,
+          );
+        }
+      }
+    }
+    // Deep credential-VALUE scan of every structured record.
+    // Identity-key fields are skipped (they legitimately repeat entity ids).
+    // Diagnostics name entity/collection + id, never the matched value.
+    const scanStructured = (label: string, id: string, entity: unknown) => {
+      if (containsCredentialMaterial(entity)) {
+        // The label is redacted too — an entity ID may itself be the smuggled
+        // secret, and diagnostics never echo matched material.
+        violations.push(
+          `${redactCredentialMaterial(`${label}[${id}]`)} contains credential-like material (value ${REDACTED})`,
+        );
+      }
+    };
+    for (const s of summaries) scanStructured("runs.summaries", s.id, s);
+    for (const d of details) scanStructured("runs.details", d.id, d);
+    for (const r of identities) scanStructured("rubrics.identities", r.id, r);
+    for (const r of versions) scanStructured("rubrics.versions", `${r.id}@${r.version}`, r);
+    for (const s of suites) scanStructured("suites", s.id, s);
+    for (const e of experiments) scanStructured("experiments", e.id, e);
+    for (const t of taskRecords) scanStructured("tasks.tasks", t.id, t);
+    for (const v of taskVersions)
+      scanStructured("tasks.taskVersions", `${v.taskId}@${v.version}`, v);
+    for (const a of taskArtifacts) scanStructured("tasks.taskArtifacts", a.id, a);
+    for (const i of taskInstances) scanStructured("tasks.taskInstances", i.id, i);
+    for (const f of taskFamilies) scanStructured("tasks.taskFamilies", f.id, f);
+    for (const a of taskFamilyAssignments) scanStructured("tasks.taskFamilyAssignments", a.id, a);
+    for (const r of taskFamilyRelations) scanStructured("tasks.taskFamilyRelations", r.id, r);
+    for (const a of taskFacetAnnotations) scanStructured("tasks.taskFacetAnnotations", a.id, a);
+    for (const c of taskMigrationCrosswalks)
+      scanStructured("tasks.taskMigrationCrosswalks", c.legacyScopeKey, c);
+    for (const r of taskSetRecords) scanStructured("taskSets.records", r.id, r);
+    for (const v of taskSetVersions)
+      scanStructured("taskSets.versions", `${v.taskSetId}@${v.version}`, v);
+    for (const m of taskSetMaterializations) scanStructured("taskSets.materializations", m.id, m);
+    for (const c of taskSetOwnershipCrosswalks)
+      scanStructured("taskSets.ownershipCrosswalks", c.key, c);
+    for (const mc of modelConfigurations) scanStructured("evidence.modelConfigurations", mc.id, mc);
+    for (const obs of evidenceObservations) scanStructured("evidence.observations", obs.id, obs);
+    for (const d of evidenceDecisions)
+      scanStructured("evidence.evidenceDecisions", `${d.observationId}#${d.ruleVersion}`, d);
+    for (const j of evidenceIndexJobs)
+      scanStructured("evidence.evidenceIndexJobs", j.sourceResultId, j);
+    for (const vo of verifierOutcomes)
+      scanStructured("evidence.verifierOutcomes", verifierOutcomeKey(vo), vo);
+    for (const index of comparisonIndexes) scanStructured("comparisons.indexes", index.id, index);
+    for (const snap of inputSnapshots)
+      scanStructured("comparisons.inputSnapshots", snap.runId, snap);
+    for (const limitation of comparisonLimitations)
+      scanStructured("comparisons.limitations", limitation.runId, limitation);
+    // Lab collections (Child 06)
+    for (const r of recipeRecords) scanStructured("lab.recipeRecords", r.id, r);
+    for (const v of recipeVersions)
+      scanStructured("lab.recipeVersions", `${v.recipeId}@${v.version}`, v);
+    for (const p of poolRecords) scanStructured("lab.poolRecords", p.id, p);
+    for (const v of poolVersions) scanStructured("lab.poolVersions", `${v.poolId}@${v.version}`, v);
+    for (const s of studies) scanStructured("lab.studies", s.id, s);
+    for (const t of trials) scanStructured("lab.trials", t.id, t);
+    for (const a of attempts) scanStructured("lab.attempts", a.id, a);
+    for (const o of observations) scanStructured("lab.observations", o.id, o);
+    for (const p of playbooks) scanStructured("lab.playbooks", p.id, p);
+    // Model Rollup definitions (Child 07)
+    for (const r of modelRollupRecords) scanStructured("modelRollups.records", r.id, r);
+    for (const v of modelRollupVersions)
+      scanStructured("modelRollups.versions", `${v.rollupId}@${v.version}`, v);
+
+    if (violations.length > 0) {
+      throw new StorageError(
+        "validation",
+        `Export blocked: prohibited credential/auth material found. ${violations.join("; ")}`,
+      );
+    }
+
+    completeStage("scan");
+
+    emit("seal");
+    throwIfAborted();
+
+    const counts: ArchiveV3EntityCounts = {
+      runSummaries: summaries.length,
+      runDetails: details.length,
+      rubricIdentities: identities.length,
+      rubricVersions: versions.length,
+      suites: suites.length,
+      experiments: experiments.length,
+      tasks: taskRecords.length,
+      taskVersions: taskVersions.length,
+      taskArtifacts: taskArtifacts.length,
+      taskArtifactBytes: taskArtifactBytes.length,
+      taskInstances: taskInstances.length,
+      taskFamilies: taskFamilies.length,
+      taskFamilyAssignments: taskFamilyAssignments.length,
+      taskFamilyRelations: taskFamilyRelations.length,
+      taskFacetAnnotations: taskFacetAnnotations.length,
+      taskMigrationCrosswalks: taskMigrationCrosswalks.length,
+      taskSetRecords: taskSetRecords.length,
+      taskSetVersions: taskSetVersions.length,
+      taskSetMaterializations: taskSetMaterializations.length,
+      taskSetOwnershipCrosswalks: taskSetOwnershipCrosswalks.length,
+      modelConfigurations: modelConfigurations.length,
+      evidenceObservations: evidenceObservations.length,
+      evidenceDecisions: evidenceDecisions.length,
+      evidenceIndexJobs: evidenceIndexJobs.length,
+      verifierOutcomes: verifierOutcomes.length,
+      comparisonIndexes: comparisonIndexes.length,
+      comparisonInputSnapshots: inputSnapshots.length,
+      comparisonLimitations: comparisonLimitations.length,
+      labRecipeRecords: recipeRecords.length,
+      labRecipeVersions: recipeVersions.length,
+      modelPoolRecords: poolRecords.length,
+      modelPoolVersions: poolVersions.length,
+      studies: studies.length,
+      studyTrials: trials.length,
+      studyAttempts: attempts.length,
+      studyObservations: observations.length,
+      policyPlaybooks: playbooks.length,
+      fusionToResearchLabReceipts: 1,
+      modelRollups: modelRollupRecords.length,
+      modelRollupVersions: modelRollupVersions.length,
+    };
+
+    const archive: WorkbenchArchiveV3 = {
+      manifest: {
+        formatVersion: ARCHIVE_V3_FORMAT_VERSION,
+        storageVersion: ARCHIVE_V3_STORAGE_VERSION,
+        exportedAt: nowTimestamp,
+        producer: "rsemble-ai",
+        appVersion: "0.1.0",
+        counts,
+        payloadDigest: "",
+        contentDigests: {},
+        observationRuleVersions: [EVIDENCE_RULE_VERSION],
+        aggregationRuleVersions: [QUERY_AGGREGATION_RULE_VERSION],
+        uncertaintyRuleVersions: [QUERY_UNCERTAINTY_RULE_VERSION],
+        localScopeNotice:
+          "Local workbench export. No remote transport metadata. Credentials excluded.",
+        disclosure: { scope: "local", notes: ARCHIVE_V2_DISCLOSURE_NOTES },
+      },
+      runs: {
+        summaries: v2SortById(summaries),
+        details: v2SortById(details),
+      },
+      rubrics: {
+        identities: v2SortById(identities),
+        versions: v2SortByIdVersion(versions),
+      },
+      suites: v2SortById(suites),
+      experiments: v2SortById(experiments),
+      tasks: {
+        tasks: v2SortById(taskRecords),
+        taskVersions: v2SortByTaskIdVersion(taskVersions),
+        taskArtifacts: v2SortById(taskArtifacts),
+        taskArtifactBytes: v2SortById(taskArtifactBytes),
+        taskInstances: v2SortById(taskInstances),
+        taskFamilies: v2SortById(taskFamilies),
+        taskFamilyAssignments: v2SortById(taskFamilyAssignments),
+        taskFamilyRelations: v2SortById(taskFamilyRelations),
+        taskFacetAnnotations: v2SortById(taskFacetAnnotations),
+        taskMigrationCrosswalks: v2SortByLegacyScopeKey(taskMigrationCrosswalks),
+      },
+      taskSets: {
+        records: v2SortById(taskSetRecords),
+        versions: v2SortByTaskSetIdVersion(taskSetVersions),
+        materializations: v2SortById(taskSetMaterializations),
+        ownershipCrosswalks: v2SortByKey(taskSetOwnershipCrosswalks),
+      },
+      evidence: {
+        modelConfigurations: v2SortById(modelConfigurations),
+        observations: v2SortById(evidenceObservations),
+        evidenceDecisions: v2SortByObservationIdRuleVersion(evidenceDecisions),
+        evidenceIndexJobs: v2SortBySourceResultId(evidenceIndexJobs),
+        verifierOutcomes: v2SortByVerifierOutcomeKey(verifierOutcomes),
+      },
+      comparisons: {
+        indexes: v2SortById(comparisonIndexes),
+        inputSnapshots: v2SortByRunId(inputSnapshots),
+        limitations: v2SortByRunId(comparisonLimitations),
+      },
+      lab: {
+        recipeRecords: v2SortById(recipeRecords),
+        recipeVersions: v3SortByRecipeIdVersion(recipeVersions),
+        poolRecords: v2SortById(poolRecords),
+        poolVersions: v3SortByPoolIdVersion(poolVersions),
+        studies: v2SortById(studies),
+        trials: v2SortById(trials),
+        attempts: v2SortById(attempts),
+        observations: v2SortById(observations),
+        playbooks: v2SortById(playbooks),
+        cutoverReceipt,
+      },
+      modelRollups: {
+        records: v2SortById(modelRollupRecords),
+        versions: [...modelRollupVersions].sort((a, b) =>
+          a.rollupId === b.rollupId ? a.version - b.version : a.rollupId.localeCompare(b.rollupId),
+        ),
+      },
+    };
+
+    archive.manifest.payloadDigest = computeArchiveV3PayloadDigest(archive);
+    archive.manifest.contentDigests = computeArchiveV3ContentDigests(archive);
+
+    const validation = validateArchiveV3(JSON.parse(JSON.stringify(archive)));
+    if (!validation.valid) {
+      throw new StorageError(
+        "validation",
+        `Archive v3 export validation failed: ${validation.errors[0]?.message ?? ""}`,
+      );
+    }
+
+    completeStage("seal");
+    return archive;
+  } catch (err) {
+    if (err instanceof ArchiveExportCancelledError) throw err;
+    if (err instanceof StorageError) throw err;
+    throw classifyStorageError(err);
+  }
+}
+
+// =============================================================================
+// Archive v2 import adapter (Child 02 Task 10C)
+//
+// Preview-first, collision-safe, cancellation-safe, atomic import for both
+// archive formats:
+//
+//  - `previewWorkbenchArchive` classifies EVERY importable entity
+//    (create/reuse/collision/invalid) against the current database with
+//    deterministic, sorted output. It never writes. Validation runs over the
+//    complete v2 payload — manifest counts, payload digest, references,
+//    prohibited content, and artifact bytes — before the preview classifies
+//    anything. Corrupt/guard-failing entities and digest-mismatched artifact
+//    bytes are reported as `invalid` preview rows (never committed) instead of
+//    aborting the read-only preview. Artifact bytes are decoded once during
+//    preview and carried into the commit so and digest re-verification happens
+//    against the exact bytes that were previewed.
+//
+//  - `commitPreviewWorkbenchArchiveV2` commit a v2 preview meter-by-meter in
+//    ONE Dexie transaction spanning every touched store. Canonically identical
+//    records are reused; ANY non-identical ID collision aborts the commit
+//    BEFORE the transaction opens (no remap, no overwrite before Child 09);
+//    any injected failure/quota/cancellation rolls the whole commit back —
+//    source and target stay unchanged. Artifact bytes are re-hashed at commit
+//    and written only for newly created artifacts; reused artifact IDs assert
+//    byte-identical existing payloads (byte equality guards reuse per §3.3).
+//
+//  - `importWorkbenchArchiveAuto` dispatches a decoded JSON value through the
+//    v1 adapter (preserved verbatim) or the v2 adapter behind the complete
+//    payload validator. This is the single-shot path used by legacy callers;
+//    interactive UI composes preview + confirm explicitly.
+// =============================================================================
+
+/** Stable identity of one previewed entity across both formats. */
+export interface ArchivePreviewEntity {
+  /** Top-level collection label (e.g. "suites", "runs.details",
+   *  "tasks.taskVersions") or the schemaVersion-1 label for the legacy shape:
+   *  v1 "profiles" groups are surfaced as their v2 names. */
+  collection: string;
+  /** Deterministic per-collection key (id, or id@version composite). */
+  key: string;
+}
+
+/** A non-identical same-ID record reported during preview. */
+export interface ArchivePreviewCollision extends ArchivePreviewEntity {
+  /** Explanatory classification only — record CONTENT is never echoed. */
+  reason: "content-differs" | "artifact-bytes-differ";
+}
+
+/** An entity that failed its record guard, or artifact bytes whose decoded
+ *  digest no longer matches their summary. Never committed. */
+export interface ArchivePreviewInvalid extends ArchivePreviewEntity {
+  reason: "guard" | "artifact-digest" | "artifact-missing-bytes" | "prohibited-content";
+}
+
+/** Deterministic per-collection preview counts, sorted by collection name. */
+export interface ArchivePreviewCollectionCount {
+  collection: string;
+  total: number;
+  create: number;
+  reuse: number;
+  collision: number;
+  invalid: number;
+}
+
+/** Decoded artifact bytes materialized during preview; commit re-verifies the
+ *  digest against the artifact summary before writing. */
+export interface ArchivePreviewArtifactBytes {
+  id: string;
+  bytes: Uint8Array;
+}
+
+/** The complete, write-free import preview consumed by confirmation UI and
+ *  the atomic commit. */
+export type ArchivePreviewFormat = "v1" | "v2" | "v3" | "unsupported_fusion_archive_shape";
+
+/** The complete, write-free import preview consumed by confirmation UI and
+ *  the atomic commit. */
+export interface ArchivePreviewPlannedRemap {
+  collection: string;
+  key: string;
+}
+
+export interface ArchiveImportPreview {
+  format: ArchivePreviewFormat;
+  /** Human-facing source label (file name or adapter tag); sanitized — never
+   *  archive content. */
+  sourceLabel: string;
+  /** v3 only: colliding entities the phased importer will remap to fresh
+   *  local IDs on confirmation. Empty for v1/v2 (they still abort). */
+  plannedRemaps: ArchivePreviewPlannedRemap[];
+  totalEntities: number;
+  counts: ArchivePreviewCollectionCount[];
+  create: ArchivePreviewEntity[];
+  reuse: ArchivePreviewEntity[];
+  collisions: ArchivePreviewCollision[];
+  invalid: ArchivePreviewInvalid[];
+  artifactBytes: ArchivePreviewArtifactBytes[];
+  /** The validated, decoded payload the commit consumes. Internal: not part of
+   *  the observable preview counts and never rendered. */
+  payload: unknown;
+  unsupportedReceipt?: ArchiveUnsupportedFusionReceipt;
+}
+
+/** Options for the preview stage. */
+export interface ArchiveImportPreviewOptions {
+  /** Label reported back on the preview (file name, adapter tag). */
+  sourceLabel?: string;
+  /** Abort during the preview scan; the preview is read-only so cancellation
+   *  is naturally immediate. */
+  signal?: AbortSignal;
+}
+
+/** Outcome of an atomic v2 commit. `created`/`reused` carry preview keys;
+ *  `skipped` reports commit-pass no-ops (a record re-seeded to the same value
+ *  by a racing writer). */
+export interface ArchiveImportCommitResult {
+  created: string[];
+  reused: string[];
+  skipped: string[];
+  collisions: string[];
+}
+
+/** Options for the commit stage. */
+export interface ArchiveImportCommitOptions {
+  signal?: AbortSignal;
+}
+
+// =============================================================================
+// Collision-safe phased import v3 (Child 10 review repair):
+//
+// Preflight ALL collisions against the live database (fixpoint over the
+// transformed graph), build a collection-qualified crosswalk, transform an
+// immutable deep clone of the archive (outer keys, embedded ids, composite
+// version keys and every typed reference edge), validate the transformed
+// graph, then commit in bounded atomic phases over a durable storageMeta
+// journal with per-phase verification, classified failures, resume support,
+// and a disposable search rebuild after the canonical commit.
+// =============================================================================
+
+/** Maps an original archive ID to its new local ID after collision remapping. */
+export interface ImportCrosswalkEntry {
+  /** The ID (or id@version composite key) as it appeared in the archive. */
+  archiveId: string;
+  /** The new ID assigned in the local database. */
+  localId: string;
+  /** Collection namespace the entity belongs to (e.g. "tasks.tasks"). */
+  collection: string;
+}
+
+/** storageMeta key of THE active v3 import journal (one slot per database). */
+export const IMPORT_JOURNAL_KEY = "archive-import:v3:journal";
+
+/** Durable journal for a phased v3 import. A phase is marked completed only
+ *  after its transaction committed AND its writes were verified; resume skips
+ *  completed phases without replaying them. */
+export interface ImportJournalRecord {
+  kind: "archive-import-journal-v3";
+  importId: string;
+  startedAt: number;
+  updatedAt: number;
+  /** payloadDigest of the ORIGINAL incoming archive. */
+  archiveDigest: string;
+  /** Immutable canonical payload that initiated this session (resume source). */
+  archivePayload: WorkbenchArchiveV3;
+  /** Preflight-transformed payload consumed by unfinished phases. */
+  transformedPayload: WorkbenchArchiveV3 | null;
+  /** Persisted collection-qualified crosswalk (`namespace\0archiveId`). */
+  crosswalk: Record<string, string>;
+  /** Ordered remap report exposed to UI/receipts. */
+  remapped: ImportCrosswalkEntry[];
+  /** Derived-key fallback mapping (`collection\0archiveKey`). */
+  fallbackKeys: Record<string, string>;
+  phaseState: Record<string, "pending" | "in_progress" | "completed" | "failed">;
+  verificationReceipt: {
+    verifiedAt: number;
+    createdCount: number;
+    reusedCount: number;
+    remappedCount: number;
+  } | null;
+  /** Classified failure from the most recent attempt (redacted message). */
+  lastError?: { kind: string; message: string };
+  searchRebuilt?: boolean;
+}
+
+/** Ordered import phases for v3. Each phase is one Dexie transaction. */
+export const IMPORT_V3_PHASES: readonly string[] = [
+  "runs-rubrics-suites-experiments",
+  "tasks",
+  "taskSets",
+  "evidence",
+  "comparisons",
+  "lab",
+  "modelRollups",
+];
+
+/** Collections owned by each phase. */
+export const IMPORT_V3_PHASE_COLLECTIONS: Record<string, readonly string[]> = {
+  "runs-rubrics-suites-experiments": [
+    "runs.summaries",
+    "runs.details",
+    "rubrics.identities",
+    "rubrics.versions",
+    "suites",
+    "experiments",
+  ],
+  tasks: [
+    "tasks.tasks",
+    "tasks.taskVersions",
+    "tasks.taskArtifacts",
+    "tasks.taskInstances",
+    "tasks.taskFamilies",
+    "tasks.taskFamilyAssignments",
+    "tasks.taskFamilyRelations",
+    "tasks.taskFacetAnnotations",
+    "tasks.taskMigrationCrosswalks",
+  ],
+  taskSets: [
+    "taskSets.records",
+    "taskSets.versions",
+    "taskSets.materializations",
+    "taskSets.ownershipCrosswalks",
+  ],
+  evidence: [
+    "evidence.modelConfigurations",
+    "evidence.observations",
+    "evidence.evidenceDecisions",
+    "evidence.evidenceIndexJobs",
+    "evidence.verifierOutcomes",
+  ],
+  comparisons: ["comparisons.indexes"],
+  lab: [
+    "lab.recipeRecords",
+    "lab.recipeVersions",
+    "lab.poolRecords",
+    "lab.poolVersions",
+    "lab.studies",
+    "lab.trials",
+    "lab.attempts",
+    "lab.observations",
+    "lab.playbooks",
+    "lab.cutoverReceipt",
+  ],
+  modelRollups: ["modelRollups.records", "modelRollups.versions"],
+};
+
+/** Result of a phased import commit. */
+export interface PhasedImportResult {
+  importId: string;
+  created: string[];
+  reused: string[];
+  remapped: ImportCrosswalkEntry[];
+  /** Phases that failed or were skipped by cancellation (empty on success). */
+  failedPhases: string[];
+  /** Collection-qualified crosswalk:
+   *  `${collection}\u0000${archiveId}` → localId. Equal strings in unrelated
+   *  collections never cross-remap. */
+  crosswalk: Record<string, string>;
+  /** Whether the disposable search index was rebuilt after the commit. */
+  searchRebuilt: boolean;
+}
+
+/** Generate a unique import session id. */
+function generateImportId(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let id = "import-";
+  for (let i = 0; i < 12; i++) id += chars[Math.floor(Math.random() * chars.length)];
+  return id;
+}
+
+/** Single-shot auto-dispatch outcome. The v3 branch carries the phased result
+ *  (remaps instead of aborting on collisions). */
+export type ImportAutoResult =
+  | { format: "v1"; v1: ArchiveImportResult }
+  | { format: "v2"; v2: ArchiveImportCommitResult }
+  | { format: "v3"; v3: PhasedImportResult };
+/** Rejection raised when an import is cancelled before its commit begins.
+ *  Distinct from StorageError so callers can classify cancellation. */
+export class ArchiveImportCancelledError extends Error {
+  constructor() {
+    super("Import was cancelled — nothing was imported.");
+    this.name = "ArchiveImportCancelledError";
+  }
+}
+
+/** Label an entity key for counting/reporting. Entity CONTENT never crosses
+ *  this boundary — only the collection name and the deterministic key. */
+function previewKey(collection: string, key: string): ArchivePreviewEntity {
+  return { collection, key };
+}
+
+function byCollectionThenKey(
+  a: { collection: string; key: string },
+  b: { collection: string; key: string },
+): number {
+  if (a.collection !== b.collection) return a.collection < b.collection ? -1 : 1;
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+}
+
+function versionKey(id: string, version: number): string {
+  return `${id}@${version}`;
+}
+
+/** Canonical byte equality over logical ranges (mirrors task artifact reuse). */
+function bytesMatch(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+function decodeBase64Bytes(encoded: string): Uint8Array | null {
+  try {
+    const raw = atob(encoded);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+interface PreviewBucketState {
+  create: ArchivePreviewEntity[];
+  reuse: ArchivePreviewEntity[];
+  collisions: ArchivePreviewCollision[];
+  invalid: ArchivePreviewInvalid[];
+  artifactBytes: ArchivePreviewArtifactBytes[];
+}
+
+function emptyPreviewBuckets(): PreviewBucketState {
+  return { create: [], reuse: [], collisions: [], invalid: [], artifactBytes: [] };
+}
+
+/**
+ * Preview one collection of same-key records against a getter that resolves
+ * the existing persisted domain value. Returns nothing — pushes into buckets.
+ * `guarded` is pre-filtered to guard-passing records; the collection label is
+ * the v2 reporting name.
+ */
+async function previewSameKeyCollection<T>(
+  collection: string,
+  guarded: T[],
+  keyOf: (value: T) => string,
+  getExisting: (key: string) => Promise<unknown | undefined>,
+  extractExisting: (existing: unknown) => unknown,
+  buckets: PreviewBucketState,
+): Promise<void> {
+  for (const incoming of guarded) {
+    const key = keyOf(incoming);
+    const existing = await getExisting(key);
+    if (existing === undefined) {
+      buckets.create.push(previewKey(collection, key));
+    } else if (canon(extractExisting(existing)) === canon(incoming)) {
+      buckets.reuse.push(previewKey(collection, key));
+    } else {
+      buckets.collisions.push({ collection, key, reason: "content-differs" });
+    }
+  }
+}
+
+/** Sort every preview bucket and derive the deterministic per-collection
+ *  counts (alphabetical). */
+function finalizePreview(
+  format: ArchivePreviewFormat,
+  sourceLabel: string,
+  payload: unknown,
+  buckets: PreviewBucketState,
+): ArchiveImportPreview {
+  buckets.create.sort(byCollectionThenKey);
+  buckets.reuse.sort(byCollectionThenKey);
+  buckets.collisions.sort(byCollectionThenKey);
+  buckets.invalid.sort(byCollectionThenKey);
+  buckets.artifactBytes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  const byCollection = new Map<string, ArchivePreviewCollectionCount>();
+  const tally = (
+    list: ReadonlyArray<{ collection: string }>,
+    field: "create" | "reuse" | "collision" | "invalid",
+  ) => {
+    for (const entry of list) {
+      let row = byCollection.get(entry.collection);
+      if (row === undefined) {
+        row = {
+          collection: entry.collection,
+          total: 0,
+          create: 0,
+          reuse: 0,
+          collision: 0,
+          invalid: 0,
+        };
+        byCollection.set(entry.collection, row);
+      }
+      row.total += 1;
+      row[field] += 1;
+    }
+  };
+  tally(buckets.create, "create");
+  tally(buckets.reuse, "reuse");
+  tally(buckets.collisions, "collision");
+  tally(buckets.invalid, "invalid");
+  const counts = [...byCollection.values()].sort((a, b) =>
+    a.collection < b.collection ? -1 : a.collection > b.collection ? 1 : 0,
+  );
+
+  return {
+    format,
+    sourceLabel,
+    totalEntities:
+      buckets.create.length +
+      buckets.reuse.length +
+      buckets.collisions.length +
+      buckets.invalid.length,
+    counts,
+    plannedRemaps:
+      format === "v3"
+        ? buckets.collisions.map((c) => ({ collection: c.collection, key: c.key }))
+        : [],
+    create: buckets.create,
+    reuse: buckets.reuse,
+    collisions: buckets.collisions,
+    invalid: buckets.invalid,
+    artifactBytes: buckets.artifactBytes,
+    payload,
+  };
+}
+
+// --- v2 collection grouping --------------------------------------------------
+
+/** Guard a record list into (guard-passing records, invalid preview keys). */
+function partitionGuarded<T>(
+  collection: string,
+  records: readonly T[],
+  keyOf: (value: T) => string,
+  guard: (value: unknown) => boolean,
+): { guarded: T[]; invalid: ArchivePreviewInvalid[] } {
+  const guarded: T[] = [];
+  const invalid: ArchivePreviewInvalid[] = [];
+  for (const record of records) {
+    if (guard(record)) {
+      guarded.push(record);
+      continue;
+    }
+    // Corrupt entities may lack the fields a key extractor reads; a failed or
+    // empty extraction still surfaces the entity as invalid (never crashes).
+    let key = "";
+    try {
+      const extracted: unknown = keyOf(record);
+      if (typeof extracted === "string") key = extracted;
+    } catch {
+      key = "";
+    }
+    invalid.push({ collection, key, reason: "guard" });
+  }
+  return { guarded, invalid };
+}
+
+async function previewV2(
+  db: RSembleEvaluationDB,
+  archive: WorkbenchArchiveV2,
+  options: ArchiveImportPreviewOptions,
+): Promise<ArchiveImportPreview> {
+  const buckets = emptyPreviewBuckets();
+  const signal = options.signal;
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+  throwIfAborted();
+
+  // --- runs.summaries / runs.details -----------------------------------------
+  // Full summaries are committed together with their same-ID detail so a run
+  // pair appears once in the preview: they are classified inside runs.details.
+  // Only legacy summaries are classified standalone here.
+  {
+    const part = partitionGuarded(
+      "runs.summaries",
+      archive.runs.summaries,
+      (s) => s.id,
+      (v) => isRunSummary(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const legacy: LegacyRunSummary[] = [];
+    for (const s of part.guarded) {
+      if (isLegacyRunSummary(s)) legacy.push(s);
+    }
+    await previewSameKeyCollection(
+      "runs.summaries",
+      legacy,
+      (s) => s.id,
+      (k) => db.runSummaries.get(k).then((r) => (r === undefined ? undefined : r.summary)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "runs.details",
+      archive.runs.details,
+      (d) => d.id,
+      (v) => {
+        return repairRunRecordForCompatibility(v) !== null || isRunRecordV2(v);
+      },
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const fullById = new Map<string, FullRunSummaryV2>();
+    for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById.set(s.id, s);
+    for (const record of part.guarded) {
+      const compatible =
+        repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+      if (compatible === null) continue;
+      const incomingSummary = fullById.get(record.id);
+      const existingDetail = await db.runDetails.get(record.id);
+      const existingSummary =
+        incomingSummary !== undefined ? await db.runSummaries.get(record.id) : undefined;
+      // The stored row may predate the compatibility repair; compare the
+      // incoming canonical form against the stored row's repaired form so a
+      // re-imported legacy pair is reused rather than reported conflicting.
+      const existingCompatible =
+        existingDetail === undefined
+          ? null
+          : (repairRunRecordForCompatibility(existingDetail.record) ??
+            (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null));
+      const detailSame =
+        existingCompatible !== null && canon(existingCompatible) === canon(compatible);
+      const summarySame =
+        existingSummary === undefined
+          ? incomingSummary === undefined
+          : incomingSummary !== undefined &&
+            isFullRunSummaryV2(existingSummary.summary) &&
+            canon(existingSummary.summary) === canon(incomingSummary);
+      if (existingDetail === undefined && existingSummary === undefined) {
+        buckets.create.push(previewKey("runs.details", record.id));
+      } else if (detailSame && summarySame) {
+        buckets.reuse.push(previewKey("runs.details", record.id));
+      } else {
+        buckets.collisions.push({
+          collection: "runs.details",
+          key: record.id,
+          reason: "content-differs",
+        });
+      }
+    }
+  }
+
+  // --- rubrics ---------------------------------------------------------------
+  {
+    const part = partitionGuarded(
+      "rubrics.identities",
+      archive.rubrics.identities,
+      (r) => r.id,
+      (v) => isRubricRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    await previewSameKeyCollection(
+      "rubrics.identities",
+      part.guarded,
+      (r) => r.id,
+      (k) => db.profiles.get(k).then((r) => (r === undefined ? undefined : r.record)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "rubrics.versions",
+      archive.rubrics.versions,
+      (r) => versionKey(r.id, r.version),
+      (v) => isEvaluationRubric(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "rubrics.versions",
+      part.guarded,
+      (r) => versionKey(r.id, r.version),
+      (k) => {
+        const [id, v] = splitVersionKey(k);
+        return db.profileVersions
+          .get([id, v])
+          .then((r) => (r === undefined ? undefined : r.profile));
+      },
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- suites / experiments --------------------------------------------------
+  {
+    const part = partitionGuarded(
+      "suites",
+      archive.suites,
+      (s) => s.id,
+      (v) => isEvaluationSuite(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    await previewSameKeyCollection(
+      "suites",
+      part.guarded,
+      (s) => s.id,
+      (k) => db.suites.get(k).then((r) => (r === undefined ? undefined : r.suite)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "experiments",
+      archive.experiments,
+      (e) => e.id,
+      (v) => isExperimentRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "experiments",
+      part.guarded,
+      (e) => e.id,
+      (k) => db.experiments.get(k).then((r) => (r === undefined ? undefined : r.experiment)),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- fusion (seven stores) ---------------------------------------------------
+  const fusion = archive.fusion;
+  const fusionSpecs: Array<
+    [
+      string,
+      readonly unknown[],
+      (v: unknown) => boolean,
+      (v: never) => string,
+      (key: string) => Promise<unknown | undefined>,
+    ]
+  > = [
+    [
+      "fusion.recipes",
+      fusion.recipes,
+      isFusionRecipeVersion,
+      (r: FusionRecipeVersion) => versionKey(r.id, r.version),
+      async (k) => {
+        if (!db.tables.some((t) => t.name === "fusionRecipes")) return undefined;
+        const [id, v] = splitVersionKey(k);
+        const row = await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").get([id, v]);
+        return row === undefined ? undefined : row.recipe;
+      },
+    ],
+    [
+      "fusion.poolManifests",
+      fusion.poolManifests,
+      isPoolManifestVersion,
+      (p: PoolManifestVersion) => versionKey(p.id, p.version),
+      async (k) => {
+        if (!db.tables.some((t) => t.name === "poolManifests")) return undefined;
+        const [id, v] = splitVersionKey(k);
+        const row = await db.table<PoolManifestRow, [string, number]>("poolManifests").get([id, v]);
+        return row === undefined ? undefined : row.manifest;
+      },
+    ],
+    [
+      "fusion.studies",
+      fusion.studies,
+      isFusionStudy,
+      (s: FusionStudy) => s.id,
+      async (k) => {
+        if (!db.tables.some((t) => t.name === "fusionStudies")) return undefined;
+        const row = await db.table<FusionStudyRow, string>("fusionStudies").get(k);
+        return row === undefined ? undefined : row.study;
+      },
+    ],
+    [
+      "fusion.trials",
+      fusion.trials,
+      isFusionTrial,
+      (t: FusionTrial) => t.id,
+      async (k) => {
+        if (!db.tables.some((t) => t.name === "fusionTrials")) return undefined;
+        const row = await db.table<FusionTrialRow, string>("fusionTrials").get(k);
+        return row === undefined ? undefined : row.trial;
+      },
+    ],
+    [
+      "fusion.attempts",
+      fusion.attempts,
+      isFusionAttempt,
+      (a: FusionAttempt) => a.id,
+      async (k) => {
+        if (!db.tables.some((t) => t.name === "fusionAttempts")) return undefined;
+        const row = await db.table<FusionAttemptRow, string>("fusionAttempts").get(k);
+        return row === undefined ? undefined : row.attempt;
+      },
+    ],
+    [
+      "fusion.observations",
+      fusion.observations,
+      isEvaluationObservation,
+      (o: EvaluationObservation) => o.id,
+      async (k) => {
+        if (!db.tables.some((t) => t.name === "fusionObservations")) return undefined;
+        const row = await db.table<FusionObservationRow, string>("fusionObservations").get(k);
+        return row === undefined ? undefined : row.observation;
+      },
+    ],
+    [
+      "fusion.playbooks",
+      fusion.playbooks,
+      isFusionPlaybook,
+      (p: FusionPlaybook) => p.id,
+      async (k) => {
+        if (!db.tables.some((t) => t.name === "fusionPlaybooks")) return undefined;
+        const row = await db.table<FusionPlaybookRow, string>("fusionPlaybooks").get(k);
+        return row === undefined ? undefined : row.playbook;
+      },
+    ],
+  ];
+  for (const [collection, records, guard, keyOf, getter] of fusionSpecs) {
+    const part = partitionGuarded(collection, records, keyOf as (v: unknown) => string, guard);
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      collection,
+      part.guarded as unknown[],
+      keyOf as (v: unknown) => string,
+      getter,
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- tasks (every canonical collection) --------------------------------------
+  const tasks = archive.tasks;
+  const taskSpecs: Array<
+    [string, readonly unknown[], (v: unknown) => boolean, (v: never) => string]
+  > = [
+    ["tasks.tasks", tasks.tasks, isTaskRecord, (t: TaskRecord) => t.id],
+    [
+      "tasks.taskVersions",
+      tasks.taskVersions,
+      isTaskVersion,
+      (v: TaskVersion) => versionKey(v.taskId, v.version),
+    ],
+    ["tasks.taskInstances", tasks.taskInstances, isTaskInstance, (i: TaskInstance) => i.id],
+    ["tasks.taskFamilies", tasks.taskFamilies, isTaskFamily, (f: TaskFamily) => f.id],
+    [
+      "tasks.taskFamilyAssignments",
+      tasks.taskFamilyAssignments,
+      isTaskFamilyAssignment,
+      (a: TaskFamilyAssignment) => a.id,
+    ],
+    [
+      "tasks.taskFamilyRelations",
+      tasks.taskFamilyRelations,
+      isExportableTaskFamilyRelation,
+      (r: TaskFamilyRelation) => r.id,
+    ],
+    [
+      "tasks.taskFacetAnnotations",
+      tasks.taskFacetAnnotations,
+      isTaskFacetAnnotation,
+      (a: TaskFacetAnnotation) => a.id,
+    ],
+  ];
+  for (const [collection, records, guard, keyOf] of taskSpecs) {
+    const part = partitionGuarded(collection, records, keyOf as (v: unknown) => string, guard);
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const getter =
+      collection === "tasks.taskVersions"
+        ? async (k: string) => {
+            const [id, v] = splitVersionKey(k);
+            const row = await db.taskVersions.get([id, v]);
+            return row === undefined ? undefined : row.version_;
+          }
+        : collection === "tasks.tasks"
+          ? async (k: string) => (await db.tasks.get(k))?.record
+          : collection === "tasks.taskInstances"
+            ? async (k: string) => (await db.taskInstances.get(k))?.instance
+            : collection === "tasks.taskFamilies"
+              ? async (k: string) => (await db.taskFamilies.get(k))?.family
+              : collection === "tasks.taskFamilyAssignments"
+                ? async (k: string) => (await db.taskFamilyAssignments.get(k))?.assignment
+                : collection === "tasks.taskFamilyRelations"
+                  ? async (k: string) => (await db.taskFamilyRelations.get(k))?.relation
+                  : async (k: string) => (await db.taskFacetAnnotations.get(k))?.annotation;
+    await previewSameKeyCollection(
+      collection,
+      part.guarded as unknown[],
+      keyOf as (v: unknown) => string,
+      getter,
+      (v) => (v === undefined ? undefined : v),
+      buckets,
+    );
+  }
+
+  // --- tasks.taskArtifacts + bytes ---------------------------------------------
+  {
+    const part = partitionGuarded(
+      "tasks.taskArtifacts",
+      tasks.taskArtifacts,
+      (a) => a.id,
+      (v) => isTaskArtifact(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const bytesById = new Map<string, ArchiveV2TaskArtifactBytes>();
+    for (const entry of tasks.taskArtifactBytes) bytesById.set(entry.id, entry);
+    for (const artifact of part.guarded) {
+      const byteEntry = bytesById.get(artifact.id);
+      let invalidReason: ArchivePreviewInvalid["reason"] | null = null;
+      let decoded: Uint8Array | null = null;
+      if (byteEntry === undefined) {
+        invalidReason = "artifact-missing-bytes";
+      } else {
+        decoded = decodeBase64Bytes(byteEntry.bytesBase64);
+        if (decoded === null) {
+          invalidReason = "artifact-digest";
+        } else {
+          const recomputed = computeArtifactDigest(decoded);
+          if (decoded.length !== artifact.byteCount || recomputed !== artifact.contentDigest) {
+            invalidReason = "artifact-digest";
+            decoded = null;
+          }
+        }
+      }
+      if (invalidReason !== null) {
+        buckets.invalid.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: invalidReason,
+        });
+        continue;
+      }
+      buckets.artifactBytes.push({ id: artifact.id, bytes: decoded! });
+      const existing = await db.taskArtifacts.get(artifact.id);
+      if (existing === undefined) {
+        buckets.create.push(previewKey("tasks.taskArtifacts", artifact.id));
+        continue;
+      }
+      const summarySame = canon(existing) === canon(artifact);
+      if (!summarySame) {
+        buckets.collisions.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: "content-differs",
+        });
+        continue;
+      }
+      const existingBytesRow = await db.taskArtifactBytes.get(artifact.id);
+      const byteSame =
+        existingBytesRow !== undefined && bytesMatch(existingBytesRow.bytes, decoded!);
+      if (byteSame) {
+        buckets.reuse.push(previewKey("tasks.taskArtifacts", artifact.id));
+      } else {
+        buckets.collisions.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: "artifact-bytes-differ",
+        });
+      }
+    }
+  }
+
+  // --- tasks.taskMigrationCrosswalks ---------------------------------------------
+  {
+    for (const cw of tasks.taskMigrationCrosswalks) {
+      throwIfAborted();
+      const key = cw.legacyScopeKey;
+      const existing = await db.taskMigrationCrosswalk.get(key);
+      if (existing === undefined) {
+        buckets.create.push(previewKey("tasks.taskMigrationCrosswalks", key));
+      } else if (existing.taskId === cw.taskId && existing.taskVersion === cw.taskVersion) {
+        buckets.reuse.push(previewKey("tasks.taskMigrationCrosswalks", key));
+      } else {
+        buckets.collisions.push({
+          collection: "tasks.taskMigrationCrosswalks",
+          key,
+          reason: "content-differs",
+        });
+      }
+    }
+  }
+
+  // --- taskSets (records/versions/materializations/ownership crosswalks) -----
+  const taskSets = archive.taskSets;
+  if (taskSets !== undefined) {
+    {
+      const part = partitionGuarded(
+        "taskSets.records",
+        taskSets.records,
+        (r) => r.id,
+        (v) => isTaskSetRecord(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "taskSets.records",
+        part.guarded,
+        (r) => r.id,
+        (k) => db.taskSets.get(k).then((r) => (r === undefined ? undefined : r.record)),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "taskSets.versions",
+        taskSets.versions,
+        (v) => versionKey(v.taskSetId, v.version),
+        (v) => isTaskSetVersion(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "taskSets.versions",
+        part.guarded,
+        (v) => versionKey(v.taskSetId, v.version),
+        (k) => {
+          const [id, v] = splitVersionKey(k);
+          return db.taskSetVersions
+            .get([id, v])
+            .then((r) => (r === undefined ? undefined : r.version_));
+        },
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "taskSets.materializations",
+        taskSets.materializations,
+        (m) => m.id,
+        (v) => isTaskSetMaterializationRecord(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "taskSets.materializations",
+        part.guarded,
+        (m) => m.id,
+        (k) => db.taskSetMaterializations.get(k),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "taskSets.ownershipCrosswalks",
+        taskSets.ownershipCrosswalks,
+        (c) => c.key,
+        (v) => isTaskSetOwnershipCrosswalkRow(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "taskSets.ownershipCrosswalks",
+        part.guarded,
+        (c) => c.key,
+        (k) => db.taskSetOwnershipCrosswalk.get(k),
+        (v) => v,
+        buckets,
+      );
+    }
+  }
+  // --- evidence (modelConfigurations, observations, evidenceDecisions, evidenceIndexJobs, verifierOutcomes) ---
+  const evidence = archive.evidence;
+  if (evidence !== undefined) {
+    {
+      const part = partitionGuarded(
+        "evidence.modelConfigurations",
+        evidence.modelConfigurations,
+        (mc) => mc.id,
+        (v) => isModelConfigurationSnapshot(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.modelConfigurations",
+        part.guarded,
+        (mc) => mc.id,
+        (k) =>
+          db.modelConfigurations.get(k).then((r) => (r === undefined ? undefined : r.snapshot)),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "evidence.observations",
+        evidence.observations,
+        (o) => o.id,
+        (v) => isObservation(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.observations",
+        part.guarded,
+        (o) => o.id,
+        (k) => db.observations.get(k).then((r) => (r === undefined ? undefined : r.observation)),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "evidence.evidenceDecisions",
+        evidence.evidenceDecisions,
+        (d) => `${d.observationId}#${d.ruleVersion}`,
+        (v) => isEligibilityDecision(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.evidenceDecisions",
+        part.guarded,
+        (d) => `${d.observationId}#${d.ruleVersion}`,
+        (k) => db.evidenceDecisions.get(k).then((r) => (r === undefined ? undefined : r.decision)),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "evidence.evidenceIndexJobs",
+        evidence.evidenceIndexJobs,
+        (j) => j.sourceResultId,
+        (v) => isEvidenceIndexJob(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.evidenceIndexJobs",
+        part.guarded,
+        (j) => j.sourceResultId,
+        (k) =>
+          db.evidenceIndexJobs.get(k).then((r) => (r === undefined ? undefined : fromJobRow(r))),
+        (v) => v,
+        buckets,
+      );
+    }
+    {
+      const part = partitionGuarded(
+        "evidence.verifierOutcomes",
+        evidence.verifierOutcomes,
+        (vo) => verifierOutcomeKey(vo),
+        (v) => isExecutedVerifierOutcome(v),
+      );
+      buckets.invalid.push(...part.invalid);
+      throwIfAborted();
+      await previewSameKeyCollection(
+        "evidence.verifierOutcomes",
+        part.guarded,
+        (vo) => verifierOutcomeKey(vo),
+        (k) =>
+          db.verifierOutcomes
+            .get(k)
+            .then((r) => (r === undefined ? undefined : fromVerifierRow(r))),
+        (v) => v,
+        buckets,
+      );
+    }
+  }
+  // --- comparisons (indexes; snapshots/limitations are envelope metadata) -----
+  const comparisons = archive.comparisons;
+  if (comparisons !== undefined) {
+    const part = partitionGuarded(
+      "comparisons.indexes",
+      comparisons.indexes,
+      (index) => index.id,
+      (v) => isComparisonResultIndex(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "comparisons.indexes",
+      part.guarded,
+      (index) => index.id,
+      (k) => db.comparisonResults.get(k),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  throwIfAborted();
+  return finalizePreview("v2", options.sourceLabel ?? "archive", archive, buckets);
+}
+
+/** True when the canonical workbench tables are empty aside from storageMeta
+ *  (which holds the fresh-install bootstrap receipt). */
+async function isPristineCanonicalWorkbench(db: RSembleEvaluationDB): Promise<boolean> {
+  const counts = await Promise.all([
+    db.runSummaries.count(),
+    db.runDetails.count(),
+    db.profiles.count(),
+    db.profileVersions.count(),
+    db.suites.count(),
+    db.experiments.count(),
+    db.tasks.count(),
+    db.taskVersions.count(),
+    db.taskArtifacts.count(),
+    db.taskArtifactBytes.count(),
+    db.taskInstances.count(),
+    db.taskFamilies.count(),
+    db.taskFamilyAssignments.count(),
+    db.taskFamilyRelations.count(),
+    db.taskFacetAnnotations.count(),
+    db.taskMigrationCrosswalk.count(),
+    db.taskSets.count(),
+    db.taskSetVersions.count(),
+    db.taskSetMaterializations.count(),
+    db.taskSetOwnershipCrosswalk.count(),
+    db.modelConfigurations.count(),
+    db.observations.count(),
+    db.evidenceDecisions.count(),
+    db.evidenceIndexJobs.count(),
+    db.verifierOutcomes.count(),
+    db.comparisonResults.count(),
+    db.labRecipeRecords.count(),
+    db.labRecipeVersions.count(),
+    db.modelPoolRecords.count(),
+    db.modelPoolVersions.count(),
+    db.studies.count(),
+    db.studyTrials.count(),
+    db.studyAttempts.count(),
+    db.studyObservations.count(),
+    db.policyPlaybooks.count(),
+    db.modelRollups?.count() ?? Promise.resolve(0),
+    db.modelRollupVersions?.count() ?? Promise.resolve(0),
+  ]);
+  return counts.every((count) => count === 0);
+}
+
+async function previewV3(
+  db: RSembleEvaluationDB,
+  archive: WorkbenchArchiveV3,
+  options: ArchiveImportPreviewOptions,
+): Promise<ArchiveImportPreview> {
+  const buckets = emptyPreviewBuckets();
+  const signal = options.signal;
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+  throwIfAborted();
+
+  // --- runs.summaries / runs.details ---
+  {
+    const part = partitionGuarded(
+      "runs.summaries",
+      archive.runs.summaries,
+      (s) => s.id,
+      (v) => isRunSummary(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const legacy: LegacyRunSummary[] = [];
+    for (const s of part.guarded) {
+      if (isLegacyRunSummary(s)) legacy.push(s);
+    }
+    await previewSameKeyCollection(
+      "runs.summaries",
+      legacy,
+      (s) => s.id,
+      (k) => db.runSummaries.get(k).then((r) => (r === undefined ? undefined : r.summary)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "runs.details",
+      archive.runs.details,
+      (d) => d.id,
+      (v) => repairRunRecordForCompatibility(v) !== null || isRunRecordV2(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    const fullById = new Map<string, FullRunSummaryV2>();
+    for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById.set(s.id, s);
+    for (const record of part.guarded) {
+      const compatible =
+        repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+      if (compatible === null) continue;
+      const incomingSummary = fullById.get(record.id);
+      const existingDetail = await db.runDetails.get(record.id);
+      const existingSummary =
+        incomingSummary !== undefined ? await db.runSummaries.get(record.id) : undefined;
+      const existingCompatible =
+        existingDetail === undefined
+          ? null
+          : (repairRunRecordForCompatibility(existingDetail.record) ??
+            (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null));
+      const detailSame =
+        existingCompatible !== null && canon(existingCompatible) === canon(compatible);
+      const summarySame =
+        existingSummary === undefined
+          ? incomingSummary === undefined
+          : incomingSummary !== undefined &&
+            isFullRunSummaryV2(existingSummary.summary) &&
+            canon(existingSummary.summary) === canon(incomingSummary);
+      if (existingDetail === undefined && existingSummary === undefined) {
+        buckets.create.push(previewKey("runs.details", record.id));
+      } else if (detailSame && summarySame) {
+        buckets.reuse.push(previewKey("runs.details", record.id));
+      } else {
+        buckets.collisions.push({
+          collection: "runs.details",
+          key: record.id,
+          reason: "content-differs",
+        });
+      }
+    }
+  }
+
+  // --- rubrics ---
+  {
+    const part = partitionGuarded(
+      "rubrics.identities",
+      archive.rubrics.identities,
+      (r) => r.id,
+      (v) => isRubricRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "rubrics.identities",
+      part.guarded,
+      (r) => r.id,
+      (k) => db.profiles.get(k).then((r) => (r === undefined ? undefined : r.record)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "rubrics.versions",
+      archive.rubrics.versions,
+      (v) => versionKey(v.id, v.version),
+      (v) => isEvaluationRubric(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "rubrics.versions",
+      part.guarded,
+      (v) => versionKey(v.id, v.version),
+      (k) => {
+        const [id, ver] = splitVersionKey(k);
+        return db.profileVersions
+          .get([id, ver])
+          .then((r) => (r === undefined ? undefined : r.profile));
+      },
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- suites ---
+  {
+    const part = partitionGuarded(
+      "suites",
+      archive.suites,
+      (s) => s.id,
+      (v) => isEvaluationSuite(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "suites",
+      part.guarded,
+      (s) => s.id,
+      (k) => db.suites.get(k).then((r) => (r === undefined ? undefined : r.suite)),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- experiments ---
+  {
+    const part = partitionGuarded(
+      "experiments",
+      archive.experiments,
+      (e) => e.id,
+      (v) => isExperimentRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "experiments",
+      part.guarded,
+      (e) => e.id,
+      (k) => db.experiments.get(k).then((r) => (r === undefined ? undefined : r.experiment)),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- tasks ---
+  {
+    const part = partitionGuarded(
+      "tasks.tasks",
+      archive.tasks.tasks,
+      (t) => t.id,
+      (v) => isTaskRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "tasks.tasks",
+      part.guarded,
+      (t) => t.id,
+      (k) => db.tasks.get(k).then((r) => (r === undefined ? undefined : r.record)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "tasks.taskVersions",
+      archive.tasks.taskVersions,
+      (v) => versionKey(v.taskId, v.version),
+      (v) => isTaskVersion(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "tasks.taskVersions",
+      part.guarded,
+      (v) => versionKey(v.taskId, v.version),
+      (k) => {
+        const [id, ver] = splitVersionKey(k);
+        return db.taskVersions
+          .get([id, ver])
+          .then((r) => (r === undefined ? undefined : r.version_));
+      },
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const bytesById = new Map(archive.tasks.taskArtifactBytes.map((b) => [b.id, b.bytesBase64]));
+    const part = partitionGuarded(
+      "tasks.taskArtifacts",
+      archive.tasks.taskArtifacts,
+      (a) => a.id,
+      (v) => isTaskArtifact(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    for (const artifact of part.guarded) {
+      const existing = await db.taskArtifacts.get(artifact.id);
+      const encoded = bytesById.get(artifact.id);
+      if (encoded === undefined) {
+        buckets.invalid.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: "artifact-missing-bytes",
+        });
+        continue;
+      }
+      const decoded = decodeBase64Bytes(encoded);
+      if (decoded === null) {
+        buckets.invalid.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: "artifact-digest",
+        });
+        continue;
+      }
+      const digest = computeArtifactDigest(decoded);
+      if (decoded.length !== artifact.byteCount || digest !== artifact.contentDigest) {
+        buckets.invalid.push({
+          collection: "tasks.taskArtifacts",
+          key: artifact.id,
+          reason: "artifact-digest",
+        });
+        continue;
+      }
+      buckets.artifactBytes.push({ id: artifact.id, bytes: decoded });
+      if (existing === undefined) {
+        buckets.create.push(previewKey("tasks.taskArtifacts", artifact.id));
+      } else {
+        const existingBytes = await db.taskArtifactBytes.get(artifact.id);
+        const metaSame = canon(existing) === canon(artifact);
+        const bytesSame = existingBytes !== undefined && bytesMatch(existingBytes.bytes, decoded);
+        if (metaSame && bytesSame) {
+          buckets.reuse.push(previewKey("tasks.taskArtifacts", artifact.id));
+        } else {
+          buckets.collisions.push({
+            collection: "tasks.taskArtifacts",
+            key: artifact.id,
+            reason: bytesSame ? "content-differs" : "artifact-bytes-differ",
+          });
+        }
+      }
+    }
+  }
+  {
+    const part = partitionGuarded(
+      "tasks.taskInstances",
+      archive.tasks.taskInstances,
+      (i) => i.id,
+      (v) => isTaskInstance(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "tasks.taskInstances",
+      part.guarded,
+      (i) => i.id,
+      (k) => db.taskInstances.get(k).then((r) => (r === undefined ? undefined : r.instance)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "tasks.taskFamilies",
+      archive.tasks.taskFamilies,
+      (f) => f.id,
+      (v) => isTaskFamily(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "tasks.taskFamilies",
+      part.guarded,
+      (f) => f.id,
+      (k) => db.taskFamilies.get(k).then((r) => (r === undefined ? undefined : r.family)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "tasks.taskFamilyAssignments",
+      archive.tasks.taskFamilyAssignments,
+      (a) => a.id,
+      (v) => isTaskFamilyAssignment(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "tasks.taskFamilyAssignments",
+      part.guarded,
+      (a) => a.id,
+      (k) =>
+        db.taskFamilyAssignments.get(k).then((r) => (r === undefined ? undefined : r.assignment)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "tasks.taskFamilyRelations",
+      archive.tasks.taskFamilyRelations,
+      (r) => r.id,
+      (v) => isExportableTaskFamilyRelation(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "tasks.taskFamilyRelations",
+      part.guarded,
+      (r) => r.id,
+      (k) => db.taskFamilyRelations.get(k).then((r) => (r === undefined ? undefined : r.relation)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "tasks.taskFacetAnnotations",
+      archive.tasks.taskFacetAnnotations,
+      (a) => a.id,
+      (v) => isTaskFacetAnnotation(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "tasks.taskFacetAnnotations",
+      part.guarded,
+      (a) => a.id,
+      (k) =>
+        db.taskFacetAnnotations.get(k).then((r) => (r === undefined ? undefined : r.annotation)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "tasks.taskMigrationCrosswalks",
+      archive.tasks.taskMigrationCrosswalks,
+      (cw) => cw.legacyScopeKey,
+      (v) => isRecord(v) && typeof v.legacyScopeKey === "string",
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "tasks.taskMigrationCrosswalks",
+      part.guarded,
+      (cw) => cw.legacyScopeKey,
+      (k) => db.taskMigrationCrosswalk.get(k),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- taskSets ---
+  {
+    const part = partitionGuarded(
+      "taskSets.records",
+      archive.taskSets.records,
+      (r) => r.id,
+      (v) => isTaskSetRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "taskSets.records",
+      part.guarded,
+      (r) => r.id,
+      (k) => db.taskSets.get(k).then((r) => (r === undefined ? undefined : r.record)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "taskSets.versions",
+      archive.taskSets.versions,
+      (v) => versionKey(v.taskSetId, v.version),
+      (v) => isTaskSetVersion(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "taskSets.versions",
+      part.guarded,
+      (v) => versionKey(v.taskSetId, v.version),
+      (k) => {
+        const [id, ver] = splitVersionKey(k);
+        return db.taskSetVersions
+          .get([id, ver])
+          .then((r) => (r === undefined ? undefined : r.version_));
+      },
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "taskSets.materializations",
+      archive.taskSets.materializations,
+      (m) => m.id,
+      (v) => isTaskSetMaterializationRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "taskSets.materializations",
+      part.guarded,
+      (m) => m.id,
+      (k) => db.taskSetMaterializations.get(k),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "taskSets.ownershipCrosswalks",
+      archive.taskSets.ownershipCrosswalks,
+      (cw) => cw.key,
+      (v) => isTaskSetOwnershipCrosswalkRow(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "taskSets.ownershipCrosswalks",
+      part.guarded,
+      (cw) => cw.key,
+      (k) => db.taskSetOwnershipCrosswalk.get(k),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- evidence ---
+  {
+    const part = partitionGuarded(
+      "evidence.modelConfigurations",
+      archive.evidence.modelConfigurations,
+      (mc) => mc.id,
+      (v) => isModelConfigurationSnapshot(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "evidence.modelConfigurations",
+      part.guarded,
+      (mc) => mc.id,
+      (k) => db.modelConfigurations.get(k).then((r) => (r === undefined ? undefined : r.snapshot)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "evidence.observations",
+      archive.evidence.observations,
+      (o) => o.id,
+      (v) => isObservation(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "evidence.observations",
+      part.guarded,
+      (o) => o.id,
+      (k) => db.observations.get(k).then((r) => (r === undefined ? undefined : r.observation)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "evidence.evidenceDecisions",
+      archive.evidence.evidenceDecisions,
+      (d) => `${d.observationId}#${d.ruleVersion}`,
+      (v) => isEligibilityDecision(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "evidence.evidenceDecisions",
+      part.guarded,
+      (d) => `${d.observationId}#${d.ruleVersion}`,
+      (k) => db.evidenceDecisions.get(k).then((r) => (r === undefined ? undefined : r.decision)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "evidence.evidenceIndexJobs",
+      archive.evidence.evidenceIndexJobs,
+      (j) => j.sourceResultId,
+      (v) => isEvidenceIndexJob(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "evidence.evidenceIndexJobs",
+      part.guarded,
+      (j) => j.sourceResultId,
+      (k) => db.evidenceIndexJobs.get(k).then((r) => (r === undefined ? undefined : fromJobRow(r))),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "evidence.verifierOutcomes",
+      archive.evidence.verifierOutcomes,
+      (vo) => verifierOutcomeKey(vo),
+      (v) => isExecutedVerifierOutcome(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "evidence.verifierOutcomes",
+      part.guarded,
+      (vo) => verifierOutcomeKey(vo),
+      (k) =>
+        db.verifierOutcomes.get(k).then((r) => (r === undefined ? undefined : fromVerifierRow(r))),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- Model Rollup definitions (absent on supported earlier v3 archives) ---
+  const rollups = archive.modelRollups ?? { records: [], versions: [] };
+  {
+    const part = partitionGuarded(
+      "modelRollups.records",
+      rollups.records,
+      (record) => record.id,
+      (value) => isModelRollupRecord(value),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "modelRollups.records",
+      part.guarded,
+      (record) => record.id,
+      (key) => db.modelRollups.get(key).then((row) => row?.record),
+      (value) => value,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "modelRollups.versions",
+      rollups.versions,
+      (version) => versionKey(version.rollupId, version.version),
+      (value) => isModelRollupVersion(value),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "modelRollups.versions",
+      part.guarded,
+      (version) => versionKey(version.rollupId, version.version),
+      (key) => {
+        const [id, version] = splitVersionKey(key);
+        return db.modelRollupVersions.get([id, version]).then((row) => row?.version_);
+      },
+      (value) => value,
+      buckets,
+    );
+  }
+
+  // --- comparisons ---
+  {
+    const part = partitionGuarded(
+      "comparisons.indexes",
+      archive.comparisons.indexes,
+      (index) => index.id,
+      (v) => isComparisonResultIndex(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "comparisons.indexes",
+      part.guarded,
+      (index) => index.id,
+      (k) => db.comparisonResults.get(k),
+      (v) => v,
+      buckets,
+    );
+  }
+
+  // --- lab (Child 06 canonical collections) ---
+  {
+    const part = partitionGuarded(
+      "lab.recipeRecords",
+      archive.lab.recipeRecords,
+      (r) => r.id,
+      (v) => isLabRecipeRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.recipeRecords",
+      part.guarded,
+      (r) => r.id,
+      (k) => db.labRecipeRecords.get(k).then((r) => (r === undefined ? undefined : r.record)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "lab.recipeVersions",
+      archive.lab.recipeVersions,
+      (rv) => versionKey(rv.recipeId, rv.version),
+      (v) => isLabRecipeVersion(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.recipeVersions",
+      part.guarded,
+      (rv) => versionKey(rv.recipeId, rv.version),
+      (k) => {
+        const [id, ver] = splitVersionKey(k);
+        return db.labRecipeVersions
+          .get([id, ver])
+          .then((r) => (r === undefined ? undefined : r.version_));
+      },
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "lab.poolRecords",
+      archive.lab.poolRecords,
+      (p) => p.id,
+      (v) => isModelPoolRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.poolRecords",
+      part.guarded,
+      (p) => p.id,
+      (k) => db.modelPoolRecords.get(k).then((r) => (r === undefined ? undefined : r.record)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "lab.poolVersions",
+      archive.lab.poolVersions,
+      (pv) => versionKey(pv.poolId, pv.version),
+      (v) => isModelPoolVersion(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.poolVersions",
+      part.guarded,
+      (pv) => versionKey(pv.poolId, pv.version),
+      (k) => {
+        const [id, ver] = splitVersionKey(k);
+        return db.modelPoolVersions
+          .get([id, ver])
+          .then((r) => (r === undefined ? undefined : r.version_));
+      },
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "lab.studies",
+      archive.lab.studies,
+      (s) => s.id,
+      (v) => isPolicyStudyRecord(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.studies",
+      part.guarded,
+      (s) => s.id,
+      (k) => db.studies.get(k).then((r) => (r === undefined ? undefined : r.record)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "lab.trials",
+      archive.lab.trials,
+      (t) => t.id,
+      (v) => isPolicyStudyTrial(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.trials",
+      part.guarded,
+      (t) => t.id,
+      (k) => db.studyTrials.get(k).then((r) => (r === undefined ? undefined : r.trial)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "lab.attempts",
+      archive.lab.attempts,
+      (a) => a.id,
+      (v) => isStudyAttempt(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.attempts",
+      part.guarded,
+      (a) => a.id,
+      (k) => db.studyAttempts.get(k).then((r) => (r === undefined ? undefined : r.attempt)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "lab.observations",
+      archive.lab.observations,
+      (o) => o.id,
+      (v) => isPolicyStudyObservation(v),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.observations",
+      part.guarded,
+      (o) => o.id,
+      (k) => db.studyObservations.get(k).then((r) => (r === undefined ? undefined : r.observation)),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    const part = partitionGuarded(
+      "lab.playbooks",
+      archive.lab.playbooks,
+      (p) => p.id,
+      (v) => isRecord(v) && typeof v.id === "string" && isPolicyReportPayload(v.playbook),
+    );
+    buckets.invalid.push(...part.invalid);
+    throwIfAborted();
+    await previewSameKeyCollection(
+      "lab.playbooks",
+      part.guarded,
+      (p) => p.id,
+      (k) =>
+        db.policyPlaybooks
+          .get(k)
+          .then((r) => (r === undefined ? undefined : { id: r.id, playbook: r.playbook })),
+      (v) => v,
+      buckets,
+    );
+  }
+  {
+    // The canonical cutover receipt is stored metadata: classify it by byte
+    // equality against storageMeta so a re-import never rewrites it.
+    throwIfAborted();
+    const existing = await db.storageMeta.get(fusionToResearchLabReceiptKey);
+    const incomingReceipt = archive.lab.cutoverReceipt;
+    if (existing === undefined) {
+      buckets.create.push(previewKey("lab.cutoverReceipt", fusionToResearchLabReceiptKey));
+    } else if (canon(existing.value) === canon(incomingReceipt)) {
+      buckets.reuse.push(previewKey("lab.cutoverReceipt", fusionToResearchLabReceiptKey));
+    } else if (
+      isZeroCorpusBootstrapReceipt(existing.value) &&
+      (await isPristineCanonicalWorkbench(db))
+    ) {
+      // Fresh production install: replace the auto-generated zero-corpus
+      // bootstrap receipt inside the later atomic commit.
+      buckets.create.push(previewKey("lab.cutoverReceipt", fusionToResearchLabReceiptKey));
+    } else {
+      buckets.collisions.push({
+        collection: "lab.cutoverReceipt",
+        key: fusionToResearchLabReceiptKey,
+        reason: "content-differs",
+      });
+    }
+  }
+
+  throwIfAborted();
+  return finalizePreview("v3", options.sourceLabel ?? "archive", archive, buckets);
+}
+
+/** Split a `<id>@<version>` composite key produced by versionKey. The ID
+ *  pattern never contains "@" so the first "@" is the separator. */
+function splitVersionKey(key: string): [string, number] {
+  const at = key.indexOf("@");
+  return [key.slice(0, at), Number(key.slice(at + 1))];
+}
+
+// --- Row mappings for the v2 commit (mirror the repository writers) -------------
+
+function taskRowFor(record: TaskRecord) {
+  return {
+    id: record.id,
+    record,
+    latestVersion: record.latestVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    archivedAt: record.archivedAt,
+    origin: record.origin,
+    revision: record.revision,
+  };
+}
+
+function taskVersionRowFor(version: TaskVersion) {
+  return {
+    taskId: version.taskId,
+    version: version.version,
+    version_: version,
+    createdAt: version.createdAt,
+  };
+}
+
+function taskInstanceRowFor(instance: TaskInstance) {
+  return {
+    id: instance.id,
+    instance,
+    taskId: instance.taskId,
+    taskVersion: instance.taskVersion,
+    inputDigest: instance.inputDigest,
+    inputCompleteness: instance.inputCompleteness,
+    createdAt: instance.createdAt,
+  };
+}
+
+function familyRowFor(family: TaskFamily) {
+  return {
+    id: family.id,
+    family,
+    parentFamilyId: family.parentFamilyId,
+    updatedAt: family.updatedAt,
+    archivedAt: family.archivedAt,
+    revision: family.revision,
+  };
+}
+
+function assignmentRowFor(assignment: TaskFamilyAssignment) {
+  return {
+    id: assignment.id,
+    assignment,
+    taskId: assignment.taskId,
+    taskVersion: assignment.taskVersion,
+    familyId: assignment.familyId,
+    isPrimary: assignment.isPrimary ? 1 : 0,
+    createdAt: assignment.createdAt,
+    revision: assignment.revision,
+    archivedAt: assignment.archivedAt,
+  };
+}
+
+function relationRowFor(relation: TaskFamilyRelation) {
+  return {
+    id: relation.id,
+    relation,
+    fromFamilyId: relation.fromFamilyId,
+    toFamilyId: relation.toFamilyId,
+    kind: relation.kind,
+    createdAt: relation.createdAt,
+  };
+}
+
+function annotationRowFor(annotation: TaskFacetAnnotation) {
+  return {
+    id: annotation.id,
+    annotation,
+    taskId: annotation.taskId,
+    taskVersion: annotation.taskVersion,
+    facetId: annotation.facetId,
+    valueId: annotation.valueId,
+    createdAt: annotation.createdAt,
+  };
+}
+
+function taskSetRecordRowFor(record: TaskSetRecord) {
+  return {
+    id: record.id,
+    record,
+    latestVersion: record.latestVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    archivedAt: record.archivedAt,
+    origin: record.origin,
+    revision: record.revision,
+  };
+}
+
+function taskSetVersionRowFor(version: TaskSetVersion) {
+  return {
+    taskSetId: version.taskSetId,
+    version: version.version,
+    version_: version,
+    createdAt: version.createdAt,
+  };
+}
+function modelConfigurationRowFor(snapshot: ModelConfigurationSnapshot): ModelConfigurationRow {
+  return {
+    id: snapshot.id,
+    snapshot,
+    providerId: snapshot.providerId,
+    requestedModel: snapshot.requestedModel,
+    resolvedVersion: snapshot.resolvedVersion,
+    observedTo: snapshot.observedTo,
+  };
+}
+
+function evidenceObservationRowFor(observation: Observation): EvidenceObservationRow {
+  return {
+    id: observation.id,
+    sourceKey: observationSourceKey(observation),
+    sourceKind: observation.sourceKind,
+    sourceResultId: observation.sourceResultId,
+    sourceTaskCellId: observation.sourceTaskCellId,
+    taskId: observation.taskId,
+    taskInstanceId: observation.taskInstanceId,
+    modelConfigurationId: observation.modelConfigurationId,
+    observedAt: observation.observedAt,
+    observation,
+  };
+}
+
+function evidenceDecisionRowFor(decision: EligibilityDecision): EvidenceDecisionRow {
+  return {
+    id: `${decision.observationId}#${decision.ruleVersion}`,
+    observationId: decision.observationId,
+    ruleVersion: decision.ruleVersion,
+    status: decision.status,
+    evidenceClass: decision.evidenceClass,
+    comparabilityCohortId: decision.comparabilityCohortId,
+    decidedAt: decision.decidedAt,
+    decision,
+  };
+}
+
+/**
+ * Preview an import before any write. Both formats route through here: the v1
+ * preview classifies identities deterministically and defers the final
+ * skip/conflict decision to the preserved v1 adapter (its conflict-tolerant
+ * semantics are unchanged); the v2 preview is the commit contract — a v2
+ * commit NEVER tolerates collisions, never remaps, never overwrites.
+ */
+export async function previewWorkbenchArchive(
+  db: RSembleEvaluationDB,
+  payload: unknown,
+  options: ArchiveImportPreviewOptions = {},
+): Promise<ArchiveImportPreview> {
+  const sourceLabel = options.sourceLabel ?? "archive";
+
+  // REV-3: Check for legacy Fusion archive shape first
+  const fusionReceipt = detectLegacyFusionArchive(payload, sourceLabel);
+  if (fusionReceipt !== null) {
+    return {
+      format: "unsupported_fusion_archive_shape",
+      sourceLabel,
+      totalEntities: 0,
+      counts: fusionReceipt.rejectedCollections.map((col) => ({
+        collection: col,
+        total: 1,
+        create: 0,
+        reuse: 0,
+        collision: 0,
+        invalid: 1,
+      })),
+      plannedRemaps: [],
+      create: [],
+      reuse: [],
+      collisions: [],
+      invalid: fusionReceipt.rejectedCollections.map((col) => ({
+        collection: col,
+        key: col,
+        reason: "guard",
+      })),
+      artifactBytes: [],
+      payload,
+      unsupportedReceipt: fusionReceipt,
+    };
+  }
+
+  if (isWorkbenchArchiveV3(payload)) {
+    let archive = payload as WorkbenchArchiveV3;
+    let check = validateArchiveV3(archive);
+    if (!check.valid) {
+      // Older v3 envelopes (pre-canonical manifest) enter only through the
+      // explicit normalization adapter; anything it cannot normalize keeps
+      // the original validation errors.
+      const legacy = normalizeLegacyArchiveV3(payload);
+      if (legacy.ok) {
+        archive = legacy.archive;
+        check = { valid: true, errors: [] };
+      }
+    }
+    if (!check.valid) {
+      const first = check.errors[0];
+      throw new StorageError(
+        "validation",
+        `The archive is invalid — nothing was imported. ${first ? `${first.field}: ${first.message}` : ""}`.trim(),
+      );
+    }
+    return previewV3(db, archive, options);
+  }
+
+  if (isWorkbenchArchiveV2(payload)) {
+    const check = validateArchiveV2(payload);
+    if (!check.valid) {
+      const first = check.errors[0];
+      throw new StorageError(
+        "validation",
+        `The archive is invalid — nothing was imported. ${first ? `${first.field}: ${first.message}` : ""}`.trim(),
+      );
+    }
+    return previewV2(db, payload, options);
+  }
+
+  const v1 = parseWorkbenchArchive(payload);
+  if (!v1.ok) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${v1.errors[0] ?? ""}`.trim(),
+    );
+  }
+  return previewV1(db, v1.archive, sourceLabel, options.signal);
+}
+
+async function previewV1(
+  db: RSembleEvaluationDB,
+  archive: WorkbenchArchiveV1,
+  sourceLabel: string,
+  signal?: AbortSignal,
+): Promise<ArchiveImportPreview> {
+  const buckets = emptyPreviewBuckets();
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+  throwIfAborted();
+
+  const fullById = new Map<string, FullRunSummaryV2>();
+  const legacy: LegacyRunSummary[] = [];
+  for (const s of archive.runs.summaries) {
+    if (isFullRunSummaryV2(s)) fullById.set(s.id, s);
+    else if (isLegacyRunSummary(s)) legacy.push(s);
+  }
+  for (const record of archive.runs.details) {
+    throwIfAborted();
+    const compatible =
+      repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+    if (compatible === null) {
+      buckets.invalid.push({ collection: "runs.details", key: record.id, reason: "guard" });
+      continue;
+    }
+    const existingDetail = await db.runDetails.get(record.id);
+    const incomingSummary = fullById.get(record.id);
+    const existingSummary =
+      incomingSummary !== undefined ? await db.runSummaries.get(record.id) : undefined;
+    const existingCompatible =
+      existingDetail === undefined
+        ? null
+        : (repairRunRecordForCompatibility(existingDetail.record) ??
+          (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null));
+    const detailSame =
+      existingCompatible !== null && canon(existingCompatible) === canon(compatible);
+    const summarySame =
+      existingSummary === undefined
+        ? incomingSummary === undefined
+        : incomingSummary !== undefined &&
+          isFullRunSummaryV2(existingSummary.summary) &&
+          canon(existingSummary.summary) === canon(incomingSummary);
+    if (existingDetail === undefined && existingSummary === undefined) {
+      buckets.create.push(previewKey("runs.details", record.id));
+    } else if (detailSame && summarySame) {
+      buckets.reuse.push(previewKey("runs.details", record.id));
+    } else {
+      buckets.collisions.push({
+        collection: "runs.details",
+        key: record.id,
+        reason: "content-differs",
+      });
+    }
+  }
+  for (const s of legacy) {
+    throwIfAborted();
+    const existing = await db.runSummaries.get(s.id);
+    if (existing === undefined) {
+      buckets.create.push(previewKey("runs.summaries", s.id));
+    } else if (canon(existing.summary) === canon(s)) {
+      buckets.reuse.push(previewKey("runs.summaries", s.id));
+    } else {
+      buckets.collisions.push({
+        collection: "runs.summaries",
+        key: s.id,
+        reason: "content-differs",
+      });
+    }
+  }
+  for (const r of archive.profiles.identities) {
+    throwIfAborted();
+    const existing = await db.profiles.get(r.id);
+    if (existing === undefined) buckets.create.push(previewKey("rubrics.identities", r.id));
+    else if (canon(existing.record) === canon(r))
+      buckets.reuse.push(previewKey("rubrics.identities", r.id));
+    else
+      buckets.collisions.push({
+        collection: "rubrics.identities",
+        key: r.id,
+        reason: "content-differs",
+      });
+  }
+  for (const v of archive.profiles.versions) {
+    throwIfAborted();
+    const key = versionKey(v.id, v.version);
+    const existing = await db.profileVersions.get([v.id, v.version]);
+    if (existing === undefined) buckets.create.push(previewKey("rubrics.versions", key));
+    else if (canon(existing.profile) === canon(v))
+      buckets.reuse.push(previewKey("rubrics.versions", key));
+    else
+      buckets.collisions.push({ collection: "rubrics.versions", key, reason: "content-differs" });
+  }
+  for (const suite of archive.suites) {
+    throwIfAborted();
+    const existing = await db.suites.get(suite.id);
+    if (existing === undefined) buckets.create.push(previewKey("suites", suite.id));
+    else if (canon(existing.suite) === canon(suite))
+      buckets.reuse.push(previewKey("suites", suite.id));
+    else
+      buckets.collisions.push({ collection: "suites", key: suite.id, reason: "content-differs" });
+  }
+  for (const experiment of archive.experiments) {
+    throwIfAborted();
+    const existing = await db.experiments.get(experiment.id);
+    if (existing === undefined) buckets.create.push(previewKey("experiments", experiment.id));
+    else if (canon(existing.experiment) === canon(experiment))
+      buckets.reuse.push(previewKey("experiments", experiment.id));
+    else
+      buckets.collisions.push({
+        collection: "experiments",
+        key: experiment.id,
+        reason: "content-differs",
+      });
+  }
+  throwIfAborted();
+  const preview = finalizePreview("v1", sourceLabel, archive, buckets);
+  // The v1 preview payload carries the validated archive for the preserved
+  // adapter — commit is not performed here.
+  return { ...preview, payload: archive };
+}
+
+/**
+ * Commit a v2 preview atomically: ONE Dexie transaction spanning every touched
+ * store. Identical records are reused; ANY collision aborts before writes;
+ * injected failure/quota/cancellation rolls the whole commit back.
+ */
+export async function commitPreviewWorkbenchArchiveV2(
+  db: RSembleEvaluationDB,
+  preview: ArchiveImportPreview,
+  options: ArchiveImportCommitOptions = {},
+): Promise<ArchiveImportCommitResult> {
+  if (preview.format !== "v2") {
+    throw new StorageError(
+      "validation",
+      "commitPreviewWorkbenchArchiveV2 requires a v2 preview — v1 commits use importWorkbenchArchive.",
+    );
+  }
+  if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+  if (preview.collisions.length > 0) {
+    throw new StorageError(
+      "conflict",
+      `Import aborted: ${preview.collisions.length} collision${preview.collisions.length === 1 ? "" : "s"} — colliding records were left unchanged.`,
+    );
+  }
+  if (preview.invalid.length > 0) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${preview.invalid.length} invalid ${preview.invalid.length === 1 ? "entity" : "entities"}.`,
+    );
+  }
+  db.assertWritable();
+  const archive = preview.payload as WorkbenchArchiveV2;
+  const artifactBytesById = new Map(preview.artifactBytes.map((b) => [b.id, b.bytes]));
+  // Re-validate the COMPLETE payload immediately before the transaction. A
+  // valid v2 preview may be mutated after preview (stale/colliding/invalid
+  // classifications), so the commit re-runs the full envelope validation —
+  // manifest counts, payload digest (recomputed over the canonical payload),
+  // reference graph, prohibited content, and artifact bytes — exactly like
+  // `previewWorkbenchArchive`. The deep clone mirrors the serialization
+  // boundary (a real commit receives a JSON-decoded value) and means a
+  // mutation after preview can never be written under a stale digest.
+  const revalidated = validateArchiveV2(JSON.parse(JSON.stringify(archive)));
+  if (!revalidated.valid) {
+    const first = revalidated.errors[0];
+    throw new StorageError(
+      "validation",
+      `The archive changed after preview — nothing was imported. ${first ? `${first.field}: ${first.message}` : "validation failed"}`.trim(),
+    );
+  }
+  // Re-hash the preview-materialized bytes exactly once at commit so the
+  // bytes that hit the database are the bytes that passed preview validation.
+  for (const artifact of archive.tasks.taskArtifacts) {
+    const bytes = artifactBytesById.get(artifact.id);
+    if (bytes === undefined) continue; // artifact not preview-materialized (e.g. reuse-only)
+    const digest = computeArtifactDigest(bytes);
+    if (bytes.length !== artifact.byteCount || digest !== artifact.contentDigest) {
+      throw new StorageError(
+        "validation",
+        `tasks.taskArtifacts[${artifact.id}] digest no longer matches the previewed bytes.`,
+      );
+    }
+  }
+
+  const createByCollection = new Map<string, Set<string>>();
+  for (const entry of preview.create) {
+    let set = createByCollection.get(entry.collection);
+    if (set === undefined) {
+      set = new Set();
+      createByCollection.set(entry.collection, set);
+    }
+    set.add(entry.key);
+  }
+  const isCreated = (collection: string, key: string) =>
+    createByCollection.get(collection)?.has(key) === true;
+
+  const created: string[] = [];
+  const reused: string[] = [];
+  const skipped: string[] = [];
+  if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+  const fullById = new Map<string, FullRunSummaryV2>();
+  for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById.set(s.id, s);
+
+  try {
+    const hasFusionStores = db.tables.some((t) => t.name === "fusionRecipes");
+    const tablesToLock: Table[] = [
+      db.runSummaries,
+      db.runDetails,
+      db.profiles,
+      db.profileVersions,
+      db.suites,
+      db.experiments,
+      ...(hasFusionStores
+        ? [
+            db.table("fusionRecipes"),
+            db.table("poolManifests"),
+            db.table("fusionStudies"),
+            db.table("fusionTrials"),
+            db.table("fusionAttempts"),
+            db.table("fusionObservations"),
+            db.table("fusionPlaybooks"),
+          ]
+        : []),
+      db.tasks,
+      db.taskVersions,
+      db.taskArtifacts,
+      db.taskArtifactBytes,
+      db.taskInstances,
+      db.taskFamilies,
+      db.taskFamilyAssignments,
+      db.taskFamilyRelations,
+      db.taskFacetAnnotations,
+      db.taskMigrationCrosswalk,
+      db.taskSets,
+      db.taskSetVersions,
+      db.taskSetMaterializations,
+      db.taskSetOwnershipCrosswalk,
+      db.modelConfigurations,
+      db.observations,
+      db.evidenceDecisions,
+      db.evidenceIndexJobs,
+      db.verifierOutcomes,
+      db.comparisonResults,
+    ];
+    await db.transaction("rw", tablesToLock, async () => {
+      if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+      // --- F1: re-check every CREATE destination inside the transaction ---
+      // The preview's create/reuse classification is stale by the time the
+      // commit runs: a racing writer may have inserted (or replaced) a row
+      // under a key this commit plans to create. Before ANY put, re-read
+      // every destination key this commit will write and, if a row exists,
+      // canonically compare it to the incoming payload. An identical race is
+      // reused (no write); any non-identical race aborts the whole commit
+      // BEFORE a write — preserving the no-overwrite/no-partial-mutation
+      // contract. Reads inside the transaction see the committed state, so
+      // this closes the TOCTOU hole.
+      const canonical = (v: unknown) => canonicalJsonString(v);
+      const conflict = (collection: string, key: string) => {
+        throw new StorageError(
+          "conflict",
+          `Import aborted: ${collection}[${key}] was changed after the preview — colliding records were left unchanged.`,
+        );
+      };
+
+      // runs.details (paired summaries): reuse iff the stored detail+summary
+      // are identical to the incoming pair.
+      const fullById2 = new Map<string, FullRunSummaryV2>();
+      for (const s of archive.runs.summaries) if (isFullRunSummaryV2(s)) fullById2.set(s.id, s);
+      for (const record of archive.runs.details) {
+        if (!isCreated("runs.details", record.id)) continue;
+        const compatible =
+          repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+        if (compatible === null) continue;
+        const existingDetail = await db.runDetails.get(record.id);
+        const incomingSummary = fullById2.get(record.id);
+        if (existingDetail !== undefined) {
+          const existingCompatible =
+            repairRunRecordForCompatibility(existingDetail.record) ??
+            (isRunRecordV2(existingDetail.record) ? (existingDetail.record as RunRecordV2) : null);
+          const detailSame =
+            existingCompatible !== null && canonical(existingCompatible) === canonical(compatible);
+          const summarySame =
+            incomingSummary === undefined ||
+            ((await db.runSummaries.get(record.id))?.summary !== undefined &&
+              canonical((await db.runSummaries.get(record.id))!.summary) ===
+                canonical(incomingSummary));
+          if (!detailSame || !summarySame) conflict("runs.details", record.id);
+        } else if (incomingSummary !== undefined) {
+          const existingSummary = await db.runSummaries.get(record.id);
+          if (
+            existingSummary !== undefined &&
+            canonical(existingSummary.summary) !== canonical(incomingSummary)
+          ) {
+            conflict("runs.summaries", record.id);
+          }
+        }
+      }
+      // Standalone (legacy) summaries.
+      for (const s of archive.runs.summaries) {
+        if (isFullRunSummaryV2(s)) continue;
+        if (!isLegacyRunSummary(s)) continue;
+        if (!isCreated("runs.summaries", s.id)) continue;
+        const existing = await db.runSummaries.get(s.id);
+        if (existing !== undefined && canonical(existing.summary) !== canonical(s)) {
+          conflict("runs.summaries", s.id);
+        }
+      }
+      // rubrics.identities / rubrics.versions.
+      for (const r of archive.rubrics.identities) {
+        if (!isCreated("rubrics.identities", r.id)) continue;
+        const existing = await db.profiles.get(r.id);
+        if (existing !== undefined && canonical(existing.record) !== canonical(r)) {
+          conflict("rubrics.identities", r.id);
+        }
+      }
+      for (const v of archive.rubrics.versions) {
+        const key = versionKey(v.id, v.version);
+        if (!isCreated("rubrics.versions", key)) continue;
+        const existing = await db.profileVersions.get([v.id, v.version]);
+        if (existing !== undefined && canonical(existing.profile) !== canonical(v)) {
+          conflict("rubrics.versions", key);
+        }
+      }
+      // suites.
+      for (const suite of archive.suites) {
+        if (!isCreated("suites", suite.id)) continue;
+        const existing = await db.suites.get(suite.id);
+        if (existing !== undefined && canonical(existing.suite) !== canonical(suite)) {
+          conflict("suites", suite.id);
+        }
+      }
+      // experiments.
+      for (const experiment of archive.experiments) {
+        if (!isCreated("experiments", experiment.id)) continue;
+        const existing = await db.experiments.get(experiment.id);
+        if (existing !== undefined && canonical(existing.experiment) !== canonical(experiment)) {
+          conflict("experiments", experiment.id);
+        }
+      }
+      // fusion (seven stores).
+      if (hasFusionStores) {
+        for (const r of archive.fusion.recipes) {
+          const key = versionKey(r.id, r.version);
+          if (!isCreated("fusion.recipes", key)) continue;
+          const existing = await db
+            .table<FusionRecipeRow, [string, number]>("fusionRecipes")
+            .get([r.id, r.version]);
+          if (existing !== undefined && canonical(existing.recipe) !== canonical(r)) {
+            conflict("fusion.recipes", key);
+          }
+        }
+        for (const p of archive.fusion.poolManifests) {
+          const key = versionKey(p.id, p.version);
+          if (!isCreated("fusion.poolManifests", key)) continue;
+          const existing = await db
+            .table<PoolManifestRow, [string, number]>("poolManifests")
+            .get([p.id, p.version]);
+          if (existing !== undefined && canonical(existing.manifest) !== canonical(p)) {
+            conflict("fusion.poolManifests", key);
+          }
+        }
+        for (const s of archive.fusion.studies) {
+          if (!isCreated("fusion.studies", s.id)) continue;
+          const existing = await db.table<FusionStudyRow, string>("fusionStudies").get(s.id);
+          if (existing !== undefined && canonical(existing.study) !== canonical(s)) {
+            conflict("fusion.studies", s.id);
+          }
+        }
+        for (const t of archive.fusion.trials) {
+          if (!isCreated("fusion.trials", t.id)) continue;
+          const existing = await db.table<FusionTrialRow, string>("fusionTrials").get(t.id);
+          if (existing !== undefined && canonical(existing.trial) !== canonical(t)) {
+            conflict("fusion.trials", t.id);
+          }
+        }
+        for (const a of archive.fusion.attempts) {
+          if (!isCreated("fusion.attempts", a.id)) continue;
+          const existing = await db.table<FusionAttemptRow, string>("fusionAttempts").get(a.id);
+          if (existing !== undefined && canonical(existing.attempt) !== canonical(a)) {
+            conflict("fusion.attempts", a.id);
+          }
+        }
+        for (const o of archive.fusion.observations) {
+          if (!isCreated("fusion.observations", o.id)) continue;
+          const existing = await db
+            .table<FusionObservationRow, string>("fusionObservations")
+            .get(o.id);
+          if (existing !== undefined && canonical(existing.observation) !== canonical(o)) {
+            conflict("fusion.observations", o.id);
+          }
+        }
+        for (const p of archive.fusion.playbooks) {
+          if (!isCreated("fusion.playbooks", p.id)) continue;
+          const existing = await db.table<FusionPlaybookRow, string>("fusionPlaybooks").get(p.id);
+          if (existing !== undefined && canonical(existing.playbook) !== canonical(p)) {
+            conflict("fusion.playbooks", p.id);
+          }
+        }
+      }
+      // tasks.
+      for (const t of archive.tasks.tasks) {
+        if (!isCreated("tasks.tasks", t.id)) continue;
+        const existing = await db.tasks.get(t.id);
+        if (existing !== undefined && canonical(existing.record) !== canonical(t)) {
+          conflict("tasks.tasks", t.id);
+        }
+      }
+      for (const v of archive.tasks.taskVersions) {
+        const key = versionKey(v.taskId, v.version);
+        if (!isCreated("tasks.taskVersions", key)) continue;
+        const existing = await db.taskVersions.get([v.taskId, v.version]);
+        if (existing !== undefined && canonical(existing.version_) !== canonical(v)) {
+          conflict("tasks.taskVersions", key);
+        }
+      }
+      for (const artifact of archive.tasks.taskArtifacts) {
+        if (!isCreated("tasks.taskArtifacts", artifact.id)) continue;
+        const existing = await db.taskArtifacts.get(artifact.id);
+        if (existing !== undefined && canonical(existing) !== canonical(artifact)) {
+          conflict("tasks.taskArtifacts", artifact.id);
+        }
+      }
+      for (const i of archive.tasks.taskInstances) {
+        if (!isCreated("tasks.taskInstances", i.id)) continue;
+        const existing = await db.taskInstances.get(i.id);
+        if (existing !== undefined && canonical(existing.instance) !== canonical(i)) {
+          conflict("tasks.taskInstances", i.id);
+        }
+      }
+      for (const f of archive.tasks.taskFamilies) {
+        if (!isCreated("tasks.taskFamilies", f.id)) continue;
+        const existing = await db.taskFamilies.get(f.id);
+        if (existing !== undefined && canonical(existing.family) !== canonical(f)) {
+          conflict("tasks.taskFamilies", f.id);
+        }
+      }
+      for (const a of archive.tasks.taskFamilyAssignments) {
+        if (!isCreated("tasks.taskFamilyAssignments", a.id)) continue;
+        const existing = await db.taskFamilyAssignments.get(a.id);
+        if (existing !== undefined && canonical(existing.assignment) !== canonical(a)) {
+          conflict("tasks.taskFamilyAssignments", a.id);
+        }
+      }
+      for (const r of archive.tasks.taskFamilyRelations) {
+        if (!isCreated("tasks.taskFamilyRelations", r.id)) continue;
+        const existing = await db.taskFamilyRelations.get(r.id);
+        if (existing !== undefined && canonical(existing.relation) !== canonical(r)) {
+          conflict("tasks.taskFamilyRelations", r.id);
+        }
+      }
+      for (const a of archive.tasks.taskFacetAnnotations) {
+        if (!isCreated("tasks.taskFacetAnnotations", a.id)) continue;
+        const existing = await db.taskFacetAnnotations.get(a.id);
+        if (existing !== undefined && canonical(existing.annotation) !== canonical(a)) {
+          conflict("tasks.taskFacetAnnotations", a.id);
+        }
+      }
+      for (const cw of archive.tasks.taskMigrationCrosswalks) {
+        if (!isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) continue;
+        const existing = await db.taskMigrationCrosswalk.get(cw.legacyScopeKey);
+        if (
+          existing !== undefined &&
+          (existing.taskId !== cw.taskId || existing.taskVersion !== cw.taskVersion)
+        ) {
+          conflict("tasks.taskMigrationCrosswalks", cw.legacyScopeKey);
+        }
+      }
+      // --- taskSets (optional envelope) -------------------------------------
+      if (archive.taskSets !== undefined) {
+        for (const r of archive.taskSets.records) {
+          if (!isCreated("taskSets.records", r.id)) continue;
+          const existing = await db.taskSets.get(r.id);
+          if (existing !== undefined && canonical(existing.record) !== canonical(r)) {
+            conflict("taskSets.records", r.id);
+          }
+        }
+        for (const v of archive.taskSets.versions) {
+          const key = versionKey(v.taskSetId, v.version);
+          if (!isCreated("taskSets.versions", key)) continue;
+          const existing = await db.taskSetVersions.get([v.taskSetId, v.version]);
+          if (existing !== undefined && canonical(existing.version_) !== canonical(v)) {
+            conflict("taskSets.versions", key);
+          }
+        }
+        for (const m of archive.taskSets.materializations) {
+          if (!isCreated("taskSets.materializations", m.id)) continue;
+          const existing = await db.taskSetMaterializations.get(m.id);
+          if (existing !== undefined && canonical(existing) !== canonical(m)) {
+            conflict("taskSets.materializations", m.id);
+          }
+        }
+        for (const cw of archive.taskSets.ownershipCrosswalks) {
+          if (!isCreated("taskSets.ownershipCrosswalks", cw.key)) continue;
+          const existing = await db.taskSetOwnershipCrosswalk.get(cw.key);
+          if (existing !== undefined && canonical(existing) !== canonical(cw)) {
+            conflict("taskSets.ownershipCrosswalks", cw.key);
+          }
+        }
+      }
+      // --- evidence (optional envelope) -------------------------------------
+      if (archive.evidence !== undefined) {
+        for (const mc of archive.evidence.modelConfigurations) {
+          if (!isCreated("evidence.modelConfigurations", mc.id)) continue;
+          const existing = await db.modelConfigurations.get(mc.id);
+          if (existing !== undefined && canonical(existing.snapshot) !== canonical(mc)) {
+            conflict("evidence.modelConfigurations", mc.id);
+          }
+        }
+        for (const obs of archive.evidence.observations) {
+          if (!isCreated("evidence.observations", obs.id)) continue;
+          const existing = await db.observations.get(obs.id);
+          if (existing !== undefined && canonical(existing.observation) !== canonical(obs)) {
+            conflict("evidence.observations", obs.id);
+          }
+        }
+        for (const dec of archive.evidence.evidenceDecisions) {
+          const key = `${dec.observationId}#${dec.ruleVersion}`;
+          if (!isCreated("evidence.evidenceDecisions", key)) continue;
+          const existing = await db.evidenceDecisions.get(key);
+          if (existing !== undefined && canonical(existing.decision) !== canonical(dec)) {
+            conflict("evidence.evidenceDecisions", key);
+          }
+        }
+        for (const job of archive.evidence.evidenceIndexJobs) {
+          if (!isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) continue;
+          const existing = await db.evidenceIndexJobs.get(job.sourceResultId);
+          if (existing !== undefined && canonical(fromJobRow(existing)) !== canonical(job)) {
+            conflict("evidence.evidenceIndexJobs", job.sourceResultId);
+          }
+        }
+        for (const vo of archive.evidence.verifierOutcomes) {
+          const key = verifierOutcomeKey(vo);
+          if (!isCreated("evidence.verifierOutcomes", key)) continue;
+          const existing = await db.verifierOutcomes.get(key);
+          if (existing !== undefined && canonical(fromVerifierRow(existing)) !== canonical(vo)) {
+            conflict("evidence.verifierOutcomes", key);
+          }
+        }
+      }
+      // --- comparisons (optional envelope) ----------------------------------
+      if (archive.comparisons !== undefined) {
+        for (const index of archive.comparisons.indexes) {
+          if (!isCreated("comparisons.indexes", index.id)) continue;
+          const existing = await db.comparisonResults.get(index.id);
+          if (existing !== undefined && canonical(existing) !== canonical(index)) {
+            conflict("comparisons.indexes", index.id);
+          }
+        }
+      }
+
+      // --- runs.details (paired full summaries committed first) -------------
+
+      for (const record of archive.runs.details) {
+        const key = record.id;
+        const compatible =
+          repairRunRecordForCompatibility(record) ?? (isRunRecordV2(record) ? record : null);
+        if (compatible === null) continue; // invalid → excluded from commit set
+        const incomingSummary = fullById.get(record.id);
+        if (isCreated("runs.details", key)) {
+          if (incomingSummary !== undefined) {
+            await db.runSummaries.put(summaryRowFor(incomingSummary));
+          }
+          await db.runDetails.put(detailRowFor(compatible));
+          created.push(key);
+        } else {
+          reused.push(key);
+        }
+      }
+      // Standalone full summaries with a detail count as part of their run
+      // pair (committed above). Remaining summaries are legacy-only.
+      for (const s of archive.runs.summaries) {
+        if (isFullRunSummaryV2(s)) continue; // handled with details
+        if (!isLegacyRunSummary(s)) continue; // invalid → excluded
+        const key = s.id;
+        if (isCreated("runs.summaries", key)) {
+          await db.runSummaries.put(summaryRowFor(s));
+          created.push(key);
+        } else {
+          reused.push(key);
+        }
+      }
+
+      // --- rubrics / suites / experiments -----------------------------------
+      for (const r of archive.rubrics.identities) {
+        if (!isRubricRecord(r)) continue;
+        if (isCreated("rubrics.identities", r.id)) {
+          await db.profiles.put({
+            id: r.id,
+            record: r,
+            revision: 1,
+            latestVersion: r.latestVersion,
+            updatedAt: r.updatedAt,
+            archivedAt: r.archivedAt,
+          });
+          created.push(r.id);
+        } else reused.push(r.id);
+      }
+      for (const v of archive.rubrics.versions) {
+        if (!isEvaluationRubric(v)) continue;
+        const key = versionKey(v.id, v.version);
+        if (isCreated("rubrics.versions", key)) {
+          await db.profileVersions.put({
+            id: v.id,
+            version: v.version,
+            profile: v,
+            updatedAt: v.updatedAt,
+          });
+          created.push(key);
+        } else reused.push(key);
+      }
+      for (const suite of archive.suites) {
+        if (!isEvaluationSuite(suite)) continue;
+        if (isCreated("suites", suite.id)) {
+          await db.suites.put({
+            id: suite.id,
+            suite,
+            revision: 1,
+            version: suite.version,
+            updatedAt: suite.updatedAt,
+            archivedAt: suite.archivedAt,
+          });
+          created.push(suite.id);
+        } else reused.push(suite.id);
+      }
+      for (const experiment of archive.experiments) {
+        if (!isExperimentRecord(experiment)) continue;
+        if (isCreated("experiments", experiment.id)) {
+          await db.experiments.put({
+            id: experiment.id,
+            experiment,
+            revision: 1,
+            suiteId: experiment.suiteId,
+            suiteVersion: experiment.suiteVersion,
+            protocolFingerprint: experiment.protocolFingerprint,
+            createdAt: experiment.createdAt,
+            status: experiment.status,
+          });
+          created.push(experiment.id);
+        } else reused.push(experiment.id);
+      }
+      if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+      // --- fusion (seven stores) ---------------------------------------------
+      if (hasFusionStores) {
+        for (const r of archive.fusion.recipes) {
+          if (!isFusionRecipeVersion(r)) continue;
+          const key = versionKey(r.id, r.version);
+          if (isCreated("fusion.recipes", key)) {
+            await db.table<FusionRecipeRow, [string, number]>("fusionRecipes").put({
+              id: r.id,
+              version: r.version,
+              recipe: r,
+              createdAt: 1000,
+            });
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const p of archive.fusion.poolManifests) {
+          if (!isPoolManifestVersion(p)) continue;
+          const key = versionKey(p.id, p.version);
+          if (isCreated("fusion.poolManifests", key)) {
+            await db.table<PoolManifestRow, [string, number]>("poolManifests").put({
+              id: p.id,
+              version: p.version,
+              manifest: p,
+              createdAt: p.createdAt,
+            });
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const s of archive.fusion.studies) {
+          if (!isFusionStudy(s)) continue;
+          if (isCreated("fusion.studies", s.id)) {
+            await db.table<FusionStudyRow, string>("fusionStudies").put({
+              id: s.id,
+              study: s,
+              revision: s.revision,
+              suiteId: s.suiteRef.suiteId,
+              suiteVersion: s.suiteRef.suiteVersion,
+              status: s.status,
+              updatedAt: s.updatedAt,
+            });
+            created.push(s.id);
+          } else reused.push(s.id);
+        }
+        for (const t of archive.fusion.trials) {
+          if (!isFusionTrial(t)) continue;
+          if (isCreated("fusion.trials", t.id)) {
+            await db.table<FusionTrialRow, string>("fusionTrials").put({
+              id: t.id,
+              trial: t,
+              revision: t.revision,
+              studyId: t.studyId,
+              stage: t.stage,
+              status: t.status,
+              createdAt: t.createdAt,
+            });
+            created.push(t.id);
+          } else reused.push(t.id);
+        }
+        for (const a of archive.fusion.attempts) {
+          if (!isFusionAttempt(a)) continue;
+          if (isCreated("fusion.attempts", a.id)) {
+            await db.table<FusionAttemptRow, string>("fusionAttempts").put({
+              id: a.id,
+              attempt: a,
+              studyId: a.studyId,
+              createdAt: a.createdAt,
+            });
+            created.push(a.id);
+          } else reused.push(a.id);
+        }
+        for (const o of archive.fusion.observations) {
+          if (!isEvaluationObservation(o)) continue;
+          if (isCreated("fusion.observations", o.id)) {
+            await db.table<FusionObservationRow, string>("fusionObservations").put({
+              id: o.id,
+              observation: o,
+              trialId: o.trialId,
+              createdAt: o.finishedAt,
+            });
+            created.push(o.id);
+          } else reused.push(o.id);
+        }
+        for (const p of archive.fusion.playbooks) {
+          if (!isFusionPlaybook(p)) continue;
+          if (isCreated("fusion.playbooks", p.id)) {
+            await db.table<FusionPlaybookRow, string>("fusionPlaybooks").put({
+              id: p.id,
+              playbook: p,
+              studyId: p.studyId,
+              createdAt: p.createdAt,
+            });
+            created.push(p.id);
+          } else reused.push(p.id);
+        }
+      }
+      if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+
+      // --- tasks -----------------------------------------------------------------
+      for (const t of archive.tasks.tasks) {
+        if (!isTaskRecord(t)) continue;
+        if (isCreated("tasks.tasks", t.id)) {
+          await db.tasks.put(taskRowFor(t));
+          created.push(t.id);
+        } else reused.push(t.id);
+      }
+      for (const v of archive.tasks.taskVersions) {
+        if (!isTaskVersion(v)) continue;
+        const key = versionKey(v.taskId, v.version);
+        if (isCreated("tasks.taskVersions", key)) {
+          await db.taskVersions.put(taskVersionRowFor(v));
+          created.push(key);
+        } else reused.push(key);
+      }
+      for (const artifact of archive.tasks.taskArtifacts) {
+        if (!isTaskArtifact(artifact)) continue;
+        if (isCreated("tasks.taskArtifacts", artifact.id)) {
+          const bytes = artifactBytesById.get(artifact.id);
+          if (bytes === undefined) {
+            throw new StorageError(
+              "validation",
+              `tasks.taskArtifacts[${artifact.id}] is missing bytes payload.`,
+            );
+          }
+          await db.taskArtifacts.put({
+            id: artifact.id,
+            contentDigest: artifact.contentDigest,
+            mediaType: artifact.mediaType,
+            byteCount: artifact.byteCount,
+            storageRef: artifact.storageRef,
+            createdAt: artifact.createdAt,
+          });
+          await db.taskArtifactBytes.put({ id: artifact.id, bytes });
+          created.push(artifact.id);
+        } else reused.push(artifact.id);
+      }
+      for (const i of archive.tasks.taskInstances) {
+        if (!isTaskInstance(i)) continue;
+        if (isCreated("tasks.taskInstances", i.id)) {
+          await db.taskInstances.put(taskInstanceRowFor(i));
+          created.push(i.id);
+        } else reused.push(i.id);
+      }
+      for (const f of archive.tasks.taskFamilies) {
+        if (!isTaskFamily(f)) continue;
+        if (isCreated("tasks.taskFamilies", f.id)) {
+          await db.taskFamilies.put(familyRowFor(f));
+          created.push(f.id);
+        } else reused.push(f.id);
+      }
+      for (const a of archive.tasks.taskFamilyAssignments) {
+        if (!isTaskFamilyAssignment(a)) continue;
+        if (isCreated("tasks.taskFamilyAssignments", a.id)) {
+          await db.taskFamilyAssignments.put(assignmentRowFor(a));
+          created.push(a.id);
+        } else reused.push(a.id);
+      }
+      for (const r of archive.tasks.taskFamilyRelations) {
+        if (!isExportableTaskFamilyRelation(r)) continue;
+        if (isCreated("tasks.taskFamilyRelations", r.id)) {
+          await db.taskFamilyRelations.put(relationRowFor(r));
+          created.push(r.id);
+        } else reused.push(r.id);
+      }
+      for (const a of archive.tasks.taskFacetAnnotations) {
+        if (!isTaskFacetAnnotation(a)) continue;
+        if (isCreated("tasks.taskFacetAnnotations", a.id)) {
+          await db.taskFacetAnnotations.put(annotationRowFor(a));
+          created.push(a.id);
+        } else reused.push(a.id);
+      }
+      for (const cw of archive.tasks.taskMigrationCrosswalks) {
+        if (isCreated("tasks.taskMigrationCrosswalks", cw.legacyScopeKey)) {
+          await db.taskMigrationCrosswalk.put({
+            legacyScopeKey: cw.legacyScopeKey,
+            taskId: cw.taskId,
+            taskVersion: cw.taskVersion,
+          });
+          created.push(cw.legacyScopeKey);
+        } else reused.push(cw.legacyScopeKey);
+      }
+      // --- taskSets (optional envelope) -------------------------------------
+      if (archive.taskSets !== undefined) {
+        for (const r of archive.taskSets.records) {
+          if (!isTaskSetRecord(r)) continue;
+          if (isCreated("taskSets.records", r.id)) {
+            await db.taskSets.put(taskSetRecordRowFor(r));
+            created.push(r.id);
+          } else reused.push(r.id);
+        }
+        for (const v of archive.taskSets.versions) {
+          if (!isTaskSetVersion(v)) continue;
+          const key = versionKey(v.taskSetId, v.version);
+          if (isCreated("taskSets.versions", key)) {
+            await db.taskSetVersions.put(taskSetVersionRowFor(v));
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const m of archive.taskSets.materializations) {
+          if (!isTaskSetMaterializationRecord(m)) continue;
+          if (isCreated("taskSets.materializations", m.id)) {
+            await db.taskSetMaterializations.put(m);
+            created.push(m.id);
+          } else reused.push(m.id);
+        }
+        for (const cw of archive.taskSets.ownershipCrosswalks) {
+          if (!isTaskSetOwnershipCrosswalkRow(cw)) continue;
+          if (isCreated("taskSets.ownershipCrosswalks", cw.key)) {
+            await db.taskSetOwnershipCrosswalk.put(cw);
+            created.push(cw.key);
+          } else reused.push(cw.key);
+        }
+      }
+      // --- evidence (optional envelope) -------------------------------------
+      if (archive.evidence !== undefined) {
+        for (const mc of archive.evidence.modelConfigurations) {
+          if (!isModelConfigurationSnapshot(mc)) continue;
+          if (isCreated("evidence.modelConfigurations", mc.id)) {
+            await db.modelConfigurations.put(modelConfigurationRowFor(mc));
+            created.push(mc.id);
+          } else reused.push(mc.id);
+        }
+        for (const obs of archive.evidence.observations) {
+          if (!isObservation(obs)) continue;
+          if (isCreated("evidence.observations", obs.id)) {
+            await db.observations.put(evidenceObservationRowFor(obs));
+            created.push(obs.id);
+          } else reused.push(obs.id);
+        }
+        for (const dec of archive.evidence.evidenceDecisions) {
+          if (!isEligibilityDecision(dec)) continue;
+          const key = `${dec.observationId}#${dec.ruleVersion}`;
+          if (isCreated("evidence.evidenceDecisions", key)) {
+            await db.evidenceDecisions.put(evidenceDecisionRowFor(dec));
+            created.push(key);
+          } else reused.push(key);
+        }
+        for (const job of archive.evidence.evidenceIndexJobs) {
+          if (!isEvidenceIndexJob(job)) continue;
+          if (isCreated("evidence.evidenceIndexJobs", job.sourceResultId)) {
+            await db.evidenceIndexJobs.put(toJobRow(job));
+            created.push(job.sourceResultId);
+          } else reused.push(job.sourceResultId);
+        }
+        for (const vo of archive.evidence.verifierOutcomes) {
+          if (!isExecutedVerifierOutcome(vo)) continue;
+          const key = verifierOutcomeKey(vo);
+          if (isCreated("evidence.verifierOutcomes", key)) {
+            await db.verifierOutcomes.put(toVerifierRow(vo));
+            created.push(key);
+          } else reused.push(key);
+        }
+      }
+      // --- comparisons (optional envelope) -------------------------------------
+      if (archive.comparisons !== undefined) {
+        for (const index of archive.comparisons.indexes) {
+          if (!isComparisonResultIndex(index)) continue;
+          if (isCreated("comparisons.indexes", index.id)) {
+            await db.comparisonResults.put(index);
+            created.push(index.id);
+          } else reused.push(index.id);
+        }
+      }
+      // `skipped` is a commit-pass no-op channel — currently empty by design
+      // (preview classifies every persisted state; a racing same-value write
+      // is indistinguishable from reuse and stays `reused`).
+      void skipped;
+    });
+  } catch (err) {
+    if (err instanceof ArchiveImportCancelledError) throw err;
+    if (err instanceof StorageError) throw err;
+    throw classifyStorageError(err);
+  }
+
+  return {
+    created,
+    reused,
+    skipped,
+    collisions: preview.collisions.map((c) => c.key),
+  };
+}
+
+/**
+ * Commit a v3 preview through THE preview-aware phased importer (Child 10
+ * review repair R1): collisions are resolved by planned remapping — never
+ * aborted, never overwritten. Identical records are reused; each phase is a
+ * verified Dexie transaction over the durable import journal; the disposable
+ * search index is rebuilt after the canonical commit.
+ */
+export async function commitPreviewWorkbenchArchiveV3(
+  db: RSembleEvaluationDB,
+  preview: ArchiveImportPreview,
+  options: ArchiveImportCommitOptions = {},
+): Promise<ArchiveImportCommitResult> {
+  if (preview.format === "unsupported_fusion_archive_shape") {
+    throw new StorageError(
+      "validation",
+      "Cannot commit an unsupported archive shape (unsupported_fusion_archive_shape). No records were imported.",
+    );
+  }
+  if (preview.format !== "v3") {
+    throw new StorageError("validation", "commitPreviewWorkbenchArchiveV3 requires a v3 preview.");
+  }
+  if (options.signal?.aborted) throw new ArchiveImportCancelledError();
+  if (preview.invalid.length > 0) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${preview.invalid.length} invalid ${preview.invalid.length === 1 ? "entity" : "entities"}.`,
+    );
+  }
+  const phased = await importWorkbenchArchiveV3Phased(db, preview.payload as WorkbenchArchiveV3, {
+    signal: options.signal,
+  });
+  return {
+    created: phased.created,
+    reused: phased.reused,
+    skipped: [],
+    collisions: [],
+  };
+}
+
+/**
+ * Commit a v3 archive in bounded atomic phases with collision-safe ID
+ * remapping.
+ *
+ * Pipeline: preflight ALL collisions against the live database (fixpoint over
+ * the transformed graph) → collection-qualified crosswalk → immutable deep
+ * clone transform (outer keys, embedded ids, composite version keys, every
+ * typed reference edge) → validate the transformed graph → bounded atomic
+ * phases over a durable journal (per-phase verification, classified failures,
+ * resume) → verification receipt → disposable search rebuild.
+ *
+ * The caller's archive object is never mutated. v1/v2 imports are unchanged.
+ */
+export async function importWorkbenchArchiveV3Phased(
+  db: RSembleEvaluationDB,
+  archiveInput: WorkbenchArchiveV3,
+  options: {
+    signal?: AbortSignal;
+    sourceLabel?: string;
+    /** Resume THE journal slot previously written under this import id. */
+    resumeImportId?: string;
+  } = {},
+): Promise<PhasedImportResult> {
+  db.assertWritable();
+  const signal = options.signal;
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new ArchiveImportCancelledError();
+  };
+  throwIfAborted();
+
+  // Validate the canonical archive BEFORE any read or write.
+  const validation = validateArchiveV3(JSON.parse(JSON.stringify(archiveInput)));
+  if (!validation.valid) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${validation.errors[0]?.message ?? ""}`.trim(),
+    );
+  }
+
+  const originalDigest = archiveInput.manifest.payloadDigest;
+
+  // Journal: fresh session, or verified resume of an interrupted one.
+  let journal: ImportJournalRecord;
+  let importId: string;
+  let pendingPhases: readonly string[] = IMPORT_V3_PHASES;
+  let resumedWithPersistedPlan = false;
+  if (options.resumeImportId !== undefined) {
+    const existing = await loadImportJournal(db);
+    if (
+      existing === undefined ||
+      existing.importId !== options.resumeImportId ||
+      existing.archiveDigest !== originalDigest
+    ) {
+      throw new StorageError(
+        "validation",
+        "No matching import journal found to resume — nothing was imported.",
+      );
+    }
+    journal = existing;
+    importId = existing.importId;
+    pendingPhases = IMPORT_V3_PHASES.filter((p) => existing.phaseState[p] !== "completed");
+    resumedWithPersistedPlan =
+      existing.transformedPayload !== null &&
+      existing.transformedPayload !== undefined &&
+      isWorkbenchArchiveV3(existing.transformedPayload) &&
+      existing.crosswalk !== undefined &&
+      existing.fallbackKeys !== undefined &&
+      Array.isArray(existing.remapped);
+  } else {
+    importId = generateImportId();
+    journal = {
+      kind: "archive-import-journal-v3",
+      importId,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      archiveDigest: originalDigest,
+      archivePayload: JSON.parse(JSON.stringify(archiveInput)) as WorkbenchArchiveV3,
+      transformedPayload: null,
+      crosswalk: {},
+      remapped: [],
+      fallbackKeys: {},
+      phaseState: Object.fromEntries(IMPORT_V3_PHASES.map((p) => [p, "pending"])),
+      verificationReceipt: null,
+    };
+    await saveImportJournal(db, journal);
+  }
+
+  // Preflight fixpoint: fresh sessions plan against the LIVE database and
+  // persist the immutable source, transformed payload, qualified crosswalk,
+  // and fallback keys BEFORE any phase writes. Resume rehydrates that exact
+  // plan — never reallocate against completed remapped rows.
+  let plan: CollisionPlan;
+  let working: WorkbenchArchiveV3;
+  if (resumedWithPersistedPlan) {
+    plan = collisionPlanFromJournal(journal);
+    working = JSON.parse(JSON.stringify(journal.transformedPayload)) as WorkbenchArchiveV3;
+  } else {
+    const source =
+      journal.archivePayload !== undefined
+        ? journal.archivePayload
+        : (JSON.parse(JSON.stringify(archiveInput)) as WorkbenchArchiveV3);
+    ({ plan, working } = await buildCollisionPlanAndTransform(db, source, importId));
+    journal.archivePayload = JSON.parse(JSON.stringify(source)) as WorkbenchArchiveV3;
+    journal.transformedPayload = JSON.parse(JSON.stringify(working)) as WorkbenchArchiveV3;
+    journal.crosswalk = plan.crosswalkRecord();
+    journal.remapped = plan.report.map((entry) => ({ ...entry }));
+    journal.fallbackKeys = fallbackKeyRecord(plan);
+    journal.updatedAt = Date.now();
+    await saveImportJournal(db, journal);
+  }
+
+  const created: string[] = [];
+  const reused: string[] = [];
+  const failedPhases: string[] = [];
+  const pristine = await isPristineCanonicalWorkbench(db);
+
+  for (const phase of pendingPhases) {
+    throwIfAborted();
+    journal.phaseState[phase] = "in_progress";
+    journal.updatedAt = Date.now();
+    await saveImportJournal(db, journal);
+    try {
+      await db.transaction("rw", tablesForPhase(db, phase), async () => {
+        throwIfAborted();
+        await writeImportPhase(
+          db,
+          phase,
+          working,
+          plan.fallbackKeys,
+          importId,
+          created,
+          reused,
+          pristine,
+        );
+      });
+    } catch (err) {
+      if (err instanceof ArchiveImportCancelledError) {
+        journal.phaseState[phase] = "pending";
+        journal.lastError = { kind: "cancel", message: "Import cancelled." };
+        journal.updatedAt = Date.now();
+        await saveImportJournal(db, journal);
+        throw err;
+      }
+      failedPhases.push(phase);
+      const storageErr = err instanceof StorageError ? err : classifyStorageError(err);
+      journal.phaseState[phase] = "failed";
+      journal.lastError = {
+        kind: classifyImportFailure(storageErr),
+        message: redactCredentialMaterial(storageErr.message).slice(0, 300),
+      };
+      journal.updatedAt = Date.now();
+      await saveImportJournal(db, journal);
+      throw storageErr;
+    }
+    journal.phaseState[phase] = "completed";
+    journal.updatedAt = Date.now();
+    await saveImportJournal(db, journal);
+  }
+
+  // Verification receipt over the whole session.
+  journal.verificationReceipt = {
+    verifiedAt: Date.now(),
+    createdCount: created.length,
+    reusedCount: reused.length,
+    remappedCount: plan.report.length,
+  };
+
+  // Disposable search rebuild after the canonical commit. Failure schedules a
+  // rebuild via the marker — never silently swallowed.
+  let searchRebuilt = false;
+  try {
+    await rebuildDisposableSearchIndex(db);
+    searchRebuilt = true;
+    await clearSearchRebuildMarker(db);
+  } catch {
+    await markSearchForRebuild(db);
+  }
+  journal.searchRebuilt = searchRebuilt;
+  journal.updatedAt = Date.now();
+  await saveImportJournal(db, journal);
+
+  return {
+    importId,
+    created,
+    reused,
+    remapped: plan.report,
+    failedPhases,
+    crosswalk: plan.crosswalkRecord(),
+    searchRebuilt,
+  };
+}
+
+/** Classify a phased-import failure for durable reporting. */
+export function classifyImportFailure(err: unknown): string {
+  if (err instanceof ArchiveImportCancelledError) return "cancel";
+  if (err instanceof StorageError) {
+    if (err.kind === "quota" || err.kind === "unavailable") return err.kind;
+    return err.kind;
+  }
+  return classifyStorageError(err).kind;
+}
+
+// --- Collision plan -----------------------------------------------------------
+
+interface CollisionPlan {
+  /** namespace → archive id → local id (identity-level mappings only). */
+  entries: Map<string, Map<string, string>>;
+  /** Ordered, collection-qualified report of every planned remap. */
+  report: ImportCrosswalkEntry[];
+  /** Derived-key rows that must land under a suffixed key instead of their
+   *  own identity (legacy migration crosswalks, ownership crosswalks,
+   *  cutover receipt): collection → archiveKey → suffixed local key. */
+  fallbackKeys: Map<string, Map<string, string>>;
+  crosswalkRecord(): Record<string, string>;
+}
+
+function createCollisionPlan(): CollisionPlan {
+  const entries = new Map<string, Map<string, string>>();
+  const report: ImportCrosswalkEntry[] = [];
+  const fallbackKeys = new Map<string, Map<string, string>>();
+  return {
+    entries,
+    report,
+    fallbackKeys,
+    crosswalkRecord() {
+      const record: Record<string, string> = {};
+      for (const [ns, mappings] of entries) {
+        for (const [from, to] of mappings) record[`${ns}\u0000${from}`] = to;
+      }
+      return record;
+    },
+  };
+}
+
+function fallbackKeyRecord(plan: CollisionPlan): Record<string, string> {
+  const record: Record<string, string> = {};
+  for (const [collection, mappings] of plan.fallbackKeys) {
+    for (const [from, to] of mappings) record[`${collection}\u0000${from}`] = to;
+  }
+  return record;
+}
+
+/** Rehydrate the persisted collection-qualified plan. Resume MUST reuse this
+ * exact mapping: recomputing against already-committed remapped rows could
+ * allocate different ids and duplicate completed work. */
+function collisionPlanFromJournal(journal: ImportJournalRecord): CollisionPlan {
+  const plan = createCollisionPlan();
+  for (const [qualified, to] of Object.entries(journal.crosswalk)) {
+    const separator = qualified.indexOf("\u0000");
+    if (separator <= 0) continue;
+    const ns = qualified.slice(0, separator);
+    const from = qualified.slice(separator + 1);
+    const mappings = plan.entries.get(ns) ?? new Map<string, string>();
+    mappings.set(from, to);
+    plan.entries.set(ns, mappings);
+  }
+  for (const [qualified, to] of Object.entries(journal.fallbackKeys)) {
+    const separator = qualified.indexOf("\u0000");
+    if (separator <= 0) continue;
+    const collection = qualified.slice(0, separator);
+    const from = qualified.slice(separator + 1);
+    const mappings = plan.fallbackKeys.get(collection) ?? new Map<string, string>();
+    mappings.set(from, to);
+    plan.fallbackKeys.set(collection, mappings);
+  }
+  plan.report.push(...journal.remapped.map((entry) => ({ ...entry })));
+  return plan;
+}
+
+/** Collision collections whose identity namespace is shared with a parent
+ *  entity: version tables follow their parent id, run summary/detail pair. */
+const NS_BY_COLLISION_COLLECTION: Record<string, string> = {
+  "runs.summaries": "runs",
+  "runs.details": "runs",
+  "rubrics.identities": "rubrics",
+  "rubrics.versions": "rubrics",
+  suites: "suites",
+  experiments: "experiments",
+  "tasks.tasks": "tasks",
+  "tasks.taskVersions": "tasks",
+  "tasks.taskArtifacts": "artifacts",
+  "tasks.taskInstances": "instances",
+  "tasks.taskFamilies": "families",
+  "tasks.taskFamilyAssignments": "assignments",
+  "tasks.taskFamilyRelations": "relations",
+  "tasks.taskFacetAnnotations": "annotations",
+  "taskSets.records": "taskSets",
+  "taskSets.versions": "taskSets",
+  "taskSets.materializations": "materializations",
+  "evidence.modelConfigurations": "modelConfigurations",
+  "evidence.observations": "observations",
+  "comparisons.indexes": "runs", // comparisonId === runId (spec §3)
+  "lab.recipeRecords": "recipes",
+  "lab.recipeVersions": "recipes",
+  "lab.poolRecords": "pools",
+  "lab.poolVersions": "pools",
+  "lab.studies": "studies",
+  "lab.trials": "trials",
+  "lab.attempts": "attempts",
+  "lab.observations": "labObservations",
+  "lab.playbooks": "playbooks",
+  "modelRollups.records": "rollups",
+  "modelRollups.versions": "rollups",
+};
+
+/** Collections whose PRIMARY KEY is a derived or legacy label: they cannot be
+ *  remapped without breaking their derivation, so divergent copies land under
+ *  a suffixed key instead of overwriting local truth. */
+const FALLBACK_KEY_COLLECTIONS: ReadonlySet<string> = new Set([
+  "tasks.taskMigrationCrosswalks",
+  "taskSets.ownershipCrosswalks",
+  "lab.cutoverReceipt",
+]);
+
+/** Collections keyed by a DERIVED identity (observationId#ruleVersion,
+ *  sourceResultId, run::task::model::time). A byte-divergent row here cannot
+ *  move: its key IS its derivation. Such divergence is an honest conflict. */
+const DERIVED_CONFLICT_COLLECTIONS: ReadonlySet<string> = new Set([
+  "evidence.evidenceDecisions",
+  "evidence.evidenceIndexJobs",
+  "evidence.verifierOutcomes",
+]);
+
+/** Content-addressed identity formats: a remapped local id MUST preserve the
+ *  canonical `<prefix><64 hex>` shape or entity guards would reject it. The
+ *  full digest of the allocation tuple becomes the new content address. */
+const CONTENT_ADDRESSED_NS_PREFIX: Record<string, string> = {
+  observations: "obs:sha256:",
+  modelConfigurations: "mc:sha256:",
+  playbooks: "pb:sha256:",
+};
+
+/** Deterministic remapped ID: stable for a given (importId, namespace, id)
+ *  triple so resume reproduces identical mappings. */
+function deterministicRemappedId(
+  originalId: string,
+  ns: string,
+  importId: string,
+  taken: Set<string>,
+): string {
+  const contentPrefix = CONTENT_ADDRESSED_NS_PREFIX[ns];
+  const matchesContentShape =
+    contentPrefix !== undefined &&
+    originalId.startsWith(contentPrefix) &&
+    /^[0-9a-f]{64}$/.test(originalId.slice(contentPrefix.length));
+  for (let n = 0; n < 64; n++) {
+    const digest = computeArtifactDigest(
+      new TextEncoder().encode(`${importId}\u0000${ns}\u0000${originalId}\u0000${n}`),
+    );
+    let candidate: string;
+    if (matchesContentShape) {
+      candidate = `${contentPrefix}${digest.slice(7, 71)}`;
+    } else {
+      candidate = `${originalId}-import-${digest.slice(7, 15)}${n > 0 ? `-${n}` : ""}`;
+    }
+    if (!taken.has(candidate)) {
+      taken.add(candidate);
+      return candidate;
+    }
+  }
+  throw new StorageError(
+    "conflict",
+    `Unable to allocate a remapped ID for ${redactCredentialMaterial(originalId)}.`,
+  );
+}
+
+async function seedTakenIds(db: RSembleEvaluationDB): Promise<Map<string, Set<string>>> {
+  const taken = new Map<string, Set<string>>();
+  const add = (ns: string, keys: unknown[]) => {
+    const set = taken.get(ns) ?? new Set<string>();
+    for (const k of keys) {
+      if (typeof k === "string") set.add(k);
+      else if (Array.isArray(k)) set.add(String(k[0]));
+    }
+    taken.set(ns, set);
+  };
+  add("runs", [
+    ...(await db.runSummaries.toCollection().primaryKeys()),
+    ...(await db.runDetails.toCollection().primaryKeys()),
+  ]);
+  add("rubrics", [
+    ...(await db.profiles.toCollection().primaryKeys()),
+    ...(await db.profileVersions.toCollection().primaryKeys()),
+  ]);
+  add("suites", [...(await db.suites.toCollection().primaryKeys())]);
+  add("experiments", [...(await db.experiments.toCollection().primaryKeys())]);
+  add("tasks", [
+    ...(await db.tasks.toCollection().primaryKeys()),
+    ...(await db.taskVersions.toCollection().primaryKeys()),
+  ]);
+  add("artifacts", [
+    ...(await db.taskArtifacts.toCollection().primaryKeys()),
+    ...(await db.taskArtifactBytes.toCollection().primaryKeys()),
+  ]);
+  add("instances", [...(await db.taskInstances.toCollection().primaryKeys())]);
+  add("families", [...(await db.taskFamilies.toCollection().primaryKeys())]);
+  add("assignments", [...(await db.taskFamilyAssignments.toCollection().primaryKeys())]);
+  add("relations", [...(await db.taskFamilyRelations.toCollection().primaryKeys())]);
+  add("annotations", [...(await db.taskFacetAnnotations.toCollection().primaryKeys())]);
+  add("taskSets", [
+    ...(await db.taskSets.toCollection().primaryKeys()),
+    ...(await db.taskSetVersions.toCollection().primaryKeys()),
+  ]);
+  add("materializations", [...(await db.taskSetMaterializations.toCollection().primaryKeys())]);
+  add("modelConfigurations", [...(await db.modelConfigurations.toCollection().primaryKeys())]);
+  add("observations", [...(await db.observations.toCollection().primaryKeys())]);
+  add("comparisons", [...(await db.comparisonResults.toCollection().primaryKeys())]);
+  add("recipes", [
+    ...(await db.labRecipeRecords.toCollection().primaryKeys()),
+    ...(await db.labRecipeVersions.toCollection().primaryKeys()),
+  ]);
+  add("pools", [
+    ...(await db.modelPoolRecords.toCollection().primaryKeys()),
+    ...(await db.modelPoolVersions.toCollection().primaryKeys()),
+  ]);
+  add("studies", [...(await db.studies.toCollection().primaryKeys())]);
+  add("trials", [...(await db.studyTrials.toCollection().primaryKeys())]);
+  add("attempts", [...(await db.studyAttempts.toCollection().primaryKeys())]);
+  add("labObservations", [...(await db.studyObservations.toCollection().primaryKeys())]);
+  add("playbooks", [...(await db.policyPlaybooks.toCollection().primaryKeys())]);
+  add("rollups", [
+    ...(await db.modelRollups.toCollection().primaryKeys()),
+    ...(await db.modelRollupVersions.toCollection().primaryKeys()),
+  ]);
+  return taken;
+}
+
+function registerCollision(
+  plan: CollisionPlan,
+  collection: string,
+  key: string,
+  importId: string,
+  taken: Map<string, Set<string>>,
+): void {
+  if (DERIVED_CONFLICT_COLLECTIONS.has(collection)) {
+    throw new StorageError(
+      "conflict",
+      `A locally diverged derived-key record conflicts with the archive (${redactCredentialMaterial(`${collection}[${key}]`)}) — nothing was imported.`,
+    );
+  }
+
+  if (plan.report.some((entry) => entry.collection === collection && entry.archiveId === key)) {
+    return;
+  }
+
+  if (FALLBACK_KEY_COLLECTIONS.has(collection)) {
+    if (collection === "lab.cutoverReceipt") return; // writer decides bootstrap vs fallback
+    const map = plan.fallbackKeys.get(collection) ?? new Map<string, string>();
+    if (!map.has(key)) {
+      map.set(key, `${key}#import:${importId.slice(-8)}`);
+      plan.fallbackKeys.set(collection, map);
+      plan.report.push({ archiveId: key, localId: map.get(key)!, collection });
+    }
+    return;
+  }
+
+  const ns = NS_BY_COLLISION_COLLECTION[collection];
+  if (ns === undefined) {
+    throw new StorageError(
+      "conflict",
+      `Unknown colliding collection during import planning (${redactCredentialMaterial(collection)}).`,
+    );
+  }
+  const composite = key.includes("@");
+  const idPart = composite ? splitVersionKey(key)[0] : key;
+  const mappings = plan.entries.get(ns) ?? new Map<string, string>();
+  if (!mappings.has(idPart)) {
+    const nsTaken = taken.get(ns) ?? new Set<string>();
+    const localId = deterministicRemappedId(idPart, ns, importId, nsTaken);
+    taken.set(ns, nsTaken);
+    mappings.set(idPart, localId);
+    plan.entries.set(ns, mappings);
+  }
+  const mapped = mappings.get(idPart)!;
+  plan.report.push({
+    archiveId: key,
+    localId: composite ? `${mapped}@${splitVersionKey(key)[1]}` : mapped,
+    collection,
+  });
+}
+
+/** Preflight fixpoint: plan collisions, transform, repeat until the rewritten
+ *  graph introduces no NEW collisions (bounded). */
+async function buildCollisionPlanAndTransform(
+  db: RSembleEvaluationDB,
+  source: WorkbenchArchiveV3,
+  importId: string,
+): Promise<{ plan: CollisionPlan; working: WorkbenchArchiveV3 }> {
+  const plan = createCollisionPlan();
+  const taken = await seedTakenIds(db);
+
+  let working = source;
+  for (let round = 0; round < 8; round++) {
+    const preview = await previewV3(db, working, {});
+    if (preview.invalid.length > 0) {
+      throw new StorageError(
+        "validation",
+        `The archive is invalid — nothing was imported. ${preview.invalid[0].collection}[${preview.invalid[0].key}].`,
+      );
+    }
+    let grew = false;
+    for (const collision of preview.collisions) {
+      if (
+        FALLBACK_KEY_COLLECTIONS.has(collision.collection) &&
+        plan.fallbackKeys.has(collision.collection)
+      ) {
+        continue; // already scheduled for fallback handling
+      }
+      const reportCount = plan.report.length;
+      registerCollision(plan, collision.collection, collision.key, importId, taken);
+      if (plan.report.length > reportCount) grew = true;
+    }
+    if (!grew) break;
+    working = remapArchiveClone(source, plan);
+  }
+
+  const leftover = await previewV3(db, working, {});
+  const unresolved = leftover.collisions.filter(
+    (c) =>
+      !FALLBACK_KEY_COLLECTIONS.has(c.collection) &&
+      !DERIVED_CONFLICT_COLLECTIONS.has(c.collection),
+  );
+  if (unresolved.length > 0) {
+    throw new StorageError(
+      "conflict",
+      `Import could not resolve ${unresolved.length} collision(s) — nothing was imported.`,
+    );
+  }
+  return { plan, working };
+}
+
+// --- Transform -----------------------------------------------------------------
+
+type IdRemap = (id: string) => string;
+
+function nsRemap(plan: CollisionPlan, ns: string): IdRemap {
+  const mappings = plan.entries.get(ns);
+  return (id) => (mappings !== undefined ? (mappings.get(id) ?? id) : id);
+}
+
+function remapNullableId(id: string | null, remap: IdRemap): string | null {
+  return id === null ? null : remap(id);
+}
+
+/** VersionRef-shaped rubric references: only the id component is namespaced;
+ *  the version number is preserved verbatim. */
+function remapVersionRefId(ref: VersionRef | null, remap: IdRemap): VersionRef | null {
+  if (ref === null) return null;
+  return { id: remap(ref.id), version: ref.version };
+}
+
+/** Rewrite one exact colon-delimited identifier inside a composite lineage
+ *  key. Task IDs can contain regex metacharacters, so the source id is escaped
+ *  and replaced only at segment boundaries. */
+function remapColonDelimitedId(value: string, from: string, to: string): string {
+  if (from === to) return value;
+  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const segment = new RegExp(`(^|:)${escaped}(?=:|$)`, "g");
+  return value.replace(segment, (_match, prefix: string) => `${prefix}${to}`);
+}
+
+/** Apply the collection-qualified crosswalk to a DEEP CLONE of the archive:
+ *  outer row keys, embedded ids, composite version keys, and every typed
+ *  reference edge (including nested arrays/objects and playbook links). The
+ *  caller's object is never touched. */
+function remapArchiveClone(source: WorkbenchArchiveV3, plan: CollisionPlan): WorkbenchArchiveV3 {
+  const clone = JSON.parse(JSON.stringify(source)) as WorkbenchArchiveV3;
+  const runs = nsRemap(plan, "runs");
+  const rubrics = nsRemap(plan, "rubrics");
+  const suitesN = nsRemap(plan, "suites");
+  const experimentsN = nsRemap(plan, "experiments");
+  const tasksN = nsRemap(plan, "tasks");
+  const artifacts = nsRemap(plan, "artifacts");
+  const instances = nsRemap(plan, "instances");
+  const families = nsRemap(plan, "families");
+  const taskSetsN = nsRemap(plan, "taskSets");
+  const modelConfigurationsN = nsRemap(plan, "modelConfigurations");
+  let observationsN = nsRemap(plan, "observations");
+  const recipes = nsRemap(plan, "recipes");
+  const pools = nsRemap(plan, "pools");
+  const studiesN = nsRemap(plan, "studies");
+  const trials = nsRemap(plan, "trials");
+  const attempts = nsRemap(plan, "attempts");
+  const labObservations = nsRemap(plan, "labObservations");
+  const playbooks = nsRemap(plan, "playbooks");
+  const rollups = nsRemap(plan, "rollups");
+  const assignments = nsRemap(plan, "assignments");
+  const relations = nsRemap(plan, "relations");
+  const annotations = nsRemap(plan, "annotations");
+  const materializations = nsRemap(plan, "materializations");
+
+  // Runs (summary + detail share one run identity).
+  for (const s of clone.runs.summaries) s.id = runs(s.id);
+  for (const d of clone.runs.details) d.id = runs(d.id);
+
+  // Rubrics.
+  for (const r of clone.rubrics.identities) r.id = rubrics(r.id);
+  for (const v of clone.rubrics.versions) v.id = rubrics(v.id);
+
+  // Suites & experiments.
+  for (const s of clone.suites) s.id = suitesN(s.id);
+  for (const e of clone.experiments) {
+    e.id = experimentsN(e.id);
+    e.suiteId = suitesN(e.suiteId);
+  }
+
+  // Tasks and their graph.
+  for (const t of clone.tasks.tasks) t.id = tasksN(t.id);
+  for (const v of clone.tasks.taskVersions) {
+    v.taskId = tasksN(v.taskId);
+    for (const c of v.defaultContextManifest)
+      c.artifactId = remapNullableId(c.artifactId, artifacts);
+  }
+  for (const a of clone.tasks.taskArtifacts) a.id = artifacts(a.id);
+  for (const b of clone.tasks.taskArtifactBytes) b.id = artifacts(b.id);
+  for (const i of clone.tasks.taskInstances) {
+    i.id = instances(i.id);
+    i.taskId = tasksN(i.taskId);
+    i.normalizedInput.artifactIds = i.normalizedInput.artifactIds.map(artifacts);
+    for (const c of i.contextManifest) c.artifactId = remapNullableId(c.artifactId, artifacts);
+  }
+  for (const f of clone.tasks.taskFamilies) f.id = families(f.id);
+  for (const a of clone.tasks.taskFamilyAssignments) {
+    a.id = assignments(a.id);
+    a.taskId = tasksN(a.taskId);
+    a.familyId = families(a.familyId);
+  }
+  for (const r of clone.tasks.taskFamilyRelations) {
+    r.id = relations(r.id);
+    r.fromFamilyId = families(r.fromFamilyId);
+    r.toFamilyId = families(r.toFamilyId);
+  }
+  for (const a of clone.tasks.taskFacetAnnotations) {
+    a.id = annotations(a.id);
+    a.taskId = tasksN(a.taskId);
+  }
+  for (const cw of clone.tasks.taskMigrationCrosswalks) cw.taskId = tasksN(cw.taskId);
+
+  // Task Sets.
+  for (const r of clone.taskSets.records) r.id = taskSetsN(r.id);
+  for (const v of clone.taskSets.versions) {
+    v.taskSetId = taskSetsN(v.taskSetId);
+    v.defaultRubricRef = remapVersionRefId(v.defaultRubricRef, rubrics);
+    for (const member of v.members) {
+      member.taskVersionRef.taskId = tasksN(member.taskVersionRef.taskId);
+      member.rubricOverrideRef = remapVersionRefId(member.rubricOverrideRef, rubrics);
+    }
+  }
+  for (const m of clone.taskSets.materializations) {
+    m.id = materializations(m.id);
+    m.taskSetId = taskSetsN(m.taskSetId);
+    if (m.snapshot !== undefined && m.snapshot !== null) {
+      m.snapshot.taskSetId = taskSetsN(m.snapshot.taskSetId);
+    }
+  }
+  for (const cw of clone.taskSets.ownershipCrosswalks) cw.taskSetId = taskSetsN(cw.taskSetId);
+
+  // Evidence. Observation ids are DERIVED from the source key
+  // (`observationIdFor`), so the id is recomputed AFTER the reference rewrite
+  // and the namespace mapping is reconciled to the actual derived id —
+  // dependents (decisions, comparison indexes, playbooks) then resolve.
+  for (const mc of clone.evidence.modelConfigurations) mc.id = modelConfigurationsN(mc.id);
+  {
+    const derivedById = new Map<string, string>();
+    for (const o of clone.evidence.observations) {
+      const archiveId = o.id;
+      const archiveTaskId = o.taskId;
+      const mappedTaskId = tasksN(archiveTaskId);
+      o.sourceResultId = runs(o.sourceResultId);
+      o.runId = runs(o.runId);
+      o.taskId = mappedTaskId;
+      o.sourceTaskCellId = remapColonDelimitedId(o.sourceTaskCellId, archiveTaskId, mappedTaskId);
+      o.executionLineageId = remapColonDelimitedId(
+        o.executionLineageId,
+        archiveTaskId,
+        mappedTaskId,
+      );
+      o.taskInstanceId = instances(o.taskInstanceId);
+      o.taskFamilyId = remapNullableId(o.taskFamilyId, families);
+      o.modelConfigurationId = modelConfigurationsN(o.modelConfigurationId);
+      o.assessmentRef.rubricRef = remapVersionRefId(o.assessmentRef.rubricRef, rubrics);
+      if (o.rubricRef !== null) {
+        o.rubricRef = { id: rubrics(o.rubricRef.id), version: o.rubricRef.version };
+      }
+      o.id = observationIdFor(o);
+      if (o.id !== archiveId) derivedById.set(archiveId, o.id);
+    }
+    if (derivedById.size > 0) {
+      const observationMappings = plan.entries.get("observations") ?? new Map<string, string>();
+      for (const [archiveId, actual] of derivedById) {
+        observationMappings.set(archiveId, actual);
+        const report = plan.report.find(
+          (entry) => entry.collection === "evidence.observations" && entry.archiveId === archiveId,
+        );
+        if (report === undefined) {
+          plan.report.push({
+            archiveId,
+            localId: actual,
+            collection: "evidence.observations",
+          });
+        } else {
+          report.localId = actual;
+        }
+      }
+      plan.entries.set("observations", observationMappings);
+      observationsN = nsRemap(plan, "observations");
+    }
+  }
+  for (const d of clone.evidence.evidenceDecisions)
+    d.observationId = observationsN(d.observationId);
+  for (const j of clone.evidence.evidenceIndexJobs) j.sourceResultId = runs(j.sourceResultId);
+  for (const vo of clone.evidence.verifierOutcomes) {
+    vo.runId = runs(vo.runId);
+    vo.taskId = tasksN(vo.taskId);
+  }
+
+  // Comparisons. A comparison's identity IS its run (spec §3), so the index
+  // id always equals the (possibly remapped) runId. inputSnapshots.runId and
+  // limitations.runId name the comparison index — they follow the run.
+  for (const ix of clone.comparisons.indexes) {
+    ix.runId = runs(ix.runId);
+    ix.id = ix.runId;
+    if (ix.taskBinding.kind === "canonical") ix.taskBinding.taskId = tasksN(ix.taskBinding.taskId);
+    ix.taskInstanceId = remapNullableId(ix.taskInstanceId, instances);
+    ix.activeObservationIds = ix.activeObservationIds.map(observationsN);
+    ix.lineage.repeatedFrom = remapNullableId(ix.lineage.repeatedFrom, runs);
+  }
+  for (const snap of clone.comparisons.inputSnapshots) {
+    snap.runId = runs(snap.runId);
+    snap.taskId = remapNullableId(snap.taskId, tasksN);
+    snap.taskInstanceId = remapNullableId(snap.taskInstanceId, instances);
+  }
+  for (const lim of clone.comparisons.limitations) lim.runId = runs(lim.runId);
+
+  // Lab.
+  for (const r of clone.lab.recipeRecords) r.id = recipes(r.id);
+  for (const v of clone.lab.recipeVersions) v.recipeId = recipes(v.recipeId);
+  for (const p of clone.lab.poolRecords) p.id = pools(p.id);
+  for (const v of clone.lab.poolVersions) v.poolId = pools(v.poolId);
+  for (const st of clone.lab.studies) {
+    st.id = studiesN(st.id);
+    st.definition.modelPool.poolId = pools(st.definition.modelPool.poolId);
+    for (const fr of st.definition.fusionRecipes) fr.recipeId = recipes(fr.recipeId);
+    st.reportRef = remapNullableId(st.reportRef, playbooks);
+    st.confirmationOf = remapNullableId(st.confirmationOf, studiesN);
+  }
+  for (const t of clone.lab.trials) {
+    t.id = trials(t.id);
+    t.studyId = studiesN(t.studyId);
+  }
+  for (const a of clone.lab.attempts) {
+    a.id = attempts(a.id);
+    a.studyId = studiesN(a.studyId);
+    a.fromTrialId = trials(a.fromTrialId);
+    a.toTrialId = trials(a.toTrialId);
+  }
+  for (const o of clone.lab.observations) {
+    o.id = labObservations(o.id);
+    o.studyId = studiesN(o.studyId);
+    o.trialId = trials(o.trialId);
+    o.sourceRunId = remapNullableId(o.sourceRunId, runs);
+  }
+  for (const p of clone.lab.playbooks) {
+    p.id = playbooks(p.id);
+    p.playbook.studyId = studiesN(p.playbook.studyId);
+    p.playbook.supportingTrialIds = p.playbook.supportingTrialIds.map(trials);
+    p.playbook.supportingObservationIds = p.playbook.supportingObservationIds.map(labObservations);
+  }
+
+  // Model rollups. The member-manifest digest COVERS rollupId, so it is
+  // recomputed after the id rewrite (the derivation law, not a loophole).
+  if (clone.modelRollups !== undefined) {
+    for (const r of clone.modelRollups.records) r.id = rollups(r.id);
+    for (const v of clone.modelRollups.versions) {
+      v.rollupId = rollups(v.rollupId);
+      v.memberConfigurationIds = v.memberConfigurationIds.map(modelConfigurationsN);
+      v.memberManifestDigest = computeModelRollupMemberManifestDigest(v);
+    }
+  }
+
+  resortArchiveV3(clone);
+  clone.manifest.payloadDigest = computeArchiveV3PayloadDigest(clone);
+  clone.manifest.contentDigests = computeArchiveV3ContentDigests(clone);
+  return clone;
+}
+
+/** Re-sort every transformed collection with the exporter's comparators —
+ *  remapped ids can reorder lexicographic sort orders. */
+function resortArchiveV3(archive: WorkbenchArchiveV3): void {
+  archive.runs.summaries = v2SortById(archive.runs.summaries);
+  archive.runs.details = v2SortById(archive.runs.details);
+  archive.rubrics.identities = v2SortById(archive.rubrics.identities);
+  archive.rubrics.versions = v2SortByIdVersion(archive.rubrics.versions);
+  archive.suites = v2SortById(archive.suites);
+  archive.experiments = v2SortById(archive.experiments);
+  archive.tasks.tasks = v2SortById(archive.tasks.tasks);
+  archive.tasks.taskVersions = v2SortByTaskIdVersion(archive.tasks.taskVersions);
+  archive.tasks.taskArtifacts = v2SortById(archive.tasks.taskArtifacts);
+  archive.tasks.taskArtifactBytes = v2SortById(archive.tasks.taskArtifactBytes);
+  archive.tasks.taskInstances = v2SortById(archive.tasks.taskInstances);
+  archive.tasks.taskFamilies = v2SortById(archive.tasks.taskFamilies);
+  archive.tasks.taskFamilyAssignments = v2SortById(archive.tasks.taskFamilyAssignments);
+  archive.tasks.taskFamilyRelations = v2SortById(archive.tasks.taskFamilyRelations);
+  archive.tasks.taskFacetAnnotations = v2SortById(archive.tasks.taskFacetAnnotations);
+  archive.tasks.taskMigrationCrosswalks = v2SortByLegacyScopeKey(
+    archive.tasks.taskMigrationCrosswalks,
+  );
+  archive.taskSets.records = v2SortById(archive.taskSets.records);
+  archive.taskSets.versions = v2SortByTaskSetIdVersion(archive.taskSets.versions);
+  archive.taskSets.materializations = v2SortById(archive.taskSets.materializations);
+  archive.taskSets.ownershipCrosswalks = v2SortByKey(archive.taskSets.ownershipCrosswalks);
+  archive.evidence.modelConfigurations = v2SortById(archive.evidence.modelConfigurations);
+  archive.evidence.observations = v2SortById(archive.evidence.observations);
+  archive.evidence.evidenceDecisions = v2SortByObservationIdRuleVersion(
+    archive.evidence.evidenceDecisions,
+  );
+  archive.evidence.evidenceIndexJobs = v2SortBySourceResultId(archive.evidence.evidenceIndexJobs);
+  archive.evidence.verifierOutcomes = v2SortByVerifierOutcomeKey(archive.evidence.verifierOutcomes);
+  archive.comparisons.indexes = v2SortById(archive.comparisons.indexes);
+  archive.comparisons.inputSnapshots = v2SortByRunId(archive.comparisons.inputSnapshots);
+  archive.comparisons.limitations = v2SortByRunId(archive.comparisons.limitations);
+  archive.lab.recipeRecords = v2SortById(archive.lab.recipeRecords);
+  archive.lab.recipeVersions = v3SortByRecipeIdVersion(archive.lab.recipeVersions);
+  archive.lab.poolRecords = v2SortById(archive.lab.poolRecords);
+  archive.lab.poolVersions = v3SortByPoolIdVersion(archive.lab.poolVersions);
+  archive.lab.studies = v2SortById(archive.lab.studies);
+  archive.lab.trials = v2SortById(archive.lab.trials);
+  archive.lab.attempts = v2SortById(archive.lab.attempts);
+  archive.lab.observations = v2SortById(archive.lab.observations);
+  archive.lab.playbooks = v2SortById(archive.lab.playbooks);
+  if (archive.modelRollups !== undefined) {
+    archive.modelRollups.records = v2SortById(archive.modelRollups.records);
+    archive.modelRollups.versions = [...archive.modelRollups.versions].sort((a, b) =>
+      a.rollupId === b.rollupId ? a.version - b.version : a.rollupId.localeCompare(b.rollupId),
+    );
+  }
+}
+
+// --- Journal helpers ------------------------------------------------------------
+
+async function loadImportJournal(
+  db: RSembleEvaluationDB,
+): Promise<ImportJournalRecord | undefined> {
+  const row = await db.storageMeta.get(IMPORT_JOURNAL_KEY);
+  return row?.value as ImportJournalRecord | undefined;
+}
+
+async function saveImportJournal(
+  db: RSembleEvaluationDB,
+  journal: ImportJournalRecord,
+): Promise<void> {
+  await db.storageMeta.put({ key: IMPORT_JOURNAL_KEY, value: journal });
+}
+
+// --- Search rebuild helpers -------------------------------------------------------
+
+const SEARCH_REBUILD_MARKER_KEY = "search:needs-rebuild";
+
+/** Rebuild the disposable search index from live canonical sources. Throws on
+ *  failure — callers schedule a rebuild marker instead of swallowing. */
+async function rebuildDisposableSearchIndex(db: RSembleEvaluationDB): Promise<void> {
+  const searchRepo: SearchIndexRepository = createSearchIndexRepository(db);
+  const resolver = createDexieSearchSourceResolver(db);
+  const result = await rebuildSearchIndex({ searchRepo, resolver });
+  if (result.errors.length > 0) {
+    throw new StorageError(
+      "unavailable",
+      `Search rebuild failed after import: ${redactCredentialMaterial(result.errors[0])}`,
+    );
+  }
+}
+
+async function clearSearchRebuildMarker(db: RSembleEvaluationDB): Promise<void> {
+  await db.storageMeta.delete(SEARCH_REBUILD_MARKER_KEY);
+}
+
+async function markSearchForRebuild(db: RSembleEvaluationDB): Promise<void> {
+  // Failures propagate: silently losing the schedule would strand stale hits.
+  await db.storageMeta.put({
+    key: SEARCH_REBUILD_MARKER_KEY,
+    value: { at: Date.now(), reason: "archive-import" },
+  });
+}
+
+// --- Phase writer ------------------------------------------------------------------
+
+/** Put one row atomically: create-with-post-write-verification, reuse on
+ *  byte-equality, honest conflict on divergence (racing writer). */
+async function upsertVerified<T>(
+  table: Table<T, string>,
+  key: string,
+  row: T,
+  extract: (existing: T) => unknown,
+  incoming: unknown,
+  displayKey: string,
+  created: string[],
+  reused: string[],
+): Promise<void> {
+  const outcome = await upsertVerifiedReturning(table, key, row, extract, incoming);
+  if (outcome === "created") created.push(displayKey);
+  else reused.push(displayKey);
+}
+
+/** Put-or-reuse core returning the classification; callers decide how to
+ *  tally composite entries (e.g. artifact bytes riding the meta row). */
+async function upsertVerifiedReturning<T>(
+  table: Table<T, string>,
+  key: string,
+  row: T,
+  extract: (existing: T) => unknown,
+  incoming: unknown,
+): Promise<"created" | "reused"> {
+  const existing = await table.get(key);
+  if (existing === undefined) {
+    await table.put(row);
+    const reread = await table.get(key);
+    if (reread === undefined || canon(extract(reread)) !== canon(incoming)) {
+      throw new StorageError(
+        "conflict",
+        `Import verification failed for ${redactCredentialMaterial(key)}.`,
+      );
+    }
+    return "created";
+  }
+  if (canon(extract(existing)) === canon(incoming)) return "reused";
+  throw new StorageError(
+    "conflict",
+    `A racing writer diverged at ${redactCredentialMaterial(key)} — phase rolled back.`,
+  );
+}
+
+async function upsertCompositeVerified<T>(
+  table: Table<T, [string, number]>,
+  key: [string, number],
+  row: T,
+  extract: (existing: T) => unknown,
+  incoming: unknown,
+  displayKey: string,
+  created: string[],
+  reused: string[],
+): Promise<void> {
+  const existing = await table.get(key);
+  if (existing === undefined) {
+    await table.put(row);
+    const reread = await table.get(key);
+    if (reread === undefined || canon(extract(reread)) !== canon(incoming)) {
+      throw new StorageError(
+        "conflict",
+        `Import verification failed for ${redactCredentialMaterial(displayKey)}.`,
+      );
+    }
+    created.push(displayKey);
+    return;
+  }
+  if (canon(extract(existing)) === canon(incoming)) {
+    reused.push(displayKey);
+    return;
+  }
+  throw new StorageError(
+    "conflict",
+    `A racing writer diverged at ${redactCredentialMaterial(displayKey)} — phase rolled back.`,
+  );
+}
+
+/** Fallback-key variant for derived-key rows (legacy crosswalks): divergent
+ *  copies keep local truth at the original key and land under a suffixed key. */
+async function upsertWithFallbackKey<T>(
+  table: Table<T, string>,
+  key: string,
+  fallbackKey: string,
+  buildRow: (id: string) => T,
+  extract: (existing: T) => unknown,
+  incoming: unknown,
+  collection: string,
+  created: string[],
+  reused: string[],
+): Promise<void> {
+  const existing = await table.get(key);
+  if (existing !== undefined && canon(extract(existing)) === canon(incoming)) {
+    reused.push(`${collection}\u0000${key}`);
+    return;
+  }
+  const atFallback = await table.get(fallbackKey);
+  if (atFallback !== undefined && canon(extract(atFallback)) === canon(incoming)) {
+    reused.push(`${collection}\u0000${fallbackKey}`);
+    return;
+  }
+  if (atFallback !== undefined) {
+    throw new StorageError(
+      "conflict",
+      `A racing writer diverged at ${redactCredentialMaterial(fallbackKey)} — phase rolled back.`,
+    );
+  }
+  await table.put(buildRow(fallbackKey));
+  created.push(`${collection}\u0000${fallbackKey}`);
+}
+
+/** Write one phase's collections from the TRANSFORMED archive. Every write is
+ *  verified in-transaction before commit; any throw rolls back ONLY this
+ *  phase. */
+async function writeImportPhase(
+  db: RSembleEvaluationDB,
+  phaseName: string,
+  archive: WorkbenchArchiveV3,
+  fallbackKeys: Map<string, Map<string, string>>,
+  importId: string,
+  created: string[],
+  reused: string[],
+  /** Computed OUTSIDE any transaction — counting stores mid-transaction that
+   *  are outside the transaction scope raises NotFoundError. */
+  pristine: boolean,
+): Promise<void> {
+  switch (phaseName) {
+    case "runs-rubrics-suites-experiments": {
+      const fullSummariesById = new Map<string, FullRunSummaryV2>();
+      for (const s of archive.runs.summaries) {
+        if (isFullRunSummaryV2(s)) fullSummariesById.set(s.id, s);
+      }
+      for (const s of archive.runs.summaries) {
+        // Full summaries are written by the detail branch below; direct
+        // writes cover legacy summary-only rows.
+        if (!isLegacyRunSummary(s)) continue;
+        await upsertVerified(
+          db.runSummaries,
+          s.id,
+          summaryRowFor(s),
+          (r) => r.summary,
+          s,
+          `runs.summaries\u0000${s.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const d of archive.runs.details) {
+        const compatible = repairRunRecordForCompatibility(d) ?? (isRunRecordV2(d) ? d : null);
+        if (compatible === null) continue;
+        await upsertVerified(
+          db.runDetails,
+          compatible.id,
+          detailRowFor(compatible),
+          (r) => r.record,
+          compatible,
+          `runs.details\u0000${compatible.id}`,
+          created,
+          reused,
+        );
+        const fullSummary = fullSummariesById.get(compatible.id);
+        if (fullSummary !== undefined && (await db.runSummaries.get(compatible.id)) === undefined) {
+          await db.runSummaries.put(summaryRowFor(fullSummary));
+        }
+      }
+      for (const r of archive.rubrics.identities) {
+        if (!isRubricRecord(r)) continue;
+        await upsertVerified(
+          db.profiles,
+          r.id,
+          {
+            id: r.id,
+            record: r,
+            revision: r.revision,
+            latestVersion: r.latestVersion,
+            updatedAt: r.updatedAt,
+            archivedAt: r.archivedAt,
+          },
+          (x) => x.record,
+          r,
+          `rubrics.identities\u0000${r.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const v of archive.rubrics.versions) {
+        if (!isEvaluationRubric(v)) continue;
+        await upsertCompositeVerified(
+          db.profileVersions,
+          [v.id, v.version],
+          { id: v.id, version: v.version, profile: v, updatedAt: v.updatedAt },
+          (x) => x.profile,
+          v,
+          `rubrics.versions\u0000${versionKey(v.id, v.version)}`,
+          created,
+          reused,
+        );
+      }
+      for (const su of archive.suites) {
+        if (!isEvaluationSuite(su)) continue;
+        await upsertVerified(
+          db.suites,
+          su.id,
+          {
+            id: su.id,
+            suite: su,
+            revision: 1,
+            version: su.version,
+            updatedAt: su.updatedAt,
+            archivedAt: su.archivedAt,
+          },
+          (x) => x.suite,
+          su,
+          `suites\u0000${su.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const e of archive.experiments) {
+        if (!isExperimentRecord(e)) continue;
+        await upsertVerified(
+          db.experiments,
+          e.id,
+          {
+            id: e.id,
+            experiment: e,
+            revision: 1,
+            suiteId: e.suiteId,
+            suiteVersion: e.suiteVersion,
+            protocolFingerprint: e.protocolFingerprint,
+            createdAt: e.createdAt,
+            status: e.status,
+          },
+          (x) => x.experiment,
+          e,
+          `experiments\u0000${e.id}`,
+          created,
+          reused,
+        );
+      }
+      break;
+    }
+    case "tasks": {
+      for (const t of archive.tasks.tasks) {
+        if (!isTaskRecord(t)) continue;
+        await upsertVerified(
+          db.tasks,
+          t.id,
+          taskRowFor(t),
+          (r) => r.record,
+          t,
+          `tasks.tasks\u0000${t.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const v of archive.tasks.taskVersions) {
+        if (!isTaskVersion(v)) continue;
+        await upsertCompositeVerified(
+          db.taskVersions,
+          [v.taskId, v.version],
+          taskVersionRowFor(v),
+          (r) => r.version_,
+          v,
+          `tasks.taskVersions\u0000${versionKey(v.taskId, v.version)}`,
+          created,
+          reused,
+        );
+      }
+      for (const a of archive.tasks.taskArtifacts) {
+        if (!isTaskArtifact(a)) continue;
+        const encoded = archive.tasks.taskArtifactBytes.find((b) => b.id === a.id);
+        const decoded = encoded !== undefined ? decodeBase64Bytes(encoded.bytesBase64) : null;
+        if (decoded === null) {
+          throw new StorageError(
+            "validation",
+            `tasks.taskArtifacts[${a.id}] is missing bytes payload.`,
+          );
+        }
+        const metaResult = await upsertVerifiedReturning(
+          db.taskArtifacts,
+          a.id,
+          {
+            id: a.id,
+            contentDigest: a.contentDigest,
+            mediaType: a.mediaType,
+            byteCount: a.byteCount,
+            storageRef: a.storageRef,
+            createdAt: a.createdAt,
+          },
+          (x) => x,
+          a,
+        );
+        // Bytes row rides the artifact entry (preview counts them as one).
+        const existingBytes = await db.taskArtifactBytes.get(a.id);
+        if (existingBytes === undefined) {
+          await db.taskArtifactBytes.put({ id: a.id, bytes: decoded });
+          const reread = await db.taskArtifactBytes.get(a.id);
+          if (reread === undefined || !bytesMatch(reread.bytes, decoded)) {
+            throw new StorageError(
+              "conflict",
+              `Import verification failed for tasks.taskArtifactBytes[${a.id}].`,
+            );
+          }
+          if (metaResult === "created") created.push(`tasks.taskArtifacts\u0000${a.id}`);
+        } else if (!bytesMatch(existingBytes.bytes, decoded)) {
+          throw new StorageError(
+            "conflict",
+            `Artifact bytes diverged at tasks.taskArtifactBytes[${a.id}] — phase rolled back.`,
+          );
+        }
+        if (
+          metaResult === "reused" &&
+          existingBytes !== undefined &&
+          bytesMatch(existingBytes.bytes, decoded)
+        ) {
+          reused.push(`tasks.taskArtifacts\u0000${a.id}`);
+        }
+      }
+      for (const i of archive.tasks.taskInstances) {
+        if (!isTaskInstance(i)) continue;
+        await upsertVerified(
+          db.taskInstances,
+          i.id,
+          taskInstanceRowFor(i),
+          (r) => r.instance,
+          i,
+          `tasks.taskInstances\u0000${i.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const f of archive.tasks.taskFamilies) {
+        if (!isTaskFamily(f)) continue;
+        await upsertVerified(
+          db.taskFamilies,
+          f.id,
+          familyRowFor(f),
+          (r) => r.family,
+          f,
+          `tasks.taskFamilies\u0000${f.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const a of archive.tasks.taskFamilyAssignments) {
+        if (!isTaskFamilyAssignment(a)) continue;
+        await upsertVerified(
+          db.taskFamilyAssignments,
+          a.id,
+          assignmentRowFor(a),
+          (r) => r.assignment,
+          a,
+          `tasks.taskFamilyAssignments\u0000${a.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const r of archive.tasks.taskFamilyRelations) {
+        if (!isExportableTaskFamilyRelation(r)) continue;
+        await upsertVerified(
+          db.taskFamilyRelations,
+          r.id,
+          relationRowFor(r),
+          (r2) => r2.relation,
+          r,
+          `tasks.taskFamilyRelations\u0000${r.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const a of archive.tasks.taskFacetAnnotations) {
+        if (!isTaskFacetAnnotation(a)) continue;
+        await upsertVerified(
+          db.taskFacetAnnotations,
+          a.id,
+          annotationRowFor(a),
+          (r) => r.annotation,
+          a,
+          `tasks.taskFacetAnnotations\u0000${a.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const cw of archive.tasks.taskMigrationCrosswalks) {
+        const fallback = fallbackKeys.get("tasks.taskMigrationCrosswalks")?.get(cw.legacyScopeKey);
+        if (fallback === undefined) {
+          await upsertVerified(
+            db.taskMigrationCrosswalk,
+            cw.legacyScopeKey,
+            { legacyScopeKey: cw.legacyScopeKey, taskId: cw.taskId, taskVersion: cw.taskVersion },
+            (x) => x,
+            cw,
+            `tasks.taskMigrationCrosswalks\u0000${cw.legacyScopeKey}`,
+            created,
+            reused,
+          );
+        } else {
+          await upsertWithFallbackKey(
+            db.taskMigrationCrosswalk,
+            cw.legacyScopeKey,
+            fallback,
+            (id) => ({ legacyScopeKey: id, taskId: cw.taskId, taskVersion: cw.taskVersion }),
+            (x) => x,
+            cw,
+            "tasks.taskMigrationCrosswalks",
+            created,
+            reused,
+          );
+        }
+      }
+      break;
+    }
+    case "taskSets": {
+      for (const r of archive.taskSets.records) {
+        if (!isTaskSetRecord(r)) continue;
+        await upsertVerified(
+          db.taskSets,
+          r.id,
+          taskSetRecordRowFor(r),
+          (x) => x.record,
+          r,
+          `taskSets.records\u0000${r.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const v of archive.taskSets.versions) {
+        if (!isTaskSetVersion(v)) continue;
+        await upsertCompositeVerified(
+          db.taskSetVersions,
+          [v.taskSetId, v.version],
+          taskSetVersionRowFor(v),
+          (x) => x.version_,
+          v,
+          `taskSets.versions\u0000${versionKey(v.taskSetId, v.version)}`,
+          created,
+          reused,
+        );
+      }
+      for (const m of archive.taskSets.materializations) {
+        if (!isTaskSetMaterializationRecord(m)) continue;
+        await upsertVerified(
+          db.taskSetMaterializations,
+          m.id,
+          m,
+          (x) => x,
+          m,
+          `taskSets.materializations\u0000${m.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const cw of archive.taskSets.ownershipCrosswalks) {
+        if (!isTaskSetOwnershipCrosswalkRow(cw)) continue;
+        const fallback = fallbackKeys.get("taskSets.ownershipCrosswalks")?.get(cw.key);
+        if (fallback === undefined) {
+          await upsertVerified(
+            db.taskSetOwnershipCrosswalk,
+            cw.key,
+            cw,
+            (x) => x,
+            cw,
+            `taskSets.ownershipCrosswalks\u0000${cw.key}`,
+            created,
+            reused,
+          );
+        } else {
+          await upsertWithFallbackKey(
+            db.taskSetOwnershipCrosswalk,
+            cw.key,
+            fallback,
+            (id) => ({ ...cw, key: id }),
+            (x) => x,
+            cw,
+            "taskSets.ownershipCrosswalks",
+            created,
+            reused,
+          );
+        }
+      }
+      break;
+    }
+    case "evidence": {
+      for (const mc of archive.evidence.modelConfigurations) {
+        if (!isModelConfigurationSnapshot(mc)) continue;
+        await upsertVerified(
+          db.modelConfigurations,
+          mc.id,
+          modelConfigurationRowFor(mc),
+          (r) => r.snapshot,
+          mc,
+          `evidence.modelConfigurations\u0000${mc.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const obs of archive.evidence.observations) {
+        if (!isObservation(obs)) continue;
+        await upsertVerified(
+          db.observations,
+          obs.id,
+          evidenceObservationRowFor(obs),
+          (r) => r.observation,
+          obs,
+          `evidence.observations\u0000${obs.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const dec of archive.evidence.evidenceDecisions) {
+        if (!isEligibilityDecision(dec)) continue;
+        const key = `${dec.observationId}#${dec.ruleVersion}`;
+        await upsertVerified(
+          db.evidenceDecisions,
+          key,
+          evidenceDecisionRowFor(dec),
+          (r) => r.decision,
+          dec,
+          `evidence.evidenceDecisions\u0000${key}`,
+          created,
+          reused,
+        );
+      }
+      for (const job of archive.evidence.evidenceIndexJobs) {
+        if (!isEvidenceIndexJob(job)) continue;
+        await upsertVerified(
+          db.evidenceIndexJobs,
+          job.sourceResultId,
+          toJobRow(job),
+          (r) => fromJobRow(r as never),
+          job,
+          `evidence.evidenceIndexJobs\u0000${job.sourceResultId}`,
+          created,
+          reused,
+        );
+      }
+      for (const vo of archive.evidence.verifierOutcomes) {
+        if (!isExecutedVerifierOutcome(vo)) continue;
+        const key = verifierOutcomeKey(vo);
+        await upsertVerified(
+          db.verifierOutcomes,
+          key,
+          toVerifierRow(vo),
+          (r) => fromVerifierRow(r as never),
+          vo,
+          `evidence.verifierOutcomes\u0000${key}`,
+          created,
+          reused,
+        );
+      }
+      break;
+    }
+    case "comparisons": {
+      for (const index of archive.comparisons.indexes) {
+        if (!isComparisonResultIndex(index)) continue;
+        await upsertVerified(
+          db.comparisonResults,
+          index.id,
+          index,
+          (x) => x,
+          index,
+          `comparisons.indexes\u0000${index.id}`,
+          created,
+          reused,
+        );
+      }
+      break;
+    }
+    case "lab": {
+      for (const r of archive.lab.recipeRecords) {
+        if (!isLabRecipeRecord(r)) continue;
+        await upsertVerified(
+          db.labRecipeRecords,
+          r.id,
+          {
+            id: r.id,
+            record: r,
+            kind: r.kind,
+            latestVersion: r.latestVersion,
+            archivedAt: r.archivedAt,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+            revision: r.revision,
+          },
+          (x) => x.record,
+          r,
+          `lab.recipeRecords\u0000${r.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const v of archive.lab.recipeVersions) {
+        if (!isLabRecipeVersion(v)) continue;
+        await upsertCompositeVerified(
+          db.labRecipeVersions,
+          [v.recipeId, v.version],
+          {
+            recipeId: v.recipeId,
+            version: v.version,
+            version_: v,
+            digest: v.digest,
+            createdAt: v.createdAt,
+          },
+          (x) => x.version_,
+          v,
+          `lab.recipeVersions\u0000${versionKey(v.recipeId, v.version)}`,
+          created,
+          reused,
+        );
+      }
+      for (const p of archive.lab.poolRecords) {
+        if (!isModelPoolRecord(p)) continue;
+        await upsertVerified(
+          db.modelPoolRecords,
+          p.id,
+          {
+            id: p.id,
+            record: p,
+            latestVersion: p.latestVersion,
+            archivedAt: p.archivedAt,
+            createdAt: p.createdAt,
+            updatedAt: p.updatedAt,
+            revision: p.revision,
+          },
+          (x) => x.record,
+          p,
+          `lab.poolRecords\u0000${p.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const v of archive.lab.poolVersions) {
+        if (!isModelPoolVersion(v)) continue;
+        await upsertCompositeVerified(
+          db.modelPoolVersions,
+          [v.poolId, v.version],
+          {
+            poolId: v.poolId,
+            version: v.version,
+            version_: v,
+            digest: v.digest,
+            createdAt: v.createdAt,
+          },
+          (x) => x.version_,
+          v,
+          `lab.poolVersions\u0000${versionKey(v.poolId, v.version)}`,
+          created,
+          reused,
+        );
+      }
+      for (const st of archive.lab.studies) {
+        if (!isPolicyStudyRecord(st)) continue;
+        await upsertVerified(
+          db.studies,
+          st.id,
+          {
+            id: st.id,
+            record: st,
+            kind: st.kind,
+            status: st.status,
+            claimLevel: st.claimLevel,
+            confirmationOf: st.confirmationOf,
+            revision: st.revision,
+            createdAt: st.createdAt,
+            updatedAt: st.updatedAt,
+            archivedAt: st.archivedAt,
+          },
+          (x) => x.record,
+          st,
+          `lab.studies\u0000${st.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const t of archive.lab.trials) {
+        if (!isPolicyStudyTrial(t)) continue;
+        await upsertVerified(
+          db.studyTrials,
+          t.id,
+          {
+            id: t.id,
+            trial: t,
+            studyId: t.studyId,
+            status: t.status,
+            sampleIndex: t.sampleIndex,
+            revision: 1,
+            createdAt: t.createdAt,
+            sealedAt: t.sealedAt,
+          },
+          (x) => x.trial,
+          t,
+          `lab.trials\u0000${t.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const a of archive.lab.attempts) {
+        if (!isStudyAttempt(a)) continue;
+        await upsertVerified(
+          db.studyAttempts,
+          a.id,
+          {
+            id: a.id,
+            attempt: a,
+            studyId: a.studyId,
+            fromTrialId: a.fromTrialId,
+            toTrialId: a.toTrialId,
+            createdAt: a.createdAt,
+          },
+          (x) => x.attempt,
+          a,
+          `lab.attempts\u0000${a.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const o of archive.lab.observations) {
+        if (!isPolicyStudyObservation(o)) continue;
+        await upsertVerified(
+          db.studyObservations,
+          o.id,
+          {
+            id: o.id,
+            observation: o,
+            studyId: o.studyId,
+            trialId: o.trialId,
+            status: o.status,
+            createdAt: o.createdAt,
+            finishedAt: o.finishedAt,
+          },
+          (x) => x.observation,
+          o,
+          `lab.observations\u0000${o.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const p of archive.lab.playbooks) {
+        if (!isRecord(p) || typeof p.id !== "string" || !isPolicyReportPayload(p.playbook))
+          continue;
+        await upsertVerified(
+          db.policyPlaybooks,
+          p.id,
+          {
+            id: p.id,
+            playbook: p.playbook,
+            studyId: p.playbook.studyId,
+            definitionFingerprint: p.playbook.definitionFingerprint,
+            digest: fingerprintStudyValue(p.playbook),
+            createdAt: p.playbook.createdAt,
+          },
+          (x) => x.playbook,
+          p.playbook,
+          `lab.playbooks\u0000${p.id}`,
+          created,
+          reused,
+        );
+      }
+      // Cutover receipt: bootstrap-pristine targets adopt the archive receipt;
+      // divergent receipts land under a suffixed metadata key.
+      {
+        const existing = await db.storageMeta.get(fusionToResearchLabReceiptKey);
+        const incoming = archive.lab.cutoverReceipt;
+        if (existing === undefined || canon(existing.value) === canon(incoming)) {
+          if (existing === undefined) {
+            await db.storageMeta.put({ key: fusionToResearchLabReceiptKey, value: incoming });
+            created.push(fusionToResearchLabReceiptKey);
+          } else {
+            reused.push(fusionToResearchLabReceiptKey);
+          }
+        } else if (isZeroCorpusBootstrapReceipt(existing.value) && pristine) {
+          await db.storageMeta.put({ key: fusionToResearchLabReceiptKey, value: incoming });
+          created.push(fusionToResearchLabReceiptKey);
+        } else {
+          const fallbackKey = `${fusionToResearchLabReceiptKey}-import-${importId.slice(-8)}`;
+          const atFallback = await db.storageMeta.get(fallbackKey);
+          if (atFallback !== undefined && canon(atFallback.value) === canon(incoming)) {
+            reused.push(`lab.cutoverReceipt\u0000${fallbackKey}`);
+          } else if (atFallback === undefined) {
+            await db.storageMeta.put({ key: fallbackKey, value: incoming });
+            created.push(`lab.cutoverReceipt\u0000${fallbackKey}`);
+          } else {
+            throw new StorageError("conflict", "Cutover receipt diverged — phase rolled back.");
+          }
+        }
+      }
+      break;
+    }
+    case "modelRollups": {
+      for (const r of archive.modelRollups?.records ?? []) {
+        if (!isModelRollupRecord(r)) continue;
+        await upsertVerified(
+          db.modelRollups,
+          r.id,
+          {
+            id: r.id,
+            record: r,
+            name: r.name,
+            latestVersion: r.latestVersion,
+            revision: r.revision,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+            archivedAt: r.archivedAt,
+          },
+          (x) => x.record,
+          r,
+          `modelRollups.records\u0000${r.id}`,
+          created,
+          reused,
+        );
+      }
+      for (const v of archive.modelRollups?.versions ?? []) {
+        if (!isModelRollupVersion(v)) continue;
+        await upsertCompositeVerified(
+          db.modelRollupVersions,
+          [v.rollupId, v.version],
+          {
+            rollupId: v.rollupId,
+            version: v.version,
+            version_: v,
+            memberManifestDigest: v.memberManifestDigest,
+            createdAt: v.createdAt,
+          },
+          (x) => x.version_,
+          v,
+          `modelRollups.versions\u0000${versionKey(v.rollupId, v.version)}`,
+          created,
+          reused,
+        );
+      }
+      break;
+    }
+    default:
+      throw new StorageError("validation", `Unknown import phase ${phaseName}.`);
+  }
+}
+
+/** Get the Dexie tables locked by one import phase. */
+function tablesForPhase(db: RSembleEvaluationDB, phaseName: string): Table[] {
+  switch (phaseName) {
+    case "runs-rubrics-suites-experiments":
+      return [
+        db.runSummaries,
+        db.runDetails,
+        db.profiles,
+        db.profileVersions,
+        db.suites,
+        db.experiments,
+      ];
+    case "tasks":
+      return [
+        db.tasks,
+        db.taskVersions,
+        db.taskArtifacts,
+        db.taskArtifactBytes,
+        db.taskInstances,
+        db.taskFamilies,
+        db.taskFamilyAssignments,
+        db.taskFamilyRelations,
+        db.taskFacetAnnotations,
+        db.taskMigrationCrosswalk,
+      ];
+    case "taskSets":
+      return [
+        db.taskSets,
+        db.taskSetVersions,
+        db.taskSetMaterializations,
+        db.taskSetOwnershipCrosswalk,
+      ];
+    case "evidence":
+      return [
+        db.modelConfigurations,
+        db.observations,
+        db.evidenceDecisions,
+        db.evidenceIndexJobs,
+        db.verifierOutcomes,
+      ];
+    case "comparisons":
+      return [db.comparisonResults];
+    case "lab":
+      return [
+        db.labRecipeRecords,
+        db.labRecipeVersions,
+        db.modelPoolRecords,
+        db.modelPoolVersions,
+        db.studies,
+        db.studyTrials,
+        db.studyAttempts,
+        db.studyObservations,
+        db.policyPlaybooks,
+        db.storageMeta,
+      ];
+    case "modelRollups":
+      return [db.modelRollups, db.modelRollupVersions];
+    default:
+      return [];
+  }
+}
+
+/**
+ * Single-shot import dispatch: decode/validate the payload, route v1 through
+ * the preserved adapter, v2 through preview + commit v2, and v3 through
+ * preview + commit v3. Rejects legacy Fusion archives with a deterministic
+ * receipt before any write (REV-3).
+ */
+export async function importWorkbenchArchiveAuto(
+  db: RSembleEvaluationDB,
+  payload: unknown,
+  options: { signal?: AbortSignal; sourceLabel?: string } = {},
+): Promise<ImportAutoResult> {
+  const fusionReceipt = detectLegacyFusionArchive(payload, options.sourceLabel ?? "archive");
+  if (fusionReceipt !== null) {
+    throw new StorageError(
+      "validation",
+      `The archive contains retired Fusion Study collections (${fusionReceipt.rejectedCollections.join(", ")}) and cannot be imported (unsupported_fusion_archive_shape). Export a new archive from an upgraded RSemble instead.`,
+    );
+  }
+
+  if (isWorkbenchArchiveV3(payload)) {
+    const preview = await previewWorkbenchArchive(db, payload, options);
+    // Production v3 path: collision-safe phased import with planned remaps.
+    return {
+      format: "v3",
+      v3: await importWorkbenchArchiveV3Phased(db, preview.payload as WorkbenchArchiveV3, options),
+    };
+  }
+  if (isWorkbenchArchiveV2(payload)) {
+    const preview = await previewWorkbenchArchive(db, payload, options);
+    return { format: "v2", v2: await commitPreviewWorkbenchArchiveV2(db, preview) };
+  }
+  const check = parseWorkbenchArchive(payload);
+  if (!check.ok) {
+    throw new StorageError(
+      "validation",
+      `The archive is invalid — nothing was imported. ${check.errors[0] ?? ""}`.trim(),
+    );
+  }
+  return { format: "v1", v1: await importWorkbenchArchive(db, check.archive) };
 }

@@ -20,7 +20,7 @@ import {
 import { deriveDisplayRanking } from "./experiment-ranking";
 import type {
   EvaluationCriterion,
-  EvaluationProfile,
+  EvaluationRubric,
   ExperimentSnapshot,
   ExperimentTaskState,
 } from "./evaluation-types";
@@ -46,7 +46,7 @@ const CRITERIA: EvaluationCriterion[] = [
   },
 ];
 
-const PROFILE: EvaluationProfile = {
+const RUBRIC: EvaluationRubric = {
   id: "p1",
   version: 2,
   name: "Quality",
@@ -122,7 +122,7 @@ function makeRun(
   runId: string,
   scores: Record<string, number>,
   opts: {
-    profile?: EvaluationProfile | null;
+    rubric?: EvaluationRubric | null;
     criterionScores?: Record<string, Record<string, number>>;
   } = {},
 ): RunRecordV2 {
@@ -158,7 +158,7 @@ function makeRun(
     mode: "rank",
     source: { kind: "adhoc" },
     task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
-    evaluation: { profile: opts.profile ?? null, candidateMessages: [] },
+    evaluation: { profile: opts.rubric ?? null, candidateMessages: [] },
     candidates,
     judge: {
       status: "done",
@@ -222,7 +222,7 @@ describe("canonicalScoresFromRun", () => {
       "r1",
       { [MK1]: 0, [MK2]: 0 },
       {
-        profile: PROFILE,
+        rubric: RUBRIC,
         criterionScores: {
           [MK1]: { c1: 5, c2: 1 },
           [MK2]: { c1: 2, c2: 4 },
@@ -396,13 +396,13 @@ describe("aggregateExperiment", () => {
     expect(cell.kind).toBe("missing");
   });
 
-  it("canonical profile scores flow into cells and means", () => {
+  it("canonical rubric scores flow into cells and means", () => {
     const runs = {
       "r-a1": makeRun(
         "r-a1",
         { [MK1]: 0, [MK2]: 0 },
         {
-          profile: PROFILE,
+          rubric: RUBRIC,
           criterionScores: {
             [MK1]: { c1: 5, c2: 1 }, // canonical 4.0
             [MK2]: { c1: 2, c2: 4 }, // canonical 2.5
@@ -518,13 +518,13 @@ describe("aggregateExperiment — winner vs provisional ranking", () => {
 
 // --- Hybrid floored-task aggregation ------------------------------------------
 
-/** A mixed profile with graded criterion + one binary group (lambda default 1). */
+/** A mixed rubric with graded criterion + one binary group (lambda default 1). */
 /** 5 singleton binary groups + 1 graded criterion (Q=1, λ=1).
  *  C = passCount / 5, so rankValue = 1 - (1 - C) = C.
  *  Valid graded score 1 (integer) + native binary booleans. */
-function makeFlooredHybridProfile(): { profile: EvaluationProfile; checkIds: string[] } {
+function makeFlooredHybridRubric(): { profile: EvaluationRubric; checkIds: string[] } {
   const checkIds = ["b1", "b2", "b3", "b4", "b5"];
-  const profile: EvaluationProfile = {
+  const rubric: EvaluationRubric = {
     id: "p-floored",
     version: 1,
     name: "Floored",
@@ -559,13 +559,13 @@ function makeFlooredHybridProfile(): { profile: EvaluationProfile; checkIds: str
     createdAt: 100,
     updatedAt: 100,
   };
-  return { profile, checkIds };
+  return { profile: rubric, checkIds };
 }
 
 /** Make a run with valid Q=1 (graded score 1) and `passCount` of 5 binary
  *  checks passing. rankValue = 1 - 1*(1 - passCount/5) = passCount/5. */
 function makeFlooredHybridRun(runId: string, passCount: number): RunRecordV2 {
-  const { profile, checkIds } = makeFlooredHybridProfile();
+  const { profile: rubric, checkIds } = makeFlooredHybridRubric();
   const criterionScores: CandidateEvaluation["criterionScores"] = [
     { criterionId: "quality", label: "Quality", kind: "graded", score: 1, rationale: "r" },
     ...checkIds.map((id, i) => ({
@@ -601,7 +601,7 @@ function makeFlooredHybridRun(runId: string, passCount: number): RunRecordV2 {
     mode: "rank",
     source: { kind: "adhoc" },
     task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
-    evaluation: { profile, candidateMessages: [] },
+    evaluation: { profile: rubric, candidateMessages: [] },
     candidates: [
       {
         candidateId: MK1,
@@ -667,7 +667,7 @@ describe("hybrid floored mean vs bounded display (§16.2)", () => {
     // Valid hybrid profile: Q=1 (graded score 1), λ=1, 5 singleton binary
     // groups. C = passCount/5, rankValue = 1 - 1*(1-C) = C = passCount/5.
     const checkIds = ["b1", "b2", "b3", "b4", "b5"];
-    const profile: EvaluationProfile = {
+    const rubric: EvaluationRubric = {
       id: "p-q",
       version: 1,
       name: "Floored",
@@ -734,7 +734,7 @@ describe("hybrid floored mean vs bounded display (§16.2)", () => {
       mode: "rank",
       source: { kind: "adhoc" },
       task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
-      evaluation: { profile, candidateMessages: [] },
+      evaluation: { profile: rubric, candidateMessages: [] },
       candidates: [
         {
           candidateId: aKey,
@@ -833,7 +833,7 @@ function mixedChannelRun(
   bKey: string,
   { mode }: { mode: "graded" | "binary" },
 ): RunRecordV2 {
-  const gradedProfile: EvaluationProfile = {
+  const gradedRubric: EvaluationRubric = {
     id: "p-g",
     version: 1,
     name: "Graded only",
@@ -854,7 +854,7 @@ function mixedChannelRun(
     createdAt: 100,
     updatedAt: 100,
   };
-  const binaryProfile: EvaluationProfile = {
+  const binaryRubric: EvaluationRubric = {
     id: "p-b",
     version: 1,
     name: "Binary only",
@@ -875,7 +875,7 @@ function mixedChannelRun(
     createdAt: 100,
     updatedAt: 100,
   };
-  const profile = mode === "graded" ? gradedProfile : binaryProfile;
+  const rubric = mode === "graded" ? gradedRubric : binaryRubric;
   const mk = (key: string, score: number, pass: boolean): CandidateEvaluation => ({
     candidateId: key,
     blindLabel: "A",
@@ -902,7 +902,7 @@ function mixedChannelRun(
     mode: "rank",
     source: { kind: "adhoc" },
     task: { title: "t", prompt: "p", systemPrompt: "", temperature: 0.7 },
-    evaluation: { profile, candidateMessages: [] },
+    evaluation: { profile: rubric, candidateMessages: [] },
     candidates: [
       {
         candidateId: aKey,

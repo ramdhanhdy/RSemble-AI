@@ -3,14 +3,14 @@
 //
 // sha256:<lowercase hex> over UTF-8 canonical JSON. Object keys are recursively
 // sorted; semantically ordered arrays (tasks, criteria) retain order.
-// Includes task instructions, generation parameters, pinned profile versions,
+// Includes task instructions, generation parameters, pinned rubric versions,
 // Judge model/instruction, and aggregation policy. Excludes experiment IDs,
 // timestamps, execution status, outputs, and display-only metadata.
 // =============================================================================
 
 import type {
   EvaluationSuite,
-  EvaluationProfile,
+  EvaluationRubric,
   EvaluationTask,
   EvaluationSelection,
   ExperimentSnapshot,
@@ -57,7 +57,7 @@ interface SemanticFingerprintPieces {
   modelSlots: Array<Pick<ModelSlot, "providerId" | "slug" | "model" | "enabled">>;
   defaultJudge: { providerId: ProviderId; model: string };
   defaultEvaluation: EvaluationSelection;
-  profiles: EvaluationProfile[];
+  rubrics: EvaluationRubric[];
   reasoningPolicy: ReasoningPolicy;
 }
 
@@ -83,13 +83,13 @@ function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
     },
     defaultEvaluation: pieces.defaultEvaluation,
     reasoningPolicy: pieces.reasoningPolicy,
-    profiles: pieces.profiles.map((p) => {
+    rubrics: pieces.rubrics.map((p) => {
       // Hybrid fields (requirementGroups, complianceInfluence) are only
-      // fingerprinted when the profile actually carries binary checks; they
+      // fingerprinted when the rubric actually carries binary checks; they
       // drive rankValue = Q - lambda*(1-C) and MUST distinguish experiments.
-      // For a pure-graded/legacy profile (no binary channel) compliance is
+      // For a pure-graded/legacy rubric (no binary channel) compliance is
       // irrelevant (C := 1), so both fields are emitted as undefined and
-      // dropped by JSON.stringify — keeping the profile's hash identical to
+      // dropped by JSON.stringify — keeping the rubric's hash identical to
       // its pre-hybrid value (plan J.1: pure-graded bit-identical; legacy
       // fingerprints stay reproducible after upgrade).
       const groupsPresent = Array.isArray(p.requirementGroups) && p.requirementGroups.length > 0;
@@ -122,11 +122,11 @@ function semanticFingerprintInput(pieces: SemanticFingerprintPieces): unknown {
 }
 
 /**
- * Build the canonical fingerprint input from a suite and its pinned profiles.
+ * Build the canonical fingerprint input from a suite and its pinned rubrics.
  */
 export function buildFingerprintInput(
   suite: EvaluationSuite,
-  profiles: EvaluationProfile[],
+  rubrics: EvaluationRubric[],
 ): unknown {
   return semanticFingerprintInput({
     tasks: suite.tasks,
@@ -134,19 +134,19 @@ export function buildFingerprintInput(
     defaultJudge: suite.defaultJudge,
     defaultEvaluation: suite.defaultEvaluation,
     reasoningPolicy: suite.reasoningPolicy ?? DEFAULT_REASONING_POLICY,
-    profiles,
+    rubrics,
   });
 }
 
 /**
- * Compute the protocol fingerprint for a suite + profiles.
+ * Compute the protocol fingerprint for a suite + rubrics.
  * Returns `sha256:<lowercase hex>`.
  */
 export function computeProtocolFingerprint(
   suite: EvaluationSuite,
-  profiles: EvaluationProfile[],
+  rubrics: EvaluationRubric[],
 ): string {
-  const input = buildFingerprintInput(suite, profiles);
+  const input = buildFingerprintInput(suite, rubrics);
   const canonical = canonicalJsonString(input);
   const hash = sha256Hex(canonical);
   return `sha256:${hash}`;
@@ -164,7 +164,7 @@ export function computeSnapshotProtocolFingerprint(snapshot: ExperimentSnapshot)
     defaultJudge: snapshot.defaultJudge,
     defaultEvaluation: snapshot.defaultEvaluation,
     reasoningPolicy: snapshot.reasoningPolicy ?? DEFAULT_REASONING_POLICY,
-    profiles: snapshot.profiles,
+    rubrics: snapshot.profiles,
   });
   const canonical = canonicalJsonString(input);
   const hash = sha256Hex(canonical);
@@ -172,15 +172,15 @@ export function computeSnapshotProtocolFingerprint(snapshot: ExperimentSnapshot)
 }
 
 /**
- * Create an immutable experiment snapshot from a suite and its pinned profiles.
- * Deep-copies suite, pinned profile versions, roster, Judge, and protocol fingerprint.
+ * Create an immutable experiment snapshot from a suite and its pinned rubrics.
+ * Deep-copies suite, pinned rubric versions, roster, Judge, and protocol fingerprint.
  */
 export function createExperimentSnapshot(
   suite: EvaluationSuite,
-  profiles: EvaluationProfile[],
+  rubrics: EvaluationRubric[],
   now: number,
 ): ExperimentSnapshot {
-  const fingerprint = computeProtocolFingerprint(suite, profiles);
+  const fingerprint = computeProtocolFingerprint(suite, rubrics);
 
   return {
     suiteId: suite.id,
@@ -192,7 +192,7 @@ export function createExperimentSnapshot(
     reasoningPolicy: suite.reasoningPolicy
       ? { ...suite.reasoningPolicy }
       : { ...DEFAULT_REASONING_POLICY },
-    profiles: JSON.parse(JSON.stringify(profiles)),
+    profiles: JSON.parse(JSON.stringify(rubrics)),
     protocolFingerprint: fingerprint,
     createdAt: now,
   };

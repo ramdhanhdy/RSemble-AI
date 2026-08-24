@@ -36,8 +36,9 @@ export interface ExperimentAddModelDialogProps {
   availableProviderIds: ProviderId[];
   /** Snapshot roster + extension history keys — excluded from the picker. */
   takenKeys: Set<string>;
-  /** Suite display name for the sync checkbox (falls back to suite id). */
-  suiteName: string;
+  /** Task set / Suite display name for the sync checkbox. */
+  taskSetName?: string;
+  suiteName?: string;
   selectedSlot: ModelSlot | null;
   /** Commit a slot from the picker; pass null to return to the picker. */
   onSelectSlot: (slot: ModelSlot | null) => void;
@@ -45,8 +46,10 @@ export interface ExperimentAddModelDialogProps {
   plan: RosterExtensionPlan | null;
   /** Planner rejection for the selected slot, when planning fails. */
   planError: string | null;
-  syncToSuite: boolean;
-  onSyncToSuiteChange: (checked: boolean) => void;
+  syncToTaskSet?: boolean;
+  syncToSuite?: boolean;
+  onSyncToTaskSetChange?: (checked: boolean) => void;
+  onSyncToSuiteChange?: (checked: boolean) => void;
   busy: boolean;
   message: AddModelDialogMessage | null;
   onConfirm: () => void;
@@ -69,12 +72,15 @@ export function ExperimentAddModelDialog({
   models,
   availableProviderIds,
   takenKeys,
+  taskSetName,
   suiteName,
   selectedSlot,
   onSelectSlot,
   plan,
   planError,
+  syncToTaskSet,
   syncToSuite,
+  onSyncToTaskSetChange,
   onSyncToSuiteChange,
   busy,
   message,
@@ -83,6 +89,10 @@ export function ExperimentAddModelDialog({
 }: ExperimentAddModelDialogProps): ReactElement {
   const initialProvider = availableProviderIds[0] ?? "openrouter";
   const confirmDisabled = busy || selectedSlot === null || plan === null;
+  const displayName = taskSetName ?? suiteName ?? "task set";
+  const syncChecked =
+    syncToTaskSet !== undefined ? syncToTaskSet : syncToSuite !== undefined ? syncToSuite : true;
+  const handleSyncChange = onSyncToTaskSetChange ?? onSyncToSuiteChange ?? (() => {});
 
   return (
     <DialogSurface
@@ -129,16 +139,16 @@ export function ExperimentAddModelDialog({
           </div>
         )}
 
-        {/* Suite sync — checked by default, names the suite explicitly. */}
+        {/* Task set sync — checked by default, names the task set explicitly. */}
         <label className="flex min-h-[44px] min-w-0 cursor-pointer items-center gap-2 text-sm text-text-secondary">
           <input
             type="checkbox"
-            checked={syncToSuite}
+            checked={syncChecked}
             disabled={busy}
-            onChange={(e) => onSyncToSuiteChange(e.target.checked)}
+            onChange={(e) => handleSyncChange(e.target.checked)}
             className="h-4 w-4 accent-[var(--accent,#c2410c)]"
           />
-          Also add to suite <span className="font-medium text-text">{suiteName}</span>
+          Also add to task set <span className="font-medium text-text">{displayName}</span>
         </label>
 
         {/* Exact planner preview — counts only, never currency. */}

@@ -21,6 +21,8 @@ re-execute. Each has commits landing the work; most have QA evidence under
 | 9router-support | 9Router provider adapter + SSE termination | provider registered |
 | evaluations-identity-ux | workload/rubric identity grammar, honest tokens, stable geometry | `docs/qa/evaluations-identity-ux/` |
 | design-motion-refinement | motion refinements + QA captures | `docs/qa/design-motion-refinement/` |
+| 02-canonical-tasks | Canonical Tasks with immutable versions, instances, families, facets, conservative legacy migration, and archive v2 base | `docs/qa/canonical-tasks/` |
+| task-first-evidence-workbench | Governing parent plus ten child specs (01 Rubrics → 10 Hardening). All children shipped/archived: 01–02 archived; 03 Task Sets (2026-08-16); 04 Observations; 05 Contextual Compare; 06 Research Lab; 07 Model evidence profiles; 08 Shell/Records (2026-08-23 at `709b78d`); 09 Attention; 10 Retrieval/hardening (2026-08-24). | `docs/qa/task-first-evidence-workbench/` (performance + workbench receipts), `docs/qa/model-evidence-profiles/`, `docs/qa/records-workbench/`, `docs/qa/research-lab/`, `docs/qa/compare-results/`, `docs/qa/evidence-matrix/` |
 
 ## pending/
 

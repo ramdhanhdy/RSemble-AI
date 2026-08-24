@@ -16,8 +16,8 @@
 
 import type { ChatMessage } from "../providers/types";
 import type { BlindCandidate, ConsensusBreakdown, JudgeReport } from "../../studio-data";
-import type { EvaluationProfileSnapshot } from "./evaluation-types";
-import { rankValueFromResults } from "./evaluation-profile";
+import type { RubricSnapshot } from "./evaluation-types";
+import { rankValueFromResults } from "./evaluation-rubric";
 import type { FusionRecipeRef, FusionRecipeVersion } from "./fusion-study-types";
 import {
   findBlindnessViolations,
@@ -35,7 +35,7 @@ export interface BlockedPolicyEvidence {
 
 export interface BlockedPolicyInput {
   prompt: string;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   /** Anonymized candidates in the Judge-1 label order (shared). */
   blindCandidates: BlindCandidate[];
   /** Judge-1 evidence (shared). */
@@ -88,15 +88,15 @@ export interface BlockedPolicyPlan {
 export function deriveRankWinner(
   blindCandidates: BlindCandidate[],
   judgeReport: JudgeReport,
-  profile?: EvaluationProfileSnapshot | null,
+  rubric?: RubricSnapshot | null,
 ): { winnerCandidateId: string; winnerBlindLabel: string; winnerScore: number } {
   let best: { candidateId: string; label: string; score: number } | null = null;
   for (const candidate of blindCandidates) {
     const ev = judgeReport.evaluationsById[candidate.candidateId];
     if (!ev) continue;
-    // With a pinned profile, the authoritative ranking value is the derived
+    // With a pinned rubric, the authoritative ranking value is the derived
     // rankValue (Q − λ(1−C)); otherwise the Judge's holistic overallScore.
-    const rv = profile ? rankValueFromResults(ev.criterionScores, profile) : null;
+    const rv = rubric ? rankValueFromResults(ev.criterionScores, rubric) : null;
     const score = rv ?? ev.overallScore;
     if (best === null || score > best.score) {
       best = { candidateId: candidate.candidateId, label: candidate.label, score };
@@ -123,17 +123,17 @@ export function planBlockedPolicies(
   input: BlockedPolicyInput,
   recipe: FusionRecipeVersion,
 ): BlockedPolicyPlan {
-  // Forward the pinned profile so the blocked Rank baseline uses the same
+  // Forward the pinned rubric so the blocked Rank baseline uses the same
   // authoritative rankValue contract (Q − λ(1−C)) as fuse/refine and the
   // experiment matrix — otherwise Rank measures the Judge's holistic
   // overallScore while the compared baselines use rankValue.
-  const winner = deriveRankWinner(input.blindCandidates, input.judgeReport, input.profile);
+  const winner = deriveRankWinner(input.blindCandidates, input.judgeReport, input.rubric);
   const winnerContent =
     input.blindCandidates.find((c) => c.candidateId === winner.winnerCandidateId)?.content ?? "";
 
   const fuseMessages = renderRecipeMessages(recipe, {
     prompt: input.prompt,
-    profile: input.profile,
+    profile: input.rubric,
     blindCandidates: input.blindCandidates,
     judgeReport: input.judgeReport,
     consensus: input.consensus,
@@ -142,7 +142,7 @@ export function planBlockedPolicies(
 
   const refineMessages = renderRefineWinnerMessages({
     prompt: input.prompt,
-    profile: input.profile,
+    rubric: input.rubric,
     winnerLabel: winner.winnerBlindLabel,
     winnerContent,
     blindCandidates: input.blindCandidates,

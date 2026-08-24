@@ -11,7 +11,16 @@
 import { useState } from "react";
 import { Copy } from "lucide-react";
 
-export function CopyLinkButton({ label = "Copy link — this device" }: { label?: string }) {
+export function CopyLinkButton({
+  label = "Copy link — this device",
+  href,
+  subject = "run",
+}: {
+  label?: string;
+  /** Optional canonical route. Relative routes retain HashRouter addressing. */
+  href?: string;
+  subject?: "run" | "record";
+}) {
   const [copied, setCopied] = useState(false);
   // Polite live region text. Populated only after a successful clipboard write
   // so screen readers announce the copy without weakening the visible
@@ -21,9 +30,15 @@ export function CopyLinkButton({ label = "Copy link — this device" }: { label?
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      let target = window.location.href;
+      if (href) {
+        target = window.location.hash.startsWith("#/")
+          ? `${window.location.origin}${window.location.pathname}${window.location.search}#${href}`
+          : new URL(href, window.location.href).toString();
+      }
+      await navigator.clipboard.writeText(target);
       setCopied(true);
-      setAnnouncement("Link copied to this run on this device");
+      setAnnouncement(`Link copied to this ${subject} on this device`);
       window.setTimeout(() => {
         setCopied(false);
         setAnnouncement("");
@@ -39,7 +54,7 @@ export function CopyLinkButton({ label = "Copy link — this device" }: { label?
         type="button"
         data-action="copy-link"
         onClick={copy}
-        aria-label={copied ? "Link copied" : "Copy link to this run on this device"}
+        aria-label={copied ? "Link copied" : `Copy link to this ${subject} on this device`}
         className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text"
       >
         <Copy size={14} aria-hidden="true" />

@@ -459,7 +459,7 @@ export const LiveCandidateCard = memo(function LiveCandidateCard({
             type="button"
             onClick={copy}
             aria-label={copied ? "Copied" : `Copy ${candidate.model} answer`}
-            className="flex min-h-[36px] items-center gap-1 rounded-sm px-2 font-mono text-xs text-text-secondary hover:text-text"
+            className="flex min-h-[44px] items-center gap-1 rounded-sm px-2 font-mono text-xs text-text-secondary hover:text-text"
           >
             {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
             {copied ? "copied" : "copy"}

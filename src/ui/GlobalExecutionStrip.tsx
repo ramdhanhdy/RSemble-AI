@@ -145,8 +145,12 @@ export function buildStripViewModel(deps: {
 
   // Experiment-owned execution; the experiment progress route carries the same
   // information, so suppress exactly there (unless storage failed).
-  if (!storageFailed && pathname === `/experiments/${owner.id}`) return null;
-  const href = `/experiments/${owner.id}`;
+  if (
+    !storageFailed &&
+    (pathname === `/evaluations/results/${owner.id}` || pathname === `/experiments/${owner.id}`)
+  )
+    return null;
+  const href = `/evaluations/results/${owner.id}`;
   if (experiment === null) {
     return {
       kind: "experiment",

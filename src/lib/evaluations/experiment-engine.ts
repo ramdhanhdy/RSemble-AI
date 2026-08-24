@@ -25,7 +25,7 @@
 
 import {
   type EvaluationSuite,
-  type EvaluationProfile,
+  type EvaluationRubric,
   type ExperimentAttemptCoverage,
   type ExperimentRecord,
   type ExperimentTaskAttempt,
@@ -102,15 +102,15 @@ export function selectAttemptId(task: ExperimentTaskState): string | null {
 export interface CreateExperimentRecordInput {
   id: string;
   suite: EvaluationSuite;
-  profiles: EvaluationProfile[];
+  rubrics: EvaluationRubric[];
   now: number;
 }
 
 export function createExperimentRecord(input: CreateExperimentRecordInput): ExperimentRecord {
-  const { id, suite, profiles, now } = input;
+  const { id, suite, rubrics, now } = input;
   // createExperimentSnapshot deep-copies the suite's semantic content, so later
   // suite edits never mutate an existing experiment (spec §11.1).
-  const snapshot = createExperimentSnapshot(suite, profiles, now);
+  const snapshot = createExperimentSnapshot(suite, rubrics, now);
   const tasks: ExperimentTaskState[] = [...suite.tasks]
     .sort((a, b) => a.order - b.order)
     .map((t) => ({ taskId: t.id, selectedAttemptId: null, attempts: [] }));
@@ -210,6 +210,29 @@ export interface ExperimentEngine {
  *  and aborted tasks are all eligible (spec §11.3). */
 function taskNeedsRetry(task: ExperimentTaskState): boolean {
   return !task.attempts.some((a) => a.status === "completed");
+}
+
+/** True when `retryIncomplete` would queue at least one attempt. Pure. */
+export function isRetryIncompleteEligible(record: ExperimentRecord): boolean {
+  if (
+    record.status !== "completed" &&
+    record.status !== "completed_with_failures" &&
+    record.status !== "aborted" &&
+    record.status !== "interrupted"
+  ) {
+    return false;
+  }
+  for (const task of record.tasks) {
+    if (taskNeedsRetry(task)) return true;
+    const newest = task.attempts[task.attempts.length - 1];
+    if (
+      newest?.repair &&
+      (newest.status === "failed" || newest.status === "aborted" || newest.status === "interrupted")
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** A task counts toward clean completion when it produced any accepted

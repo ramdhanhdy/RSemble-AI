@@ -260,6 +260,52 @@ const SEED_SOURCE = `(async () => {
     protocolFingerprint: experiment.protocolFingerprint,
     createdAt: experiment.createdAt, status: experiment.status,
   });
+  const taskRecord = {
+    id: "t1", latestVersion: 1, createdAt: NOW, updatedAt: NOW, archivedAt: null,
+    origin: "legacy-task-set", revision: 1,
+  };
+  const taskVersion = {
+    taskId: "t1", version: 1, title: "Task t1 v1", objective: "Do the task",
+    candidateInstruction: "Solve it", defaultContextManifest: [],
+    responseContract: { format: "text", constraints: [], maxLength: null },
+    taskVerifierRef: null, source: { kind: "legacy-task-set", legacyScopeKey: "legacy:t1", note: null },
+    createdAt: NOW,
+  };
+  await put(db, "tasks", {
+    id: taskRecord.id, record: taskRecord, latestVersion: 1, createdAt: NOW,
+    updatedAt: NOW, archivedAt: null, origin: "legacy-task-set", revision: 1,
+  });
+  await put(db, "taskVersions", {
+    taskId: "t1", version: 1, version_: taskVersion, createdAt: NOW,
+  });
+
+  const tsRecord = {
+    id: "suite-matrix", latestVersion: 1, name: "Matrix Suite",
+    description: "Workload pinned to the Clarity rubric.", createdAt: NOW,
+    updatedAt: NOW, archivedAt: null, revision: 1, origin: "legacy-suite",
+  };
+  const tsVersion = {
+    taskSetId: "suite-matrix", version: 1,
+    members: [{
+      id: "member-1", taskVersionRef: { taskId: "t1", version: 1 }, order: 0,
+      role: "organic", stratum: null, weight: 1, rubricOverrideRef: null,
+      executionOverrides: null, unresolved: null,
+    }],
+    defaultRubricRef: { id: "prof-matrix", version: 1 },
+    defaultModelSlots: SLOTS,
+    defaultJudge: { providerId: "openrouter", model: "judge" },
+    repeatPolicy: { kind: "none" },
+    missingnessPolicy: { kind: "strict" },
+    protocolDefaults: {},
+    createdAt: NOW,
+  };
+  await put(db, "taskSets", {
+    id: tsRecord.id, record: tsRecord, latestVersion: 1, name: "Matrix Suite",
+    createdAt: NOW, updatedAt: NOW, archivedAt: null, origin: "legacy-suite", revision: 1,
+  });
+  await put(db, "taskSetVersions", {
+    taskSetId: "suite-matrix", version: 1, version_: tsVersion, createdAt: NOW,
+  });
 
   db.close();
   return true;
@@ -274,7 +320,7 @@ const IDENTITY_ASSERT_SOURCE = `(() => {
   const has = (s) => (document.body.innerText ?? "").includes(s);
   const workloadEyebrow = Boolean(document.querySelector('span[title="A versioned set of tasks, models, and a judge. You run it."]'));
   const chip = document.querySelector('[aria-label^="Rubric "]');
-  const slot = document.querySelector('[data-geometry="suite-archive-slot"]');
+  const slot = document.querySelector('[data-geometry="task-set-archive-slot"]');
   const slotStyle = slot ? getComputedStyle(slot).minWidth : null;
   const sublabels = [...document.querySelectorAll('[data-nav-sublabel]')];
   const activeVisible = sublabels.some((s) => !s.classList.contains("invisible"));
@@ -306,7 +352,7 @@ try {
 
   // --- 1440×1000 desktop -------------------------------------------------------
   await setViewport({ width: 1440, height: 1000 });
-  await navigateTo("#/evaluations");
+  await navigateTo("#/evaluations/sets");
   await waitFor("Boolean(document.querySelector('[data-record-row]'))", "suite rows");
   const desktop = await evaluate(IDENTITY_ASSERT_SOURCE);
   record("desktop-1440", {
@@ -315,7 +361,7 @@ try {
       !desktop.overflowX &&
       desktop.workloadEyebrow &&
       desktop.pinnedChip &&
-      desktop.chipLink === "#/evaluations/profiles/prof-matrix" &&
+      desktop.chipLink === "#/evaluations/rubrics/prof-matrix" &&
       desktop.holisticChip &&
       desktop.latestRun &&
       desktop.sublabelCount === 2 &&
@@ -329,7 +375,7 @@ try {
 
   // --- 1024×768 tablet landscape ------------------------------------------------
   await setViewport({ width: 1024, height: 768 });
-  await navigateTo("#/evaluations");
+  await navigateTo("#/evaluations/sets");
   await waitFor("Boolean(document.querySelector('[data-record-row]'))", "suite rows");
   const tablet = await evaluate(IDENTITY_ASSERT_SOURCE);
   record("tablet-1024", {
@@ -347,7 +393,7 @@ try {
 
   // --- 768×1024 tablet portrait -------------------------------------------------
   await setViewport({ width: 768, height: 1024 });
-  await navigateTo("#/evaluations");
+  await navigateTo("#/evaluations/sets");
   await waitFor("Boolean(document.querySelector('[data-record-row]'))", "suite rows");
   const portrait = await evaluate(IDENTITY_ASSERT_SOURCE);
   record("tablet-portrait-768", {
@@ -366,7 +412,7 @@ try {
   // Below sm, chips and eyebrows collapse to icon-only (aria-label/title carry
   // the meaning; innerText excludes hidden text), so assert on the attributes.
   await setViewport({ width: 390, height: 844, mobile: true, touch: true });
-  await navigateTo("#/evaluations");
+  await navigateTo("#/evaluations/sets");
   await waitFor("Boolean(document.querySelector('[data-record-row]'))", "suite rows");
   const mobile = await evaluate(`(() => {
     const has = (s) => (document.body.innerText ?? "").includes(s);
@@ -387,7 +433,7 @@ try {
       !mobile.overflowX &&
       mobile.workloadEyebrow &&
       mobile.pinnedChip &&
-      mobile.chipLink === "#/evaluations/profiles/prof-matrix" &&
+      mobile.chipLink === "#/evaluations/rubrics/prof-matrix" &&
       mobile.holisticChip &&
       mobile.titleVisible &&
       mobile.suiteNames,
@@ -397,9 +443,9 @@ try {
 
   // --- Profiles list at desktop (rubric identity + reusable status) --------------
   await setViewport({ width: 1440, height: 1000 });
-  await navigateTo("#/evaluations/profiles");
-  await waitFor("Boolean(document.querySelector('[data-record-row]'))", "profile rows");
-  const profilesPage = await evaluate(`(() => {
+  await navigateTo("#/evaluations/rubrics");
+  await waitFor("Boolean(document.querySelector('[data-record-row]'))", "rubric rows");
+  const rubricsPage = await evaluate(`(() => {
     const body = document.body.innerText ?? "";
     return {
       overflowX: document.documentElement.scrollWidth > innerWidth,
@@ -408,22 +454,24 @@ try {
       reusableStatus: body.includes("Reusable"),
       criteriaPreview: body.includes("1 criterion"),
       profileRow: body.includes("Clarity"),
+      hasNewRubricAction: Boolean(document.querySelector('[data-action="new-rubric"]')),
     };
   })()`);
-  record("profiles-1440", {
-    ...profilesPage,
+  record("rubrics-1440", {
+    ...rubricsPage,
     pass:
-      !profilesPage.overflowX &&
-      profilesPage.rubricEyebrow &&
-      profilesPage.reusableStatus &&
-      profilesPage.profileRow,
-    reason: "profile rows show rubric identity and honest reusable status",
+      !rubricsPage.overflowX &&
+      rubricsPage.rubricEyebrow &&
+      rubricsPage.reusableStatus &&
+      rubricsPage.profileRow &&
+      rubricsPage.hasNewRubricAction,
+    reason: "rubric rows show rubric identity, reusable status, and new rubric action",
   });
-  await screenshot("qa-profiles-1440");
+  await screenshot("qa-rubrics-1440");
 
   // --- 200% zoom (720px CSS viewport, per suite-reliability convention) ----------
   await setViewport({ width: 720, height: 500 });
-  await navigateTo("#/evaluations");
+  await navigateTo("#/evaluations/sets");
   await waitFor("Boolean(document.querySelector('[data-record-row]'))", "suite rows");
   const zoom = await evaluate(`(() => {
     return {
@@ -445,7 +493,7 @@ try {
   await send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-motion", value: "reduce" }],
   });
-  await navigateTo("#/evaluations");
+  await navigateTo("#/evaluations/sets");
   await waitFor("Boolean(document.querySelector('[data-record-row]'))", "suite rows");
   const reduced = await evaluate(`(() => {
     const spinner = document.createElement("span");
@@ -464,6 +512,124 @@ try {
     reason: "reduced motion removes spinner rotation without horizontal overflow",
   });
   await screenshot("qa-reduced-motion");
+
+  // --- Task Set List Actions (create & import) --------------------------------
+  await setViewport({ width: 1440, height: 1000 });
+  await navigateTo("#/evaluations/sets");
+  await waitFor("Boolean(document.querySelector('[data-record-row]'))", "suite rows");
+  const listActions = await evaluate(`(() => {
+    return {
+      createAction: Boolean(document.querySelector('[data-action="create-task-set"]')),
+      importAction: Boolean(document.querySelector('[data-action="import-suite"]')),
+      overflowX: document.documentElement.scrollWidth > innerWidth,
+    };
+  })()`);
+  record("task-set-list-actions", {
+    ...listActions,
+    pass: listActions.createAction && listActions.importAction && !listActions.overflowX,
+    reason: "task set list provides create and import actions without horizontal overflow",
+  });
+
+  // --- Rubric Detail & Version Selector ----------------------------------------
+  await setViewport({ width: 1440, height: 1000 });
+  await navigateTo("#/evaluations/rubrics/prof-matrix");
+  await waitFor(
+    "Boolean(document.querySelector('[data-action=\"save\"]'))",
+    "rubric detail save action",
+  );
+  const rubricDetail = await evaluate(`(() => {
+    const text = document.body.textContent ?? "";
+    return {
+      nameClarity: (document.querySelector('input#rubric-name')?.value ?? text).includes("Clarity"),
+      hasSave: Boolean(document.querySelector('[data-action="save"]')),
+      hasDuplicate: Boolean(document.querySelector('[data-action="duplicate"]')),
+      hasVersionSelector: Boolean(document.querySelector('[data-action="version-selector"]')),
+      overflowX: document.documentElement.scrollWidth > innerWidth,
+    };
+  })()`);
+  record("rubric-detail-1440", {
+    ...rubricDetail,
+    pass:
+      rubricDetail.nameClarity &&
+      rubricDetail.hasSave &&
+      rubricDetail.hasDuplicate &&
+      rubricDetail.hasVersionSelector &&
+      !rubricDetail.overflowX,
+    reason: "rubric detail renders rubric name, save/duplicate actions, and version selector",
+  });
+  await screenshot("qa-rubric-detail-1440");
+
+  // --- Task Set Editor at 1440 -------------------------------------------------
+  await setViewport({ width: 1440, height: 1000 });
+  await navigateTo("#/evaluations/sets/suite-matrix");
+  await waitFor(
+    "Boolean(document.querySelector('[data-action=\"run-task-set\"]'))",
+    "task set editor run action",
+  );
+  const editor1440 = await evaluate(`(() => {
+    const text = document.body.textContent ?? "";
+    return {
+      hasRunAction: Boolean(document.querySelector('[data-action="run-task-set"]')),
+      hasSaveAction: Boolean(document.querySelector('[data-action="save-task-set"]')),
+      hasSettings: Boolean(document.querySelector('[aria-controls="suite-settings-disclosure"]')),
+      suiteTitle: text.includes("Matrix Suite"),
+      overflowX: document.documentElement.scrollWidth > innerWidth,
+    };
+  })()`);
+  record("task-set-editor-1440", {
+    ...editor1440,
+    pass:
+      editor1440.hasRunAction &&
+      editor1440.hasSaveAction &&
+      editor1440.hasSettings &&
+      editor1440.suiteTitle &&
+      !editor1440.overflowX,
+    reason: "task set editor renders run, save, and settings actions without overflow at 1440px",
+  });
+  await screenshot("qa-task-set-editor-1440");
+
+  // --- Task Set Editor at 390 mobile -------------------------------------------
+  await setViewport({ width: 390, height: 844, mobile: true, touch: true });
+  await navigateTo("#/evaluations/sets/suite-matrix");
+  await waitFor(
+    "Boolean(document.querySelector('[data-action=\"run-task-set\"]'))",
+    "task set editor mobile run action",
+  );
+  const editor390 = await evaluate(`(() => {
+    return {
+      hasRunAction: Boolean(document.querySelector('[data-action="run-task-set"]')),
+      hasSaveAction: Boolean(document.querySelector('[data-action="save-task-set"]')),
+      overflowX: document.documentElement.scrollWidth > innerWidth,
+    };
+  })()`);
+  record("task-set-editor-390", {
+    ...editor390,
+    pass: editor390.hasRunAction && editor390.hasSaveAction && !editor390.overflowX,
+    reason: "task set editor renders run and save actions without horizontal overflow at 390px",
+  });
+  await screenshot("qa-task-set-editor-390");
+
+  // --- Task Set Version Route (historical read-only) ---------------------------
+  await setViewport({ width: 1440, height: 1000, mobile: false, touch: false });
+  await navigateTo("#/evaluations/sets/suite-matrix/versions/1");
+  await waitFor(
+    "Boolean(document.querySelector('[data-action=\"run-task-set\"]'))",
+    "task set version run action",
+  );
+  const versionView = await evaluate(`(() => {
+    const text = document.body.textContent ?? "";
+    return {
+      hasRunAction: Boolean(document.querySelector('[data-action="run-task-set"]')),
+      hasVersionInfo: text.includes("v1") && (text.includes("read-only") || text.includes("Saved")),
+      overflowX: document.documentElement.scrollWidth > innerWidth,
+    };
+  })()`);
+  record("task-set-version-1440", {
+    ...versionView,
+    pass: versionView.hasRunAction && versionView.hasVersionInfo && !versionView.overflowX,
+    reason: "version route displays version state and run action without overflow",
+  });
+  await screenshot("qa-task-set-version-1440");
 
   fs.writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify(results, null, 2)}\n`);
   console.log(`Evaluations-identity QA passed. Evidence: ${outDir}`);

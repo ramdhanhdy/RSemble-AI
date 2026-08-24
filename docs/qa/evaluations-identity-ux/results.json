@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-03T18:46:26.381Z",
+  "generatedAt": "2026-08-16T03:29:27.213Z",
   "baseUrl": "http://localhost:5176/",
   "probes": [
     {
@@ -7,7 +7,7 @@
       "overflowX": false,
       "workloadEyebrow": true,
       "pinnedChip": true,
-      "chipLink": "#/evaluations/profiles/prof-matrix",
+      "chipLink": "#/evaluations/rubrics/prof-matrix",
       "holisticChip": true,
       "latestRun": true,
       "sublabelCount": 2,
@@ -23,7 +23,7 @@
       "overflowX": false,
       "workloadEyebrow": true,
       "pinnedChip": true,
-      "chipLink": "#/evaluations/profiles/prof-matrix",
+      "chipLink": "#/evaluations/rubrics/prof-matrix",
       "holisticChip": true,
       "latestRun": true,
       "sublabelCount": 2,
@@ -39,7 +39,7 @@
       "overflowX": false,
       "workloadEyebrow": true,
       "pinnedChip": true,
-      "chipLink": "#/evaluations/profiles/prof-matrix",
+      "chipLink": "#/evaluations/rubrics/prof-matrix",
       "holisticChip": true,
       "latestRun": true,
       "sublabelCount": 2,
@@ -55,7 +55,7 @@
       "overflowX": false,
       "workloadEyebrow": true,
       "pinnedChip": true,
-      "chipLink": "#/evaluations/profiles/prof-matrix",
+      "chipLink": "#/evaluations/rubrics/prof-matrix",
       "holisticChip": true,
       "titleVisible": true,
       "suiteNames": true,
@@ -64,14 +64,15 @@
       "reason": "icon-only chips and eyebrow keep titles legible at 390px without overflow"
     },
     {
-      "name": "profiles-1440",
+      "name": "rubrics-1440",
       "overflowX": false,
       "rubricEyebrow": true,
       "reusableStatus": true,
       "criteriaPreview": true,
       "profileRow": true,
+      "hasNewRubricAction": true,
       "pass": true,
-      "reason": "profile rows show rubric identity and honest reusable status"
+      "reason": "rubric rows show rubric identity, reusable status, and new rubric action"
     },
     {
       "name": "zoom-200-percent",
@@ -88,6 +89,50 @@
       "overflowX": false,
       "pass": true,
       "reason": "reduced motion removes spinner rotation without horizontal overflow"
+    },
+    {
+      "name": "task-set-list-actions",
+      "createAction": true,
+      "importAction": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "task set list provides create and import actions without horizontal overflow"
+    },
+    {
+      "name": "rubric-detail-1440",
+      "nameClarity": true,
+      "hasSave": true,
+      "hasDuplicate": true,
+      "hasVersionSelector": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "rubric detail renders rubric name, save/duplicate actions, and version selector"
+    },
+    {
+      "name": "task-set-editor-1440",
+      "hasRunAction": true,
+      "hasSaveAction": true,
+      "hasSettings": true,
+      "suiteTitle": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "task set editor renders run, save, and settings actions without overflow at 1440px"
+    },
+    {
+      "name": "task-set-editor-390",
+      "hasRunAction": true,
+      "hasSaveAction": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "task set editor renders run and save actions without horizontal overflow at 390px"
+    },
+    {
+      "name": "task-set-version-1440",
+      "hasRunAction": true,
+      "hasVersionInfo": true,
+      "overflowX": false,
+      "pass": true,
+      "reason": "version route displays version state and run action without overflow"
     }
   ],
   "screenshots": [
@@ -95,8 +140,12 @@
     "qa-tablet-1024.png",
     "qa-tablet-portrait-768.png",
     "qa-mobile-390.png",
-    "qa-profiles-1440.png",
+    "qa-rubrics-1440.png",
     "qa-zoom-200.png",
-    "qa-reduced-motion.png"
+    "qa-reduced-motion.png",
+    "qa-rubric-detail-1440.png",
+    "qa-task-set-editor-1440.png",
+    "qa-task-set-editor-390.png",
+    "qa-task-set-version-1440.png"
   ]
 }

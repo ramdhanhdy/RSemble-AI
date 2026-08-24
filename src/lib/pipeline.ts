@@ -36,7 +36,7 @@ import type {
   EvaluationCriterion,
   EvaluationProfileSnapshot,
 } from "./evaluations/evaluation-types";
-import { evaluationCriteriaText } from "./evaluations/evaluation-profile";
+import { evaluationCriteriaText } from "./evaluations/evaluation-rubric";
 import { FUSION_RECIPE_BLIND_RAW_V1, renderRecipeMessages } from "./evaluations/fusion-recipes";
 
 /** Generate an unbounded spreadsheet-style blind label: A..Z, AA..AZ, BA... */

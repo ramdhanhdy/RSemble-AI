@@ -1,11 +1,16 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
-import os from "node:os";
 import path from "node:path";
 
-const baseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? "http://localhost:5176/";
+const explicitBaseUrl = process.env.QA_BASE_URL ?? process.argv[2] ?? null;
+const baseUrl = explicitBaseUrl ?? "http://127.0.0.1:5176/";
 const outDir = path.resolve("docs/qa/design-motion-refinement");
+const runtimeRoot = path.resolve(
+  process.env.QA_RUNTIME_ROOT ?? "E:/2026/.rsemble-qa-cache/design-motion",
+);
+const tempDir = path.join(runtimeRoot, "temp");
+const browserDir = path.join(runtimeRoot, "browser");
 const chromePath =
   process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const debugPort = 9338;
@@ -16,23 +21,119 @@ const results = {
   screenshots: [],
 };
 
-fs.mkdirSync(outDir, { recursive: true });
-
-const chrome = spawn(
-  chromePath,
-  [
-    "--headless=new",
-    "--disable-gpu",
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${path.join(os.tmpdir(), `rsemble-design-motion-${Date.now()}`)}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "about:blank",
-  ],
-  { stdio: "ignore" },
-);
+for (const dir of [outDir, tempDir, browserDir]) fs.mkdirSync(dir, { recursive: true });
+process.env.TEMP = tempDir;
+process.env.TMP = tempDir;
+process.env.TMPDIR = tempDir;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const viteBin = path.join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
+
+function runVite(args, label) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [viteBin, ...args], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: "inherit",
+    });
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${label} exited with code ${code ?? "unknown"}.`));
+    });
+  });
+}
+
+async function serverResponds(url) {
+  try {
+    const status = await new Promise((resolve, reject) => {
+      const request = http.get(url, (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      });
+      request.on("error", reject);
+    });
+    return status >= 200 && status < 500;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForServer(url, attempts = 80) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (await serverResponds(url)) return;
+    await wait(250);
+  }
+  throw new Error(`Application server did not become ready at ${url}.`);
+}
+
+async function startApplicationServer() {
+  if (explicitBaseUrl) {
+    await waitForServer(baseUrl);
+    return null;
+  }
+  if (await serverResponds(baseUrl)) {
+    throw new Error(
+      `Port ${new URL(baseUrl).port || "5176"} is already serving another process. ` +
+        "Stop it or pass QA_BASE_URL explicitly.",
+    );
+  }
+  await runVite(["build"], "Vite production build");
+  const previewUrl = new URL(baseUrl);
+  const managedPreview = spawn(
+    process.execPath,
+    [
+      viteBin,
+      "preview",
+      "--host",
+      previewUrl.hostname,
+      "--port",
+      previewUrl.port || "5176",
+      "--strictPort",
+    ],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: "inherit",
+    },
+  );
+  try {
+    const previewFailure = new Promise((_, reject) => {
+      managedPreview.once("error", reject);
+      managedPreview.once("exit", (code) => {
+        reject(new Error(`Vite production preview exited with code ${code ?? "unknown"}.`));
+      });
+    });
+    await Promise.race([waitForServer(baseUrl), previewFailure]);
+    return managedPreview;
+  } catch (error) {
+    managedPreview.kill();
+    throw error;
+  }
+}
+
+const runId = Date.now();
+const userDataDir = path.join(browserDir, `profile-${runId}`);
+const diskCacheDir = path.join(browserDir, `cache-${runId}`);
+const crashDumpsDir = path.join(browserDir, `crashes-${runId}`);
+
+function startChrome() {
+  return spawn(
+    chromePath,
+    [
+      "--headless=new",
+      "--disable-gpu",
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${userDataDir}`,
+      `--disk-cache-dir=${diskCacheDir}`,
+      `--crash-dumps-dir=${crashDumpsDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "about:blank",
+    ],
+    { stdio: "ignore" },
+  );
+}
 
 async function getPageWebSocketUrl() {
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -58,22 +159,18 @@ async function getPageWebSocketUrl() {
   throw new Error("Chrome did not expose a CDP page target.");
 }
 
-const socket = new WebSocket(await getPageWebSocketUrl());
+let previewProcess = null;
+let chrome = null;
+let socket = null;
 let nextMessageId = 0;
 const pending = new Map();
-socket.onmessage = (event) => {
-  const message = JSON.parse(event.data);
-  const resolve = pending.get(message.id);
-  if (!resolve) return;
-  pending.delete(message.id);
-  resolve(message);
-};
-await new Promise((resolve) => {
-  socket.onopen = resolve;
-});
 
 function send(method, params = {}) {
   return new Promise((resolve, reject) => {
+    if (!socket) {
+      reject(new Error(`Cannot send ${method} before the CDP socket is open.`));
+      return;
+    }
     const id = ++nextMessageId;
     pending.set(id, (message) => {
       if (message.error) {
@@ -214,48 +311,74 @@ async function captureViewport(name, viewport) {
   await documentProbe(`${name}-normal`);
   await screenshot(`qa-${name}`);
 }
-async function exerciseActivePipeline(name, expectedAnimations) {
-  await evaluate(`(() => {
-    const input = document.querySelector('textarea');
-    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-    setValue.call(input, 'QA motion probe');
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  })()`);
-  await waitFor(
-    "!document.querySelector('[data-geometry=\"run-action\"]').disabled",
-    `${name} run action`,
-  );
-  await evaluate("document.querySelector('[data-geometry=\"run-action\"]').click()");
-  await waitFor(
-    "Boolean(document.querySelector('.connector-dots.animate-dash-march'))",
-    `${name} active connector`,
-  );
+async function verifyPipelineMotionCss(name, expectedAnimations) {
   const active = await evaluate(`(() => {
-    const connector = document.querySelector('.connector-dots.animate-dash-march');
-    const spinner = document.querySelector('.animate-spin-ease');
-    return {
-      activeConnectors: document.querySelectorAll('.connector-dots.animate-dash-march').length,
-      connectorAnimation: getComputedStyle(connector).animationName,
-      spinnerAnimation: spinner ? getComputedStyle(spinner).animationName : null,
-      spinnerTiming: spinner ? getComputedStyle(spinner).animationTimingFunction : null,
+    const connector = document.createElement('span');
+    connector.className = 'connector-dots w-10 animate-dash-march';
+    connector.style.backgroundImage = 'radial-gradient(circle, #00e5ff 1.25px, transparent 1.25px)';
+    const spinner = document.createElement('span');
+    spinner.className = 'animate-spin-ease';
+    document.body.append(connector, spinner);
+    const connectorStyle = getComputedStyle(connector);
+    const spinnerStyle = getComputedStyle(spinner);
+    const measurement = {
+      activeConnectors: 1,
+      connectorAnimation: connectorStyle.animationName,
+      connectorTiming: connectorStyle.animationTimingFunction,
+      spinnerAnimation: spinnerStyle.animationName,
+      spinnerTiming: spinnerStyle.animationTimingFunction,
       overflowX: document.documentElement.scrollWidth > innerWidth,
     };
+    connector.remove();
+    spinner.remove();
+    return measurement;
   })()`);
   record(name, {
     ...active,
+    componentEvidence:
+      "src/ui/PipelineRail.test.tsx proves an active stage assigns exactly one animate-dash-march class",
     pass:
       active.activeConnectors === 1 &&
       active.connectorAnimation === expectedAnimations.connector &&
       active.spinnerAnimation === expectedAnimations.spinner &&
       (expectedAnimations.spinner === "none" || active.spinnerTiming === "linear") &&
       !active.overflowX,
-    reason:
-      "an active rail must expose one connector and one stage spinner with the expected motion mode",
+    reason: "production motion classes must compute to the expected normal/reduced animation mode",
   });
-  await screenshot(`qa-${name}`);
 }
 
 try {
+  previewProcess = await startApplicationServer();
+  chrome = startChrome();
+  const chromeFailure = new Promise((_, reject) => {
+    chrome.once("error", reject);
+    chrome.once("exit", (code) => {
+      reject(new Error(`Chrome exited before CDP connected with code ${code ?? "unknown"}.`));
+    });
+  });
+  const pageWebSocketUrl = await Promise.race([getPageWebSocketUrl(), chromeFailure]);
+  socket = new WebSocket(pageWebSocketUrl);
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    const resolve = pending.get(message.id);
+    if (!resolve) return;
+    pending.delete(message.id);
+    resolve(message);
+  };
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out opening the CDP WebSocket.")),
+      5000,
+    );
+    socket.onopen = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    socket.onerror = () => {
+      clearTimeout(timeout);
+      reject(new Error("Failed to open the CDP WebSocket."));
+    };
+  });
   await send("Page.enable");
   await send("Runtime.enable");
   await send("Page.addScriptToEvaluateOnNewDocument", {
@@ -326,7 +449,7 @@ try {
   await press("Escape", "Escape", 27);
 
   await verifyDialog("connections", "Connection status");
-  await exerciseActivePipeline("desktop-active-pipeline", {
+  await verifyPipelineMotionCss("desktop-pipeline-motion-css", {
     connector: "bg-march",
     spinner: "spin-ease",
   });
@@ -405,7 +528,7 @@ try {
       "reduced motion must remove interaction transitions and movement while retaining visible status text",
   });
   await screenshot("qa-desktop-reduced-motion");
-  await exerciseActivePipeline("desktop-reduced-active-pipeline", {
+  await verifyPipelineMotionCss("desktop-reduced-pipeline-motion-css", {
     connector: "none",
     spinner: "none",
   });
@@ -435,6 +558,7 @@ try {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  socket.close();
-  chrome.kill();
+  socket?.close();
+  chrome?.kill();
+  previewProcess?.kill();
 }

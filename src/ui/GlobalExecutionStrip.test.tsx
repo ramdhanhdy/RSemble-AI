@@ -173,7 +173,7 @@ const BASE_VIEW: StripViewModel = {
   kind: "experiment",
   caption: "Evaluation · Task 2/3 · Write a haiku",
   elapsedMs: 5000,
-  href: "/experiments/exp-1",
+  href: "/evaluations/results/exp-1",
   status: "running",
   alert: null,
 };
@@ -194,7 +194,17 @@ describe("buildStripViewModel", () => {
   });
 
   it("suppresses experiment-owned execution on its own progress route (plan 7.1 #9)", () => {
-    const view = buildStripViewModel({
+    const view1 = buildStripViewModel({
+      owner: { kind: "experiment", id: "exp-1" },
+      experiment: makeExperiment(),
+      pathname: "/evaluations/results/exp-1",
+      compareRunning: false,
+      leaseOwnedElsewhere: false,
+      storageFailed: false,
+    });
+    expect(view1).toBeNull();
+
+    const view2 = buildStripViewModel({
       owner: { kind: "experiment", id: "exp-1" },
       experiment: makeExperiment(),
       pathname: "/experiments/exp-1",
@@ -202,7 +212,7 @@ describe("buildStripViewModel", () => {
       leaseOwnedElsewhere: false,
       storageFailed: false,
     });
-    expect(view).toBeNull();
+    expect(view2).toBeNull();
   });
 
   it("never suppresses a storage failure, even on owning routes (plan 7.1 #9)", () => {
@@ -242,7 +252,7 @@ describe("buildStripViewModel", () => {
     });
     expect(view?.kind).toBe("experiment");
     expect(view?.caption).toBe("Evaluation · Task 2/3 · Write a haiku");
-    expect(view?.href).toBe("/experiments/exp-1");
+    expect(view?.href).toBe("/evaluations/results/exp-1");
     expect(view?.status).toBe("running");
     expect(typeof view?.elapsedMs).toBe("number");
     expect(view?.elapsedMs ?? 0).toBeGreaterThanOrEqual(5000);
@@ -400,7 +410,7 @@ describe("GlobalExecutionStrip", () => {
   it("renders a View progress link with a ≥44px target (plan 7.1 #10)", async () => {
     const h = renderWithRouter(<GlobalExecutionStrip view={BASE_VIEW} />);
     await settle();
-    const link = h.$('a[href="/experiments/exp-1"]')!;
+    const link = h.$('a[href="/evaluations/results/exp-1"]')!;
     expect(link).not.toBeNull();
     expect(link.textContent).toContain("View progress");
     expect(link.className).toContain("min-h-[44px]");

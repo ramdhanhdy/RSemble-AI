@@ -3,6 +3,7 @@ dist
 dist-ssr
 coverage
 *.local
+.hermes
 
 # Environment files 
 .env
@@ -18,6 +19,9 @@ coverage
 
 # Local coding-agent configuration
 WATCHDOG.yml
+WATCHDOG.md
+AGENTS.md
+.omp/
 
 idea.md
 CLAUDE.md
@@ -33,6 +37,7 @@ dist-fixed/
 # Local browser QA profiles and superseded root captures
 .chrome-review*/
 ui-review-*.png
+.qa-runtime/
 
 # Generated TypeScript build metadata/config output.
 # `tsc -b` rewrites these on every typecheck/build, so tracking them would

@@ -438,11 +438,11 @@ describe("modelTaskScoreFromReport — binary criteria excluded from numeric vec
 
 // --- §17 group-level binary oracle (spec acceptance criterion 21) -------------
 
-import type { EvaluationProfileSnapshot } from "./evaluation-types";
+import type { RubricSnapshot } from "./evaluation-types";
 
 describe("group-level binary oracle (spec §17/§21)", () => {
   /** A two-check ALL group: both must pass for the group to be satisfied. */
-  const profile: EvaluationProfileSnapshot = {
+  const rubric: RubricSnapshot = {
     id: "p-bin",
     version: 1,
     name: "Binary",
@@ -503,7 +503,7 @@ describe("group-level binary oracle (spec §17/§21)", () => {
     // Neither model satisfies the ALL group. The oracle is also unsatisfied
     // (no model satisfies the group), so headroom is 0.
     const tasks = [pair([true, false], [false, true])];
-    const h = computeBinaryOracleHeadroom(tasks, profile);
+    const h = computeBinaryOracleHeadroom(tasks, rubric);
     expect(h).toBe(0);
   });
 
@@ -511,13 +511,13 @@ describe("group-level binary oracle (spec §17/§21)", () => {
     // A passes both (group satisfied); B passes neither.
     // Oracle = satisfied (via A); best model = satisfied (A). Surplus = 0.
     const tasks = [pair([true, true], [false, false])];
-    const h = computeBinaryOracleHeadroom(tasks, profile);
+    const h = computeBinaryOracleHeadroom(tasks, rubric);
     expect(h).toBe(0);
   });
 
   it("both models fail → oracle unsatisfied, headroom 0", () => {
     const tasks = [pair([false, false], [false, false])];
-    const h = computeBinaryOracleHeadroom(tasks, profile);
+    const h = computeBinaryOracleHeadroom(tasks, rubric);
     expect(h).toBe(0);
   });
 
@@ -525,35 +525,35 @@ describe("group-level binary oracle (spec §17/§21)", () => {
     // Two singleton groups: g1 = {check-a}, g2 = {check-b}.
     // A passes g1 but not g2; B passes g2 but not g1. Neither model satisfies
     // both groups, but the oracle (pick best per group) satisfies both.
-    const profile2: EvaluationProfileSnapshot = {
-      ...profile,
+    const rubric2: RubricSnapshot = {
+      ...rubric,
       requirementGroups: [
         { id: "g1", name: "GA", checkIds: ["check-a"], weight: 1, mode: "ALL" },
         { id: "g2", name: "GB", checkIds: ["check-b"], weight: 1, mode: "ALL" },
       ],
     };
     const tasks = [pair([true, false], [false, true])];
-    const h = computeBinaryOracleHeadroom(tasks, profile2);
+    const h = computeBinaryOracleHeadroom(tasks, rubric2);
     // Oracle: g1 satisfied (A), g2 satisfied (B) → 2.
     // Best model: A = 1 (g1), B = 1 (g2) → max(1,1) = 1.
     // Surplus = 2 - 1 = 1 per task.
     expect(h).toBe(1);
   });
 
-  it("returns null when profile has no requirement groups", () => {
-    const profileNoGroups: EvaluationProfileSnapshot = {
-      ...profile,
+  it("returns null when rubric has no requirement groups", () => {
+    const rubricNoGroups: RubricSnapshot = {
+      ...rubric,
       requirementGroups: undefined,
     };
-    const h = computeBinaryOracleHeadroom([pair([true, false], [false, true])], profileNoGroups);
+    const h = computeBinaryOracleHeadroom([pair([true, false], [false, true])], rubricNoGroups);
     expect(h).toBeNull();
   });
 
   it("mean oracle surplus over multiple tasks", () => {
     // Task 1: both satisfy → surplus 0. Task 2: complementary singletons → surplus 1.
     // Mean = 0.5.
-    const profile2: EvaluationProfileSnapshot = {
-      ...profile,
+    const rubric2: RubricSnapshot = {
+      ...rubric,
       requirementGroups: [
         { id: "g1", name: "GA", checkIds: ["check-a"], weight: 1, mode: "ALL" },
         { id: "g2", name: "GB", checkIds: ["check-b"], weight: 1, mode: "ALL" },
@@ -563,7 +563,7 @@ describe("group-level binary oracle (spec §17/§21)", () => {
       pair([true, true], [true, true]), // both satisfy both → surplus 0
       pair([true, false], [false, true]), // complementary → surplus 1
     ];
-    const h = computeBinaryOracleHeadroom(tasks, profile2);
+    const h = computeBinaryOracleHeadroom(tasks, rubric2);
     expect(h).toBeCloseTo(0.5, 10);
   });
 });
@@ -650,7 +650,7 @@ describe("binary pass-rate imbalance (spec §17)", () => {
 });
 
 describe("computeHeadroom with binary channel", () => {
-  const profile: EvaluationProfileSnapshot = {
+  const rubric: RubricSnapshot = {
     id: "p-mix",
     version: 1,
     name: "Mixed",
@@ -681,7 +681,7 @@ describe("computeHeadroom with binary channel", () => {
   };
   const weights = new Map([["quality", 1]]);
 
-  it("populates binaryPerCriterion and binaryOracleHeadroom when profile has groups", () => {
+  it("populates binaryPerCriterion and binaryOracleHeadroom when rubric has groups", () => {
     // 3 tasks (meets MIN_BINARY_SAMPLES); A always passes check-a, B never does.
     const mk = (ta: boolean, tb: boolean): PairedTaskScores => ({
       taskId: `t-${ta}-${tb}`,
@@ -697,7 +697,7 @@ describe("computeHeadroom with binary channel", () => {
       },
     });
     const tasks = [mk(true, false), mk(true, false), mk(true, false)];
-    const m = computeHeadroom(tasks, weights, profile);
+    const m = computeHeadroom(tasks, weights, rubric);
     expect(m.binaryPerCriterion).toHaveLength(1);
     expect(m.binaryPerCriterion[0].checkId).toBe("check-a");
     // Both-pass: 0/3 → imbalance = 1.
@@ -707,7 +707,7 @@ describe("computeHeadroom with binary channel", () => {
     expect(m.binaryOracleHeadroom).toBe(0);
   });
 
-  it("binaryOracleHeadroom is null without profile", () => {
+  it("binaryOracleHeadroom is null without rubric", () => {
     const mk = (ta: boolean, tb: boolean): PairedTaskScores => ({
       taskId: `t-${ta}-${tb}`,
       a: {
@@ -724,7 +724,7 @@ describe("computeHeadroom with binary channel", () => {
     const tasks = [mk(true, false), mk(true, false), mk(true, false)];
     const m = computeHeadroom(tasks, weights);
     expect(m.binaryOracleHeadroom).toBeNull();
-    // binaryPerCriterion is always computed (no profile needed).
+    // binaryPerCriterion is always computed (no rubric needed).
     expect(m.binaryPerCriterion).toHaveLength(1);
   });
 
@@ -744,10 +744,10 @@ describe("computeHeadroom with binary channel", () => {
         },
       },
     ];
-    const mWithProfile = computeHeadroom(tasks, weights, profile);
-    const mWithoutProfile = computeHeadroom(tasks, weights);
-    expect(mWithProfile.selectionHeadroom).toBeCloseTo(mWithoutProfile.selectionHeadroom, 10);
-    expect(mWithProfile.synthesisHeadroom).toBeCloseTo(mWithoutProfile.synthesisHeadroom ?? 0, 10);
-    expect(mWithProfile.perCriterion).toEqual(mWithoutProfile.perCriterion);
+    const mWithRubric = computeHeadroom(tasks, weights, rubric);
+    const mWithoutRubric = computeHeadroom(tasks, weights);
+    expect(mWithRubric.selectionHeadroom).toBeCloseTo(mWithoutRubric.selectionHeadroom, 10);
+    expect(mWithRubric.synthesisHeadroom).toBeCloseTo(mWithoutRubric.synthesisHeadroom ?? 0, 10);
+    expect(mWithRubric.perCriterion).toEqual(mWithoutRubric.perCriterion);
   });
 });

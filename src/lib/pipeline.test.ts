@@ -15,10 +15,10 @@ import { contentToText } from "./providers/content";
 import { clearModelCapabilities, setModelCapabilities } from "./providers/capabilities";
 import type { Candidate } from "../studio-data";
 import type { ProviderId } from "./providers/types";
-import type { EvaluationProfile, EvaluationCriterion } from "./evaluations/evaluation-types";
+import type { EvaluationRubric, EvaluationCriterion } from "./evaluations/evaluation-types";
 
-/** Wrap criteria into a valid EvaluationProfileSnapshot for tests. */
-function makeProfile(criteria: EvaluationCriterion[]): EvaluationProfile {
+/** Wrap criteria into a valid RubricSnapshot for tests. */
+function makeRubric(criteria: EvaluationCriterion[]): EvaluationRubric {
   return {
     id: "p1",
     version: 1,
@@ -345,11 +345,7 @@ describe("judgeMessages — blind candidate packet", () => {
         segments: [{ id: "c2-s0", text: "two" }],
       },
     ];
-    const msgs = judgeMessages(
-      "test prompt",
-      makeProfile(criteria),
-      blindOf(candidates).candidates,
-    );
+    const msgs = judgeMessages("test prompt", makeRubric(criteria), blindOf(candidates).candidates);
     const joined = msgs.map((m) => m.content).join("\n");
     expect(joined).toContain("commercial-reasoning");
     expect(joined).toContain("Commercial reasoning");
@@ -813,7 +809,7 @@ describe("parseJudge — contract validation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Criterion scores — explicit profile runs require exactly one criterion result
+// Criterion scores — explicit rubric runs require exactly one criterion result
 // per criterion ID; holistic runs reject invented dimensions.
 // ---------------------------------------------------------------------------
 
@@ -843,13 +839,13 @@ describe("parseJudge — criterion scores", () => {
     { criterionId: "constraint-awareness", score: 3.9, rationale: "partially bounded" },
   ];
 
-  it("parses one criterion result per profile criterion and resolves display labels", () => {
+  it("parses one criterion result per rubric criterion and resolves display labels", () => {
     const candidates = two();
     const judgeText = judgeJson([
       evalEntry("A", 4.5, { criterionScores: critA }),
       evalEntry("B", 3.2, { criterionScores: critA }),
     ]);
-    const result = parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates);
+    const result = parseJudge(judgeText, blindOf(candidates), makeRubric(criteria), candidates);
     const scores = result.report.evaluationsById["c1"].criterionScores;
     expect(scores).toHaveLength(2);
     expect(scores[0]).toEqual({
@@ -860,18 +856,18 @@ describe("parseJudge — criterion scores", () => {
     });
   });
 
-  it("rejects a profile run missing a required criterion result", () => {
+  it("rejects a rubric run missing a required criterion result", () => {
     const candidates = two();
     const judgeText = judgeJson([
       evalEntry("A", 4.5, { criterionScores: [critA[0]] }),
       evalEntry("B", 3.2, { criterionScores: critA }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(criteria), candidates),
     ).toThrow(/commercial|constraint|criterion/i);
   });
 
-  it("rejects an unknown criterion ID in a profile run", () => {
+  it("rejects an unknown criterion ID in a rubric run", () => {
     const candidates = two();
     const judgeText = judgeJson([
       evalEntry("A", 4.5, {
@@ -880,7 +876,7 @@ describe("parseJudge — criterion scores", () => {
       evalEntry("B", 3.2, { criterionScores: critA }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(criteria), candidates),
     ).toThrow();
   });
 
@@ -896,7 +892,7 @@ describe("parseJudge — criterion scores", () => {
       evalEntry("B", 3.2, { criterionScores: critA }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(criteria), candidates),
     ).toThrow();
   });
 
@@ -912,7 +908,7 @@ describe("parseJudge — criterion scores", () => {
       evalEntry("B", 3.2, { criterionScores: critA }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(criteria), candidates),
     ).toThrow();
   });
 
@@ -950,12 +946,12 @@ describe("parseJudge — criterion scores", () => {
       evalEntry("B", 3.2, { criterionScores: critA }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(criteria), candidates),
     ).toThrow(/kind/i);
   });
 
-  it("rejects an explicit kind on a binary criterion when the profile expects graded", () => {
-    // The reverse direction: a binary profile criterion receiving kind:"graded"
+  it("rejects an explicit kind on a binary criterion when the rubric expects graded", () => {
+    // The reverse direction: a binary rubric criterion receiving kind:"graded"
     // with a boolean value must be rejected.
     const candidates = two();
     const binaryCriteria = [
@@ -975,12 +971,12 @@ describe("parseJudge — criterion scores", () => {
       evalEntry("B", 3.2),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(binaryCriteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(binaryCriteria), candidates),
     ).toThrow(/kind/i);
   });
 
   it("accepts a matching explicit kind discriminator", () => {
-    // Explicit kind matching the profile criterion kind is accepted.
+    // Explicit kind matching the rubric criterion kind is accepted.
     const candidates = two();
     const judgeText = judgeJson([
       evalEntry("A", 4.5, {
@@ -991,7 +987,7 @@ describe("parseJudge — criterion scores", () => {
       }),
       evalEntry("B", 3.2, { criterionScores: critA }),
     ]);
-    const result = parseJudge(judgeText, blindOf(candidates), makeProfile(criteria), candidates);
+    const result = parseJudge(judgeText, blindOf(candidates), makeRubric(criteria), candidates);
     expect(result.report.evaluationsById["c1"].criterionScores[0].score).toBe(4.7);
   });
 });
@@ -1414,7 +1410,7 @@ describe("parseJudge — hybrid graded/binary criterion contract", () => {
     const result = parseJudge(
       judgeText,
       blindOf(candidates),
-      makeProfile(mixedCriteria),
+      makeRubric(mixedCriteria),
       candidates,
     );
     const a = result.report.evaluationsById["c1"].criterionScores;
@@ -1446,7 +1442,7 @@ describe("parseJudge — hybrid graded/binary criterion contract", () => {
       }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(mixedCriteria), candidates),
     ).toThrow(/binary|value|score/i);
   });
 
@@ -1467,7 +1463,7 @@ describe("parseJudge — hybrid graded/binary criterion contract", () => {
       }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(mixedCriteria), candidates),
     ).toThrow(/graded|score|value/i);
   });
 
@@ -1488,7 +1484,7 @@ describe("parseJudge — hybrid graded/binary criterion contract", () => {
       }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(mixedCriteria), candidates),
     ).toThrow(/boolean|true|false/i);
   });
 
@@ -1506,7 +1502,7 @@ describe("parseJudge — hybrid graded/binary criterion contract", () => {
       }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(mixedCriteria), candidates),
     ).toThrow(/missing|uses-itt/i);
   });
   it("rejects a fractional score for an explicit graded criterion (integer 1-5)", () => {
@@ -1526,7 +1522,7 @@ describe("parseJudge — hybrid graded/binary criterion contract", () => {
       }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(mixedCriteria), candidates),
     ).toThrow(/integer/i);
   });
 
@@ -1547,7 +1543,7 @@ describe("parseJudge — hybrid graded/binary criterion contract", () => {
       }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(mixedCriteria), candidates),
     ).toThrow(/both|value|score/i);
   });
 
@@ -1568,7 +1564,7 @@ describe("parseJudge — hybrid graded/binary criterion contract", () => {
       }),
     ]);
     expect(() =>
-      parseJudge(judgeText, blindOf(candidates), makeProfile(mixedCriteria), candidates),
+      parseJudge(judgeText, blindOf(candidates), makeRubric(mixedCriteria), candidates),
     ).toThrow(/both|score|value/i);
   });
 });

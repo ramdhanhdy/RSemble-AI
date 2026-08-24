@@ -14,11 +14,7 @@
 // recommendation is promoted; otherwise the claim stays exploratory (demoted).
 // =============================================================================
 
-import type {
-  EvaluationProfileSnapshot,
-  EvaluationSuite,
-  EvaluationTask,
-} from "./evaluation-types";
+import type { RubricSnapshot, EvaluationSuite, EvaluationTask } from "./evaluation-types";
 import type {
   FusionPlaybook,
   FusionPolicyKind,
@@ -69,7 +65,7 @@ export interface ConfirmationInput {
   confirmationStudyId: string;
   /** The NEW suite version carrying fresh tasks. */
   suite: EvaluationSuite;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   tasksPerPair: number;
   mpid: number;
   rng?: () => number;
@@ -159,7 +155,7 @@ export async function runConfirmationStudy(
     {
       study: confirmation,
       pool,
-      profile: input.profile,
+      rubric: input.rubric,
       mpid: input.mpid,
       rng: input.rng,
     },

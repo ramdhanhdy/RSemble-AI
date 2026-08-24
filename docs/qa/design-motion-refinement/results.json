@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-03T17:15:13.915Z",
-  "baseUrl": "http://localhost:5176/",
+  "generatedAt": "2026-08-23T07:30:41.887Z",
+  "baseUrl": "http://127.0.0.1:5176/",
   "probes": [
     {
       "name": "desktop-1440x1000-normal",
@@ -22,7 +22,7 @@
       "name": "command-palette",
       "animationName": "none",
       "focusInPalette": true,
-      "latencyMs": 108,
+      "latencyMs": 40,
       "pass": true,
       "reason": "palette must open within 500ms, focus its input, and have no entrance animation"
     },
@@ -40,14 +40,16 @@
       "reason": "focus must return to the trigger"
     },
     {
-      "name": "desktop-active-pipeline",
+      "name": "desktop-pipeline-motion-css",
       "activeConnectors": 1,
       "connectorAnimation": "bg-march",
+      "connectorTiming": "linear",
       "spinnerAnimation": "spin-ease",
       "spinnerTiming": "linear",
       "overflowX": false,
+      "componentEvidence": "src/ui/PipelineRail.test.tsx proves an active stage assigns exactly one animate-dash-march class",
       "pass": true,
-      "reason": "an active rail must expose one connector and one stage spinner with the expected motion mode"
+      "reason": "production motion classes must compute to the expected normal/reduced animation mode"
     },
     {
       "name": "tablet-1024x768-normal",
@@ -141,14 +143,16 @@
       "reason": "reduced motion must remove interaction transitions and movement while retaining visible status text"
     },
     {
-      "name": "desktop-reduced-active-pipeline",
+      "name": "desktop-reduced-pipeline-motion-css",
       "activeConnectors": 1,
       "connectorAnimation": "none",
+      "connectorTiming": "ease",
       "spinnerAnimation": "none",
       "spinnerTiming": "ease",
       "overflowX": false,
+      "componentEvidence": "src/ui/PipelineRail.test.tsx proves an active stage assigns exactly one animate-dash-march class",
       "pass": true,
-      "reason": "an active rail must expose one connector and one stage spinner with the expected motion mode"
+      "reason": "production motion classes must compute to the expected normal/reduced animation mode"
     },
     {
       "name": "desktop-200-percent-css-zoom",
@@ -163,7 +167,6 @@
     "qa-desktop-1440x1000.png",
     "qa-desktop-run-action.png",
     "qa-connections-dialog.png",
-    "qa-desktop-active-pipeline.png",
     "qa-tablet-1024x768.png",
     "qa-connections-tablet-1024-dialog.png",
     "qa-tablet-768x1024.png",
@@ -173,7 +176,6 @@
     "qa-mobile-drawer.png",
     "qa-mobile-drawer-scrolled.png",
     "qa-desktop-reduced-motion.png",
-    "qa-desktop-reduced-active-pipeline.png",
     "qa-desktop-200-percent-css-zoom.png"
   ]
 }

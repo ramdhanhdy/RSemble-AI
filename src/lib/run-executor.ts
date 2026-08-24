@@ -41,7 +41,7 @@ import {
   isUsableCandidate,
   type FanoutJob,
 } from "./pipeline";
-import type { AdHocEvaluationConfig } from "./evaluations/evaluation-profile-adhoc";
+import type { AdHocEvaluationConfig } from "./evaluations/evaluation-rubric-adhoc";
 import { runCandidateStream, runJudge, runFusion, createRunStageContext } from "./execution-stages";
 
 // --- Request types -----------------------------------------------------------

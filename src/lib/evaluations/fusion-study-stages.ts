@@ -19,11 +19,7 @@
 import type { CriticRef } from "../providers/types";
 import type { Attachment } from "../attachments/types";
 import type { ModelSlot } from "../../studio-data";
-import type {
-  EvaluationProfileSnapshot,
-  EvaluationTask,
-  EvaluationSuite,
-} from "./evaluation-types";
+import type { RubricSnapshot, EvaluationTask, EvaluationSuite } from "./evaluation-types";
 import type {
   FusionPolicyKind,
   FusionRecipeFamily,
@@ -89,9 +85,9 @@ export function activePoolSlots(pool: PoolManifestVersion): ModelSlot[] {
   return [...pool.core, ...pool.challengers].filter((s) => s.enabled);
 }
 
-function criterionWeights(profile: EvaluationProfileSnapshot | null): CriterionWeights {
+function criterionWeights(rubric: RubricSnapshot | null): CriterionWeights {
   const map = new Map<string, number>();
-  for (const c of profile?.criteria ?? []) {
+  for (const c of rubric?.criteria ?? []) {
     if ("weight" in c) map.set(c.id, (c as { weight: number }).weight);
   }
   return map;
@@ -190,7 +186,7 @@ export interface StageADriverInput {
   study: FusionStudy;
   suite: EvaluationSuite;
   pool: PoolManifestVersion;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   /** All three families under test. */
   recipes: FusionRecipeVersion[];
   stratifiedPairs: StratifiedPair[];
@@ -295,11 +291,11 @@ export async function runStageA(
     for (const task of tasks) {
       const evidence = await deps.executor.runBlockedEvidence(
         task,
-        input.profile,
+        input.rubric,
         stratified.slots,
         input.study.judge1,
       );
-      const winner = deriveRankWinner(evidence.blindCandidates, evidence.report, input.profile);
+      const winner = deriveRankWinner(evidence.blindCandidates, evidence.report, input.rubric);
       const winnerContent =
         evidence.blindCandidates.find((c) => c.candidateId === winner.winnerCandidateId)?.content ??
         "";
@@ -309,7 +305,7 @@ export async function runStageA(
       for (const recipe of input.recipes) {
         const messages = renderRecipeMessages(recipe, {
           prompt: task.prompt,
-          profile: input.profile,
+          profile: input.rubric,
           blindCandidates: evidence.blindCandidates,
           judgeReport: evidence.report,
           consensus: evidence.consensus,
@@ -324,7 +320,7 @@ export async function runStageA(
       if (refineFlags) {
         const refineMessages = renderRefineWinnerMessages({
           prompt: task.prompt,
-          profile: input.profile,
+          rubric: input.rubric,
           winnerLabel: winner.winnerBlindLabel,
           winnerContent,
           blindCandidates: evidence.blindCandidates,
@@ -338,7 +334,7 @@ export async function runStageA(
 
       const holdout = await deps.executor.runHoldout(
         task,
-        input.profile,
+        input.rubric,
         input.study.judge2,
         artifacts,
       );
@@ -473,7 +469,7 @@ export interface StageBDriverInput {
   study: FusionStudy;
   suite: EvaluationSuite;
   pool: PoolManifestVersion;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   survivingRecipes: [FusionRecipeVersion, FusionRecipeVersion];
   shortlistRule: ShortlistRule;
   /** Both survivors run on this many first shortlisted pairs (2–3). */
@@ -492,7 +488,7 @@ export async function runStageB(
   input: StageBDriverInput,
 ): Promise<StageBResult> {
   await ensureRecipesPersisted(deps.repo, input.survivingRecipes);
-  const weights = criterionWeights(input.profile);
+  const weights = criterionWeights(input.rubric);
   const poolSlots = activePoolSlots(input.pool);
   const tasks = input.suite.tasks;
 
@@ -503,7 +499,7 @@ export async function runStageB(
     const sweep = await deps.executor.runPoolSweep(task, poolSlots);
     const judged = await deps.executor.judgePool(
       task,
-      input.profile,
+      input.rubric,
       input.study.judge1,
       sweep.outputs,
     );
@@ -531,7 +527,7 @@ export async function runStageB(
         const b = scores.get(pair[1]);
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights, input.profile);
+      const metrics = computeHeadroom(paired, weights, input.rubric);
       screenedPairs.push({
         pair,
         selectionHeadroom: metrics.selectionHeadroom,
@@ -743,7 +739,7 @@ async function runPoolAdequacyProbe(
       const sweep = await deps.executor.runPoolSweep(task, [challenger]);
       const judged = await deps.executor.judgePool(
         task,
-        input.profile,
+        input.rubric,
         input.study.judge1,
         sweep.outputs,
       );
@@ -758,7 +754,7 @@ async function runPoolAdequacyProbe(
         const b = scoresByTask.get(task.id)?.get(poolKey);
         if (a && b) paired.push({ taskId: task.id, a, b });
       }
-      const metrics = computeHeadroom(paired, weights, input.profile);
+      const metrics = computeHeadroom(paired, weights, input.rubric);
       maxHeadroom = Math.max(
         maxHeadroom,
         metrics.selectionHeadroom,
@@ -794,7 +790,7 @@ export interface PairEvalOutcome {
 export interface PairEvaluationInput {
   study: FusionStudy;
   pool: PoolManifestVersion;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   mpid: number;
   rng?: () => number;
   /** In-memory per-task attachments (never persisted — plan 7.6.7). */
@@ -816,11 +812,11 @@ export async function evaluatePairBlocked(
   for (const task of opts.tasks) {
     const evidence = await deps.executor.runBlockedEvidence(
       task,
-      input.profile,
+      input.rubric,
       slots,
       input.study.judge1,
     );
-    const winner = deriveRankWinner(evidence.blindCandidates, evidence.report, input.profile);
+    const winner = deriveRankWinner(evidence.blindCandidates, evidence.report, input.rubric);
     const winnerContent =
       evidence.blindCandidates.find((c) => c.candidateId === winner.winnerCandidateId)?.content ??
       "";
@@ -836,7 +832,7 @@ export async function evaluatePairBlocked(
     for (const recipe of opts.recipes) {
       const messages = renderRecipeMessages(recipe, {
         prompt: task.prompt,
-        profile: input.profile,
+        profile: input.rubric,
         blindCandidates: evidence.blindCandidates,
         judgeReport: evidence.report,
         consensus: evidence.consensus,
@@ -851,7 +847,7 @@ export async function evaluatePairBlocked(
     const refineRecipe = opts.recipes[0];
     const refineMessages = renderRefineWinnerMessages({
       prompt: task.prompt,
-      profile: input.profile,
+      rubric: input.rubric,
       winnerLabel: winner.winnerBlindLabel,
       winnerContent,
       blindCandidates: evidence.blindCandidates,
@@ -871,7 +867,7 @@ export async function evaluatePairBlocked(
 
     const holdout = await deps.executor.runHoldout(
       task,
-      input.profile,
+      input.rubric,
       input.study.judge2,
       artifacts,
     );
@@ -1074,7 +1070,7 @@ export interface StageCDriverInput {
   study: FusionStudy;
   suite: EvaluationSuite;
   pool: PoolManifestVersion;
-  profile: EvaluationProfileSnapshot | null;
+  rubric: RubricSnapshot | null;
   frozenRecipe: FusionRecipeVersion;
   runnerUpRecipe: FusionRecipeVersion;
   /** Best 1–2 pairs from Stage B with their frozen-family mean scores. */
@@ -1102,20 +1098,20 @@ export async function runStageC(
     for (const task of tasks) {
       const evidence = await deps.executor.runBlockedEvidence(
         task,
-        input.profile,
+        input.rubric,
         slots,
         input.study.judge1,
       );
       const messages = renderRecipeMessages(input.runnerUpRecipe, {
         prompt: task.prompt,
-        profile: input.profile,
+        profile: input.rubric,
         blindCandidates: evidence.blindCandidates,
         judgeReport: evidence.report,
         consensus: evidence.consensus,
         attachments: input.taskAttachments?.[task.id] ?? [],
       });
       const synth = await deps.executor.runSynthesis(input.runnerUpRecipe.synthesizer, messages);
-      const holdout = await deps.executor.runHoldout(task, input.profile, input.study.judge2, [
+      const holdout = await deps.executor.runHoldout(task, input.rubric, input.study.judge2, [
         { key: `fuse:${input.runnerUpRecipe.recipeFamily}`, text: synth.text },
       ]);
 
@@ -1171,7 +1167,7 @@ export async function runStageC(
     for (const task of tasks) {
       evidenceByTask.set(
         task.id,
-        await deps.executor.runBlockedEvidence(task, input.profile, slots, input.study.judge1),
+        await deps.executor.runBlockedEvidence(task, input.rubric, slots, input.study.judge1),
       );
     }
     for (const recipe of [input.frozenRecipe, input.runnerUpRecipe]) {
@@ -1181,14 +1177,14 @@ export async function runStageC(
           const evidence = evidenceByTask.get(task.id)!;
           const messages = renderRecipeMessages(recipe, {
             prompt: task.prompt,
-            profile: input.profile,
+            profile: input.rubric,
             blindCandidates: evidence.blindCandidates,
             judgeReport: evidence.report,
             consensus: evidence.consensus,
             attachments: input.taskAttachments?.[task.id] ?? [],
           });
           const synth = await deps.executor.runSynthesis(synthesizer, messages);
-          const holdout = await deps.executor.runHoldout(task, input.profile, input.study.judge2, [
+          const holdout = await deps.executor.runHoldout(task, input.rubric, input.study.judge2, [
             { key: "cell", text: synth.text },
           ]);
           scores.push(holdout.scoresByKey["cell"] ?? 0);

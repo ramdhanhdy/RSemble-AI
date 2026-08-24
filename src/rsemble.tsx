@@ -8,15 +8,16 @@
 // UI components live in ./ui; state + reducer in ./studio-engine.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { FileText, RotateCcw } from "lucide-react";
+import { BookOpen, FileText, RotateCcw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { type Mode } from "./studio-data";
 import { isProviderReadySync, listProviders } from "./lib/providers/registry";
 import type { CatalogModel, ProviderId } from "./lib/providers/types";
 import { Header, type ConnectionState } from "./ui/Header";
+import { RecordsDrawer } from "./ui/RecordsDrawer";
 
 import { type Action, type StudioState, initialState, reducer } from "./studio-engine";
 
@@ -47,8 +48,16 @@ import { createProviderProbeCoordinator } from "./lib/provider-probes";
 import { buildExportMarkdown, downloadMarkdown } from "./lib/export-markdown";
 import { saveCommandPreferences } from "./lib/preferences";
 import type { RunConfigPreload } from "./lib/runs/run-config-preload";
-import { useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts";
-import { useRunRepository } from "./lib/persistence/repository-context";
+import { deriveWorkspace, useActionShortcuts, type WorkspaceKind } from "./ui/useActionShortcuts";
+import {
+  RepositoryContext,
+  useRunRepository,
+  useTaskRepository,
+  useStudyRepository,
+  useLabAssetRepository,
+  useTaskSetRepository,
+} from "./lib/persistence/repository-context";
+import { createComparisonRepository } from "./lib/persistence/comparison-repository";
 import { createRunRecorder } from "./lib/persistence/run-recorder";
 import { useExecutionOwner } from "./lib/execution-owner-context";
 import {
@@ -57,6 +66,7 @@ import {
 } from "./lib/evaluations/experiment-controller-hooks";
 import { GlobalExecutionStripContainer } from "./ui/GlobalExecutionStrip";
 import { CloseIcon, SplitDivider, FocusStrip, PaneLabel, NoKeyBanner } from "./ui/CompareShell";
+import { RunWithPlaybookDialog } from "./workspaces/compare/RunWithPlaybookDialog";
 
 // Compare → View record gate (Slice 5). The link is shown only when a
 // recorder-backed persisted record exists for the last run (never for
@@ -88,15 +98,11 @@ export default function RSemble() {
   const navigate = useNavigate();
   const experimentController = useExperimentController();
   const isCompareRoute = location.pathname === "/compare" || location.pathname === "/";
-  // Workspace derivation (plan 8.2): gates the command palette and the
-  // Compare-only keyboard shortcuts (spec §15.12).
-  const workspace: WorkspaceKind = location.pathname.startsWith("/runs")
-    ? "runs"
-    : location.pathname.startsWith("/evaluations")
-      ? "evaluations"
-      : location.pathname.startsWith("/experiments")
-        ? "experiments"
-        : "compare";
+  // Workspace derivation (REV-5, plan 8.2 / spec §15.12): explicit routing/
+  // ownership rule — Compare shortcuts fire only on routes that own live
+  // Compare execution. /lab, /tasks, /compare/results/*, and unknown routes
+  // map to "other" and inherit no Compare pipeline shortcuts.
+  const workspace: WorkspaceKind = deriveWorkspace(location.pathname);
   // Keep a live ref so the shortcut listener reads the current workspace per
   // keystroke without re-registering on every navigation.
   const workspaceRef = useRef<WorkspaceKind>(workspace);
@@ -112,10 +118,17 @@ export default function RSemble() {
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
+  // Quick Records drawer (Child 08 §H): >=1024 only. Below 1024 the header
+  // Records utility is a plain /records link and the drawer never mounts.
+  const [recordsDrawerOpen, setRecordsDrawerOpen] = useState(false);
+  // Focus-return authority: the header trigger is the Base UI finalFocus
+  // target when the drawer closes (spec §P).
+  const recordsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const commandDialogHandle = useMemo(() => Dialog.createHandle(), []);
   const connectionsDialogHandle = useMemo(() => Dialog.createHandle(), []);
   const cheatsheetDialogHandle = useMemo(() => Dialog.createHandle(), []);
 
+  const [playbookDialogOpen, setPlaybookDialogOpen] = useState(false);
   const {
     commandWidth,
     dragging,
@@ -172,6 +185,15 @@ export default function RSemble() {
   // never falls back to the legacy localStorage addRun path (spec §7.7).
   // ---------------------------------------------------------------------------
   const runRepo = useRunRepository();
+  const taskRepo = useTaskRepository();
+  const studyRepo = useStudyRepository();
+  const labAssetRepo = useLabAssetRepository();
+  const taskSetRepo = useTaskSetRepository();
+  const db = useContext(RepositoryContext).db;
+  const comparisonRepo = useMemo(
+    () => (db && runRepo ? createComparisonRepository(db, runRepo) : null),
+    [db, runRepo],
+  );
   const comparePreflightRef = useRef<
     ((current: StudioState) => ReturnType<typeof evaluateComparePreflight>) | null
   >(null);
@@ -188,6 +210,8 @@ export default function RSemble() {
         abortControllersRef,
         streamBuffer,
         recorder: recorder ?? undefined,
+        comparisonRepo: comparisonRepo ?? undefined,
+        taskRepo: taskRepo ?? undefined,
         preflight: (current) =>
           comparePreflightRef.current?.(current) ?? {
             ok: false,
@@ -196,9 +220,10 @@ export default function RSemble() {
           },
         lease: crossTabLease,
       }),
-    [dispatch, streamBuffer, recorder, crossTabLease],
+    [dispatch, streamBuffer, recorder, comparisonRepo, taskRepo, crossTabLease],
   );
-  const { runFanout, abortRun, retryCandidate, retryJudge, triggerFusion } = runController;
+  const { runFanout, abortRun, retryCandidate, retryJudge, triggerFusion, runWithPlaybook } =
+    runController;
 
   // ---------------------------------------------------------------------------
   // Readiness + catalog probes — parallel, bounded, with diagnosable failures.
@@ -531,6 +556,9 @@ export default function RSemble() {
               connectionsDialogHandle={connectionsDialogHandle}
               cheatsheetDialogHandle={cheatsheetDialogHandle}
               connectionState={connectionState}
+              recordsOpen={recordsDrawerOpen}
+              onOpenRecords={isLg ? () => setRecordsDrawerOpen(true) : undefined}
+              recordsTriggerRef={recordsTriggerRef}
             />
 
             {/* Global execution awareness strip (spec §5.5) — visible on every
@@ -577,6 +605,20 @@ export default function RSemble() {
                             >
                               <FileText size={13} aria-hidden="true" />
                               View record
+                            </button>
+                          )}
+                          {/* Compare → Run with Playbook (Task 10): opens the explicit
+                            preflight and compatibility dialog to run with a sealed playbook. */}
+                          {studyRepo && labAssetRepo && (
+                            <button
+                              type="button"
+                              data-action="open-run-with-playbook"
+                              onClick={() => setPlaybookDialogOpen(true)}
+                              disabled={state.running}
+                              className="pressable flex min-h-[32px] items-center gap-1.5 rounded-md border border-edge px-2.5 text-xs text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <BookOpen size={13} aria-hidden="true" />
+                              Run with playbook
                             </button>
                           )}
                           {preloadRunId !== null &&
@@ -665,8 +707,18 @@ export default function RSemble() {
           </div>
         </div>
 
-        {/* Mobile bottom navigation — fixed, three workspaces. */}
+        {/* Mobile bottom navigation — fixed, four workspaces. */}
         <MobileWorkspaceNav />
+
+        {/* Quick Records drawer (Child 08 §H) — mounted only at >=1024.
+          Below 1024 the header utility navigates to /records instead. */}
+        {isLg && (
+          <RecordsDrawer
+            open={recordsDrawerOpen}
+            onOpenChange={setRecordsDrawerOpen}
+            finalFocus={recordsTriggerRef}
+          />
+        )}
 
         {isCompareRoute && (
           <Dialog.Root
@@ -730,10 +782,22 @@ export default function RSemble() {
           onNavigate={(path) => navigate(path)}
           activeExperimentId={activeExperimentId}
           onViewExperiment={() =>
-            activeExperimentId && navigate(`/experiments/${activeExperimentId}`)
+            activeExperimentId && navigate(`/evaluations/results/${activeExperimentId}`)
           }
           onAbortExperiment={() => {
             void experimentController?.abort();
+          }}
+          onFindRecord={() => {
+            // §G.7: >=1024 opens the drawer with its search focused;
+            // below 1024 navigates to /records with the filter focused.
+            if (isLg) {
+              setRecordsDrawerOpen(true);
+              requestAnimationFrame(() => {
+                document.getElementById("records-drawer-search")?.focus();
+              });
+            } else {
+              void navigate("/records?focus=search");
+            }
           }}
         />
         <ShortcutCheatsheet
@@ -741,6 +805,33 @@ export default function RSemble() {
           onOpenChange={setCheatsheetOpen}
           handle={cheatsheetDialogHandle}
         />
+        {studyRepo && labAssetRepo && (
+          <RunWithPlaybookDialog
+            open={playbookDialogOpen}
+            onOpenChange={setPlaybookDialogOpen}
+            studyRepo={studyRepo}
+            labAssetRepo={labAssetRepo}
+            taskSetRepo={taskSetRepo ?? undefined}
+            slots={state.slots}
+            candidateModelSlots={state.slots}
+            critic={state.critic}
+            prompt={state.prompt}
+            taskBinding={state.taskBinding ?? null}
+            taskSetContext={
+              typeof (state as unknown as Record<string, unknown>).taskSetContext === "object" &&
+              (state as unknown as Record<string, unknown>).taskSetContext !== null
+                ? ((state as unknown as Record<string, unknown>).taskSetContext as {
+                    taskSetId: string;
+                    version: number;
+                  })
+                : null
+            }
+            running={state.running}
+            onConfirmed={(binding) => {
+              void runWithPlaybook(binding);
+            }}
+          />
+        )}
       </div>
     </ModelProbeProvider>
   );
