@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<!--
+══════════════════════════════════════════════════════════════════════════════
+RSemble AI — Design Concept "Atlas"
+Collapsible rail era · interactive design concept · 2026-08-24
+
+Companion to atlas-rail-concept.md. This is a concept, not a production
+surface. It demonstrates, live:
+
+  · the Atlas rail — collapsible left chrome; the canvas is never overlaid
+  · the matrix map — the 2×2 as four one-click links, not two dials
+  · axes organize · links navigate · surfaces escalate
+  · escalation actions on surfaces (Compare→Benchmark/Calibrate,
+    Calibrate→Studies, Benchmark→Studies)
+  · Finish (Rank/Fuse) lives inside Compare and nowhere else
+  · icon mode (toggle the rail), mobile drawer + bottom bar
+  · the Calibrate honesty laws and the always-visible pinned pool
+
+Design language: inherited from Concept Meridian — Apple pro-dark, one
+accent (system cyan), materials carry hierarchy, hairlines carry
+structure, mono + tabular numerals for every number, motion critically
+damped. All data illustrative.
+══════════════════════════════════════════════════════════════════════════════
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSemble · Concept Atlas</title>
+<style>
+/* ═══ Tokens ═══════════════════════════════════════════════════════════ */
+:root {
+  --canvas: #08080a;
+  --rail: rgba(17,18,21,0.92);
+  --strip: rgba(13,14,16,0.92);
+  --ink: rgba(255,255,255,0.92);
+  --ink-2: rgba(255,255,255,0.60);
+  --ink-3: rgba(255,255,255,0.52);
+  --hairline: rgba(255,255,255,0.09);
+  --hairline-soft: rgba(255,255,255,0.055);
+  --fill-1: rgba(255,255,255,0.055);
+  --fill-2: rgba(255,255,255,0.085);
+  --fill-3: rgba(255,255,255,0.13);
+  --accent: #64d2ff;
+  --accent-ink: #062a38;
+  --accent-soft: rgba(100,210,255,0.14);
+  --green: #30d158;
+  --orange: #ff9f0a;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-inout: cubic-bezier(0.77, 0, 0.175, 1);
+  --r-card: 14px;
+  --r-panel: 18px;
+  --shadow-panel: 0 1px 0 rgba(255,255,255,0.06) inset, 0 18px 50px -18px rgba(0,0,0,0.65);
+  --rail-w: 252px;
+  --strip-h: 46px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { font-size: 15px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  font-optical-sizing: auto;
+}
+/* Ambient glow — shifted starboard; the rail edge is the quiet zone */
+body::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(1000px 460px at 58% -180px, rgba(100,210,255,0.05), transparent 62%),
+    radial-gradient(820px 560px at 94% 116%, rgba(120,90,255,0.03), transparent 60%);
+}
+::selection { background: rgba(100,210,255,0.28); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+a { color: inherit; }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px;
+}
+@media (hover: hover) and (pointer: fine) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 6px; border: 2px solid var(--canvas); }
+}
+
+svg.icon { width: 15px; height: 15px; flex: none; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* ═══ Top strip — awareness, never navigation ══════════════════════════ */
+.strip {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+  height: var(--strip-h);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px 0 16px;
+  background: var(--strip);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  border-bottom: 1px solid var(--hairline);
+}
+.strip .spacer { flex: 1; }
+
+.live-pill {
+  display: flex; align-items: center; gap: 7px;
+  height: 32px; padding: 0 13px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 12px; font-weight: 600; letter-spacing: -0.005em;
+  transition: transform 160ms var(--ease-out);
+}
+.live-pill:active { transform: scale(0.96); }
+.live-pill .pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: pulse 1.6s var(--ease-inout) infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.8); } }
+
+.util-btn {
+  position: relative; display: grid; place-items: center;
+  width: 40px; height: 40px; border-radius: 999px;
+  color: var(--ink-2);
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out);
+}
+@media (hover: hover) { .util-btn:hover { color: var(--ink); background: var(--fill-2); } }
+.util-btn:active { transform: scale(0.92); }
+.util-btn .badge-dot {
+  position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--orange); box-shadow: 0 0 0 2.5px rgba(13,14,16,0.95);
+}
+.util-btn .kbd-float {
+  position: absolute; right: 6px; bottom: 5px;
+  font-family: var(--mono); font-size: 8.5px; color: var(--ink-3);
+  background: var(--fill-2); border-radius: 4px; padding: 1px 3.5px; pointer-events: none;
+}
+
+/* Mobile-only controls in the strip */
+.hamburger { display: none; }
+.mobile-mark { display: none; font-weight: 700; font-size: 14.5px; letter-spacing: -0.022em; }
+.mobile-mark em { font-style: normal; color: var(--accent); }
+
+/* ═══ The Atlas rail ═══════════════════════════════════════════════════ */
+.rail {
+  position: fixed; top: var(--strip-h); bottom: 0; left: 0; z-index: 50;
+  width: var(--rail-w);
+  display: flex; flex-direction: column;
+  background: var(--rail);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  border-right: 1px solid var(--hairline);
+  transition: width 340ms var(--ease-drawer);
+}
+body.rail-collapsed .rail { --rail-w: 64px; }
+
+.rail-head {
+  display: flex; align-items: center; gap: 8px;
+  height: 56px; padding: 0 10px 0 16px; flex: none;
+}
+.wordmark { display: flex; align-items: baseline; gap: 7px; user-select: none; flex: 1; min-width: 0; }
+.wordmark .mark { font-weight: 700; font-size: 15px; letter-spacing: -0.022em; white-space: nowrap; }
+.wordmark .mark em { font-style: normal; color: var(--accent); }
+.wordmark .tag {
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.13em; color: var(--ink-3);
+  border: 1px solid var(--hairline-soft); padding: 2px 6px; border-radius: 5px; white-space: nowrap;
+}
+body.rail-collapsed .wordmark { visibility: hidden; height: 0; }
+.rail-collapse {
+  width: 34px; height: 34px; border-radius: 9px; flex: none;
+  display: grid; place-items: center; color: var(--ink-3);
+  transition: color 160ms ease, background-color 160ms ease, transform 340ms var(--ease-drawer);
+}
+@media (hover: hover) { .rail-collapse:hover { color: var(--ink); background: var(--fill-2); } }
+.rail-collapse svg { width: 14px; height: 14px; transition: transform 340ms var(--ease-drawer); }
+body.rail-collapsed .rail-collapse svg { transform: rotate(180deg); }
+body.rail-collapsed .rail-head { padding: 0; justify-content: center; }
+
+.rail-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 12px 16px; }
+
+.rail-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--ink-3); padding: 14px 6px 9px;
+  transition: opacity 160ms ease;
+}
+body.rail-collapsed .rail-label { opacity: 0; height: 12px; padding: 6px 0 0; overflow: hidden; }
+
+/* ── The matrix map ── */
+.map {
+  display: grid;
+  grid-template-columns: 58px 1fr 1fr;
+  gap: 4px;
+  transition: opacity 160ms ease;
+}
+.map-colhead {
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--ink-3); text-align: center; align-self: center;
+  padding: 2px 0 4px; white-space: nowrap;
+}
+.map-rowlab {
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-3); align-self: center; text-align: right; padding-right: 6px;
+  white-space: nowrap;
+}
+body.rail-collapsed .map { grid-template-columns: 1fr; }
+body.rail-collapsed .map-colhead, body.rail-collapsed .map-rowlab { display: none; }
+
+.cell {
+  position: relative;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+  min-height: 52px; padding: 7px 9px 7px 12px;
+  border-radius: 11px;
+  color: var(--ink-2);
+  text-decoration: none;
+  transition: background-color 160ms ease, color 160ms ease;
+  overflow: hidden;
+}
+.cell svg.icon { opacity: 0.8; }
+.cell .cell-name {
+  font-size: 12.5px; font-weight: 600; letter-spacing: -0.008em; white-space: nowrap;
+  transition: opacity 200ms var(--ease-out), transform 260ms var(--ease-drawer);
+}
+.cell .cell-sub {
+  font-size: 9.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  transition: opacity 200ms var(--ease-out), transform 260ms var(--ease-drawer);
+}
+@media (hover: hover) { .cell:hover { background: var(--fill-2); color: var(--ink); } }
+.cell:active { transform: scale(0.97); }
+.cell[aria-current="page"] {
+  background: var(--accent-soft); color: var(--accent);
+}
+.cell[aria-current="page"] .cell-sub { color: rgba(100,210,255,0.62); }
+.cell[aria-current="page"]::before {
+  content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2.5px;
+  border-radius: 3px; background: var(--accent);
+}
+/* Icon mode: one column of 44×44 icon tiles, order preserved.
+   Full descriptors live in title + aria-label so the map survives labels-off. */
+body.rail-collapsed .rail-scroll { padding: 10px 10px 16px; }
+body.rail-collapsed .cell { align-items: center; justify-content: center; padding: 0; min-height: 44px; }
+body.rail-collapsed .cell .cell-name,
+body.rail-collapsed .cell .cell-sub { opacity: 0; transform: translateX(8px); position: absolute; pointer-events: none; }
+body.rail-collapsed .cell svg.icon { width: 18px; height: 18px; opacity: 1; }
+
+/* ── Library ── */
+.lib-link {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 40px; padding: 0 10px 0 12px;
+  border-radius: 10px; color: var(--ink-2); text-decoration: none;
+  font-size: 12.5px; font-weight: 550; letter-spacing: -0.006em; white-space: nowrap;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+@media (hover: hover) { .lib-link:hover { background: var(--fill-2); color: var(--ink); } }
+body.rail-collapsed .lib-link { justify-content: center; padding: 0; }
+body.rail-collapsed .lib-link span { opacity: 0; position: absolute; pointer-events: none; }
+
+.rail-foot {
+  flex: none; padding: 10px 12px 14px; border-top: 1px solid var(--hairline-soft);
+  display: flex; gap: 6px;
+}
+.rail-foot .lib-link { flex: 1; }
+
+/* ═══ Canvas ═══════════════════════════════════════════════════════════ */
+.stage {
+  position: relative; z-index: 1;
+  margin: var(--strip-h) 0 0 var(--rail-w);
+  max-width: 1240px;
+  padding: 26px 34px 110px;
+  transition: margin-left 340ms var(--ease-drawer);
+}
+body.rail-collapsed .stage { margin-left: 64px; }
+
+.surface[hidden] { display: none; }
+.surface.exiting { opacity: 0; filter: blur(3px); transition: opacity 130ms ease, filter 130ms ease; }
+.surface.entering { animation: surface-in 300ms var(--ease-out) both; }
+@keyframes surface-in {
+  from { opacity: 0; transform: scale(0.986) translateY(5px); filter: blur(5px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+.entering .stagger { animation: item-in 380ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes item-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+/* Wayfinding eyebrow: the axis stated on the surface, content as headline */
+.surface-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
+.eyebrow {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-3); margin-bottom: 9px;
+}
+.eyebrow .x { color: var(--ink-3); opacity: 0.6; font-weight: 500; }
+.eyebrow .who { color: var(--accent); }
+.surface-title { font-size: 22px; font-weight: 650; letter-spacing: -0.021em; line-height: 1.12; }
+.surface-sub { margin-top: 5px; font-size: 13px; color: var(--ink-2); letter-spacing: -0.004em; }
+.head-actions { display: flex; align-items: center; gap: 10px; padding-bottom: 3px; flex: none; }
+
+/* Panels & cards */
+.panel {
+  border-radius: var(--r-panel);
+  background: linear-gradient(180deg, rgba(255,255,255,0.052), rgba(255,255,255,0.030));
+  border: 1px solid var(--hairline-soft);
+  box-shadow: var(--shadow-panel);
+}
+.card-title {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3);
+  padding: 15px 17px 0;
+}
+.hairline { height: 1px; background: var(--hairline-soft); margin: 13px 0 0; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 38px; padding: 0 16px; border-radius: 11px;
+  font-size: 13px; font-weight: 600; letter-spacing: -0.008em;
+  transition: transform 160ms var(--ease-out), filter 160ms ease, background-color 160ms ease;
+  user-select: none; white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary {
+  color: var(--accent-ink);
+  background: linear-gradient(135deg, #7fdcff, #4aa8ff);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 8px 24px -6px rgba(80,190,255,0.45);
+}
+@media (hover: hover) { .btn-primary:hover { filter: brightness(1.07); } }
+.btn-ghost { background: var(--fill-1); color: var(--ink); border: 1px solid var(--hairline-soft); }
+@media (hover: hover) { .btn-ghost:hover { background: var(--fill-2); } }
+.btn .kbd, kbd {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  padding: 2.5px 6px; border-radius: 6px;
+  background: rgba(6,42,56,0.28); color: inherit;
+}
+.btn-ghost .kbd, .kbd-ink { background: var(--fill-3); color: var(--ink-2); }
+
+/* Quiet escalation links — the only sanctioned cross-cell movement */
+.escalate-row {
+  display: flex; flex-wrap: wrap; gap: 8px 22px;
+  padding: 4px 2px 0;
+}
+.escalate-link {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 550; color: var(--ink-2);
+  text-decoration: none; border-radius: 8px; padding: 6px 8px; margin: -6px -8px;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+@media (hover: hover) { .escalate-link:hover { color: var(--accent); background: var(--accent-soft); } }
+.escalate-link svg { width: 12px; height: 12px; opacity: 0.7; }
+
+/* Chips */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 9px; border-radius: 7px;
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  background: var(--fill-1); color: var(--ink-2);
+  border: 1px solid var(--hairline-soft);
+}
+.chip.claim { color: var(--orange); background: rgba(255,159,10,0.10); border-color: rgba(255,159,10,0.22); height: 26px; border-radius: 999px; padding: 0 11px; font-family: inherit; font-weight: 650; font-size: 10.5px; letter-spacing: 0.1em; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.dot.orange { background: var(--orange); }
+.dot.green { background: var(--green); }
+
+/* Brand avatars */
+.avatar {
+  width: 27px; height: 27px; border-radius: 8px; flex: none;
+  display: grid; place-items: center;
+  font-size: 10.5px; font-weight: 750; color: rgba(0,0,0,0.55); letter-spacing: -0.02em;
+}
+.av-luna { background: linear-gradient(135deg, #7decc4, #3ecf9a); }
+.av-opus { background: linear-gradient(135deg, #f2b79c, #df8a63); }
+.av-gem  { background: linear-gradient(135deg, #a8c4ff, #6f93f5); }
+.av-kimi { background: linear-gradient(135deg, #d8ccf0, #a58fd4); }
+.av-ds   { background: linear-gradient(135deg, #b6c6ef, #7d95d8); }
+
+/* ═══ COMPARE (Models × One task) ═════════════════════════════════════ */
+.compare-grid { display: grid; grid-template-columns: 330px minmax(0,1fr); gap: 18px; align-items: start; }
+.stack { display: flex; flex-direction: column; gap: 13px; }
+
+.task-card .prompt { padding: 11px 17px 15px; font-size: 13px; line-height: 1.55; color: var(--ink-2); letter-spacing: -0.004em; }
+.task-card .meta { display: flex; gap: 12px; padding: 0 17px 14px; font-size: 11.5px; color: var(--ink-3); }
+
+.model-row { display: flex; align-items: center; gap: 11px; padding: 10px 17px; }
+.model-row + .model-row { border-top: 1px solid var(--hairline-soft); }
+.model-row .names { flex: 1; min-width: 0; }
+.model-row .names .n { display: block; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.model-row .names .s { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.model-row .tele { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); text-align: right; line-height: 1.5; }
+.model-row .tele b { color: var(--ink-2); font-weight: 600; }
+.check {
+  width: 19px; height: 19px; border-radius: 6px; flex: none;
+  border: 1.5px solid rgba(255,255,255,0.22);
+  display: grid; place-items: center; color: transparent;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms var(--ease-out);
+}
+.check:hover { transform: scale(1.08); }
+.check.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.check svg { width: 11px; height: 11px; }
+
+.judge-line { display: flex; align-items: center; gap: 10px; padding: 12px 17px 6px; }
+.judge-line .names .n { display: block; font-size: 13px; font-weight: 600; }
+.judge-line .names .s { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.criteria { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 17px 15px; }
+
+.run-block { padding: 2px 2px 0; }
+.run-block .btn-primary { width: 100%; height: 44px; border-radius: 13px; font-size: 13.5px; }
+.run-forecast { text-align: center; margin-top: 8px; font-size: 11.5px; color: var(--ink-3); }
+.run-forecast .mono { color: var(--ink-2); }
+
+/* Finish toggle — Compare-interior only; never rail, never strip (§C.2b) */
+.finish {
+  display: flex; padding: 3px; border-radius: 10px;
+  background: var(--fill-1); border: 1px solid var(--hairline-soft);
+}
+.finish button {
+  height: 28px; padding: 0 13px; border-radius: 8px;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: var(--ink-2);
+  transition: color 150ms ease, background-color 150ms ease, transform 150ms var(--ease-out);
+}
+.finish button:active { transform: scale(0.96); }
+.finish button.on { background: var(--fill-3); color: var(--ink); }
+
+/* Verdict + leaderboard */
+.verdict { padding: 18px 20px 6px; }
+.verdict h2 { font-size: 18px; font-weight: 650; letter-spacing: -0.019em; display: flex; align-items: center; gap: 9px; }
+.crown { color: var(--accent); width: 17px; height: 17px; }
+.verdict .vsub { margin-top: 6px; font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.vsub .sep { color: var(--ink-3); }
+
+.lb-row { display: grid; grid-template-columns: 21px 27px minmax(0,1.35fr) minmax(0,1.9fr) 58px 70px; align-items: center; gap: 12px; padding: 11px 20px; }
+.lb-row + .lb-row { border-top: 1px solid var(--hairline-soft); }
+.lb-rank { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.lb-row.win .lb-rank { color: var(--accent); font-weight: 700; }
+.lb-name { min-width: 0; }
+.lb-name .n { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: 7px; }
+.lb-name .s { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+.lb-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.lb-bar i {
+  display: block; height: 100%; border-radius: 3px; transform-origin: left center;
+  background: linear-gradient(90deg, rgba(100,210,255,0.45), rgba(100,210,255,0.9));
+  transform: scaleX(var(--w, 0));
+  transition: transform 700ms var(--ease-out);
+}
+.lb-row:not(.win) .lb-bar i { background: rgba(255,255,255,0.18); }
+.entering .lb-bar i { transform: scaleX(0); animation: bar-in 650ms var(--ease-out) forwards; animation-delay: calc(var(--i, 0) * 90ms + 120ms); }
+@keyframes bar-in { to { transform: scaleX(var(--w)); } }
+.lb-score { font-family: var(--mono); font-size: 13.5px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.lb-row.win .lb-score { color: var(--accent); }
+.lb-delta { align-self: center; font-family: var(--mono); font-size: 10.5px; line-height: 1; color: var(--ink-3); text-align: right; }
+
+.answer-panel .quoted {
+  margin: 13px 20px 16px; padding: 14px 16px;
+  border-radius: 12px; background: rgba(255,255,255,0.035); border: 1px solid var(--hairline-soft);
+  font-size: 13px; line-height: 1.62; color: var(--ink); letter-spacing: -0.004em;
+}
+.answer-panel .quoted .fade { color: var(--ink-3); }
+.provenance { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 20px 18px; }
+
+/* ═══ CALIBRATE (Strategies × One task) ═══════════════════════════════ */
+.honesty {
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 16px; border-radius: 13px; margin-bottom: 13px;
+  background: rgba(255,159,10,0.07); border: 1px solid rgba(255,159,10,0.18);
+}
+.honesty svg { width: 16px; height: 16px; color: var(--orange); flex: none; }
+.honesty .h-txt { font-size: 12.5px; color: var(--ink-2); letter-spacing: -0.004em; }
+.honesty .h-txt b { color: var(--ink); font-weight: 650; }
+
+.pool-strip { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 13px 17px; }
+.pool-strip .lbl { font-size: 10.5px; font-weight: 650; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); margin-right: 3px; }
+.pool-strip .why { margin-left: auto; font-size: 11.5px; color: var(--ink-3); }
+.pool-ava { display: inline-flex; align-items: center; gap: 7px; }
+
+.policy-table .pt-row {
+  display: grid; grid-template-columns: minmax(0,2.1fr) 80px 82px minmax(0,2.4fr); align-items: center; gap: 14px;
+  padding: 12px 17px;
+}
+.policy-table .pt-row.head { padding: 12px 17px 8px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+.policy-table .pt-row.head span:nth-child(2),
+.policy-table .pt-row.head span:nth-child(3) { text-align: right; }
+.pt-row.body + .pt-row.body, .pt-row.head + .pt-row.body { border-top: 1px solid var(--hairline-soft); }
+.pt-name .p { font-size: 13px; font-weight: 650; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pt-name .c { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.pt-name .best { font-size: 9.5px; font-weight: 750; letter-spacing: 0.09em; color: var(--accent); background: var(--accent-soft); padding: 2.5px 6px; border-radius: 5px; }
+.pt-score { font-family: var(--mono); font-size: 14px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.pt-cost { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); text-align: right; }
+.pt-note { font-size: 11.5px; color: var(--ink-2); letter-spacing: -0.004em; }
+.pt-note .faint { color: var(--ink-3); }
+.table-foot { padding: 11px 17px 13px; font-size: 11.5px; color: var(--ink-3); border-top: 1px solid var(--hairline-soft); line-height: 1.55; }
+.table-foot b { color: var(--ink-2); font-weight: 600; }
+
+.escalate-card {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 18px 20px; border-radius: var(--r-panel); margin-top: 13px;
+  border: 1px solid rgba(100,210,255,0.22);
+  background: linear-gradient(120deg, rgba(100,210,255,0.10), rgba(100,210,255,0.028) 55%, transparent);
+}
+.escalate-card::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(420px 130px at 12% 0%, rgba(100,210,255,0.14), transparent 70%);
+}
+.escalate-card h3 { font-size: 15px; font-weight: 650; letter-spacing: -0.014em; }
+.escalate-card p { margin-top: 5px; font-size: 12px; color: var(--ink-2); max-width: 64ch; line-height: 1.5; }
+.escalate-card .btn { flex: none; position: relative; z-index: 1; }
+.btn-accent-quiet {
+  color: var(--accent);
+  background: rgba(100,210,255,0.11);
+  border: 1px solid rgba(100,210,255,0.22);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset;
+}
+@media (hover: hover) { .btn-accent-quiet:hover { background: rgba(100,210,255,0.16); } }
+
+/* ═══ BENCHMARK (Models × Task set) ═══════════════════════════════════ */
+.matrix-wrap { overflow-x: auto; border-radius: var(--r-panel); }
+.matrix { min-width: 720px; }
+.mx-row { display: grid; grid-template-columns: minmax(0,2.15fr) repeat(4, minmax(108px,1fr)); align-items: center; }
+.mx-row.head { padding: 13px 20px 9px; }
+.mx-row.head .mx-cell { font-size: 10.5px; font-weight: 650; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); }
+.mx-row.head .mx-cell.head-model { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: -0.005em; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.mx-row.head .mx-cell.head-model .m-slug { display: block; font-family: var(--mono); font-size: 9.5px; font-weight: 400; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+.mx-row.body { padding: 0 20px; }
+.mx-row.body + .mx-row.body .mx-cell, .mx-row.head + .mx-row.body .mx-cell { border-top: 1px solid var(--hairline-soft); }
+.mx-cell { padding: 11px 0; font-size: 12.5px; }
+.mx-task .t { font-size: 12.5px; font-weight: 550; letter-spacing: -0.008em; display: flex; align-items: center; gap: 8px; }
+.mx-task .d { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.mx-score { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-2); display: flex; align-items: center; gap: 7px; }
+.mx-score.best { color: var(--accent); font-weight: 650; }
+.mx-score .cell-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.mx-missing { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.mx-missing a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.mx-row.agg .mx-cell { border-top: 1px solid var(--hairline); }
+.mx-row.agg .mx-score { color: var(--ink); font-weight: 700; font-size: 13px; }
+.mx-row.agg .mx-task .t { font-weight: 700; font-size: 10.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); }
+.matrix-foot { display: flex; justify-content: space-between; gap: 16px; padding: 11px 20px 13px; font-size: 11.5px; color: var(--ink-3); border-top: 1px solid var(--hairline-soft); }
+
+/* ═══ POLICY STUDY (Strategies × Task set) ════════════════════════════ */
+.stage-rail { display: flex; gap: 10px; margin-bottom: 13px; }
+.stage-step {
+  flex: 1; display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; border-radius: 13px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.026));
+  border: 1px solid var(--hairline-soft);
+}
+.stage-step .ring {
+  width: 22px; height: 22px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: rgba(48,209,88,0.14); color: var(--green);
+}
+.stage-step .ring svg { width: 11px; height: 11px; }
+.stage-step .st-name { font-size: 12px; font-weight: 650; letter-spacing: -0.005em; }
+.stage-step .st-sub { font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+.stage-step .st-key { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+
+.playbook { padding: 19px 20px; position: relative; overflow: hidden; }
+.playbook::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(560px 200px at 4% -30%, rgba(48,209,88,0.09), transparent 65%);
+}
+.playbook .pb-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.playbook h3 { margin-top: 9px; font-size: 19px; font-weight: 650; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.playbook .rationale { margin-top: 8px; font-size: 12.5px; line-height: 1.6; color: var(--ink-2); max-width: 72ch; }
+.playbook .rationale .mono { color: var(--ink); font-size: 12px; }
+.playbook .pb-next { display: flex; align-items: center; gap: 11px; margin-top: 14px; position: relative; z-index: 1; }
+.playbook .pb-next .hint { font-size: 11.5px; color: var(--ink-3); }
+
+.verdict-mini { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; padding: 3px 7px; border-radius: 6px; }
+.verdict-mini.adopt { color: var(--green); background: rgba(48,209,88,0.11); }
+.verdict-mini.no { color: var(--ink-3); background: var(--fill-1); }
+
+.claim-strip { display: flex; align-items: center; gap: 10px; margin-top: 13px; }
+.claim-strip .txt { font-size: 12px; color: var(--ink-2); }
+.claim-strip .txt .mono { color: var(--ink-3); font-size: 11px; }
+
+/* ═══ Annotation sheet ════════════════════════════════════════════════ */
+.scrim {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(0,0,0,0.42);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  opacity: 1; transition: opacity 200ms ease;
+}
+.scrim.closing, .scrim:not(.open) { opacity: 0; pointer-events: none; }
+.sheet {
+  position: fixed; z-index: 91; left: 50%; top: 50%;
+  width: min(680px, calc(100vw - 48px)); max-height: min(78vh, 760px); overflow-y: auto;
+  border-radius: 22px; padding: 26px 28px 24px;
+  background: rgba(26,26,31,0.88);
+  -webkit-backdrop-filter: blur(36px) saturate(180%); backdrop-filter: blur(36px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.11);
+  box-shadow: 0 40px 110px -20px rgba(0,0,0,0.8);
+  transform: translate(-50%, -50%);
+  transition: transform 260ms var(--ease-out), opacity 200ms ease;
+}
+.sheet:not(.open) { opacity: 0; transform: translate(-50%, -50%) scale(0.96); pointer-events: none; }
+.sheet.open { transform: translate(-50%, -50%) scale(1); }
+.sheet h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.019em; }
+.sheet .sub { margin-top: 4px; font-size: 12.5px; color: var(--ink-2); }
+.sheet-close {
+  position: absolute; top: 16px; right: 16px;
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--fill-2); color: var(--ink-2);
+  transition: transform 160ms var(--ease-out), background-color 160ms ease;
+}
+.sheet-close:active { transform: scale(0.92); }
+.notes { margin-top: 17px; display: flex; flex-direction: column; }
+.note { display: flex; gap: 13px; padding: 11.5px 0; border-top: 1px solid var(--hairline-soft); }
+.note .num {
+  width: 21px; height: 21px; border-radius: 50%; flex: none; margin-top: 1px;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  background: var(--fill-3); color: var(--ink-2);
+}
+.note b { font-size: 13px; font-weight: 650; letter-spacing: -0.008em; display: block; }
+.note span { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; display: block; margin-top: 3px; }
+.note .spec-ref { font-family: var(--mono); font-size: 10.5px; color: rgba(100,210,255,0.70); margin-top: 5px; display: block; }
+
+/* ═══ Footer ═══════════════════════════════════════════════════════════ */
+.foot {
+  max-width: 1240px; margin: 0 auto; padding: 0 34px 42px;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  font-size: 11px; color: var(--ink-3);
+  position: relative; z-index: 1;
+}
+.foot .mono { font-size: 10px; }
+
+/* ═══ Mobile: rail → drawer + bottom bar ══════════════════════════════ */
+.bottom-bar {
+  display: none;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--strip);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  border-top: 1px solid var(--hairline);
+  grid-template-columns: repeat(4, 1fr); gap: 4px;
+}
+.bottom-bar a {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 50px; border-radius: 12px; text-decoration: none;
+  color: var(--ink-3); font-size: 10px; font-weight: 600; letter-spacing: 0.01em;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.bottom-bar a svg { width: 18px; height: 18px; }
+.bottom-bar a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+
+@media (max-width: 1140px) {
+  .compare-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .stage { padding: 22px 20px 130px; }
+  .foot { padding: 0 20px 110px; }
+}
+@media (max-width: 780px) {
+  .rail {
+    transform: translateX(-100%); visibility: hidden; width: 272px;
+    transition: transform 320ms var(--ease-drawer), visibility 0s 320ms;
+  }
+  body.drawer-open .rail { transform: none; visibility: visible; transition: transform 320ms var(--ease-drawer); box-shadow: 30px 0 80px rgba(0,0,0,0.55); }
+  body.drawer-open .drawer-scrim { opacity: 1; pointer-events: auto; }
+  .drawer-scrim {
+    position: fixed; inset: 0; z-index: 65; background: rgba(0,0,0,0.4);
+    opacity: 0; pointer-events: none; transition: opacity 250ms ease;
+  }
+  .stage { margin-left: 0; }
+  .hamburger { display: grid; }
+  .mobile-mark { display: block; }
+  .bottom-bar { display: grid; }
+  /* The rail is a drawer here: always fully expanded, no collapse control */
+  .rail-collapse { display: none; }
+  .rail .wordmark { display: block; visibility: visible; height: auto; }
+  .rail-head { padding: 0 10px 0 16px; justify-content: flex-start; }
+  .map { grid-template-columns: 58px 1fr 1fr; }
+  .map-colhead, .map-rowlab { display: block; }
+  .cell { flex-direction: row; align-items: center; justify-content: flex-start; padding: 7px 9px 7px 12px; min-height: 52px; }
+  .cell .cell-name, .cell .cell-sub { opacity: 1; transform: none; position: static; pointer-events: auto; }
+  .cell svg.icon { width: 15px; height: 15px; }
+  .lib-link { justify-content: flex-start; padding: 0 10px 0 12px; }
+  .lib-link span { opacity: 1; position: static; }
+  .rail-label { opacity: 1; height: auto; padding: 14px 6px 9px; }
+  .rail-scroll { padding: 10px 12px 16px; }
+  .surface-head { flex-direction: column; align-items: flex-start; }
+  .pt-row { grid-template-columns: 1.6fr 70px 64px !important; }
+  .pt-note { display: none; }
+  .stage-rail { flex-direction: column; }
+}
+@media (max-width: 430px) {
+  .kbd-float { display: none; }
+  .strip { gap: 4px; padding: 0 10px 0 12px; }
+  .mobile-mark { display: none; }
+}
+
+/* ═══ Reduced motion / transparency / contrast ════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .surface.entering, .entering .stagger, .entering .lb-bar i { animation: none; opacity: 1; transform: none; filter: none; }
+  .entering .lb-bar i { transform: scaleX(var(--w)); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .rail, .strip, .sheet, .bottom-bar { background: #131417; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  :root { --hairline: rgba(255,255,255,0.28); --hairline-soft: rgba(255,255,255,0.2); --ink-2: rgba(255,255,255,0.75); }
+}
+</style>
+</head>
+<body class="rail-open">
+
+<!-- ═══ AWARENESS STRIP — never navigation ═══════════════════════════ -->
+<header class="strip">
+  <button class="util-btn hamburger" id="hamburger" aria-label="Open navigation">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <span class="mobile-mark">RS<em>em</em>ble</span>
+
+  <div class="spacer"></div>
+
+  <!-- Global execution awareness: survives every surface switch (spec §F7) -->
+  <button class="live-pill" title="Run in progress — Compare holds the execution">
+    <span class="pulse"></span>Running&nbsp;<span class="mono" id="liveTimer">21s</span>
+  </button>
+
+  <button class="util-btn" aria-label="Search" title="Search">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.8-4.8"/></svg>
+    <span class="kbd-float">⌘K</span>
+  </button>
+  <button class="util-btn" aria-label="Attention, 2 items" title="Attention — 2 items need review">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 22 20H2L12 3.5Z"/><path d="M12 10v4M12 16.8v.2"/></svg>
+    <span class="badge-dot"></span>
+  </button>
+  <button class="util-btn" id="infoBtn" aria-label="About this concept" title="About Concept Atlas">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.2"/></svg>
+  </button>
+</header>
+
+<!-- ═══ THE ATLAS RAIL ═══════════════════════════════════════════════ -->
+<nav class="rail" aria-label="Primary">
+
+  <div class="rail-head">
+    <div class="wordmark">
+      <span class="mark">RS<em>em</em>ble</span>
+      <span class="tag">ATLAS</span>
+    </div>
+    <button class="rail-collapse" id="railToggle" aria-label="Collapse navigation rail" title="Collapse rail  [">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6 8.5 12l6 6"/></svg>
+    </button>
+  </div>
+
+  <div class="rail-scroll">
+
+    <!-- The matrix map: the 2×2 as links. Recognition, not computation. -->
+    <div class="rail-label" id="testingLabel">Testing</div>
+    <div class="map" role="group" aria-labelledby="testingLabel">
+      <span class="map-colhead" aria-hidden="true"></span>
+      <span class="map-colhead">One task</span>
+      <span class="map-colhead">Task set</span>
+
+      <span class="map-rowlab">Models</span>
+      <a class="cell" href="#compare" data-surface="compare" aria-current="page"
+         title="Compare — one task, many models">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1.5v3M15 1.5v3M9 19.5v3M15 19.5v3M1.5 9h3M1.5 15h3M19.5 9h3M19.5 15h3"/></svg>
+        <span class="cell-name">Compare</span>
+        <span class="cell-sub">many models</span>
+      </a>
+      <a class="cell" href="#benchmark" data-surface="benchmark"
+         title="Benchmark — a task set, many models">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <span class="cell-name">Benchmark</span>
+        <span class="cell-sub">many models</span>
+      </a>
+
+      <span class="map-rowlab">Strategies</span>
+      <a class="cell" href="#calibrate" data-surface="calibrate"
+         title="Calibrate — one task, finish policies">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19.5 9 15l3 3 7.5-7.5"/><path d="M14.5 10.5h5v5"/></svg>
+        <span class="cell-name">Calibrate</span>
+        <span class="cell-sub">finish policies</span>
+      </a>
+      <a class="cell" href="#studies" data-surface="studies"
+         title="Policy Studies — a task set, finish policies">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5h5M10.5 2.5v5.2c0 .5-.14.98-.4 1.4L4.5 18a3 3 0 0 0 2.6 4.5h9.8a3 3 0 0 0 2.6-4.5l-5.6-8.9c-.26-.42-.4-.9-.4-1.4V2.5"/><path d="M7.5 14.5h9"/></svg>
+        <span class="cell-name">Studies</span>
+        <span class="cell-sub">finish policies</span>
+      </a>
+    </div>
+
+    <!-- Non-testing surfaces: library, subordinate — never peers of the cells -->
+    <div class="rail-label" id="libraryLabel">Library</div>
+    <div role="group" aria-labelledby="libraryLabel">
+      <a class="lib-link" href="#" title="Observatory — what you know about each model">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>
+        <span>Observatory</span>
+      </a>
+      <a class="lib-link" href="#" title="Records — everything that has run">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+        <span>Records</span>
+      </a>
+    </div>
+
+  </div>
+
+  <div class="rail-foot">
+    <a class="lib-link" href="#" title="Connections · providers">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
+      <span>Connections</span>
+    </a>
+  </div>
+</nav>
+<div class="drawer-scrim" id="drawerScrim" aria-hidden="true"></div>
+
+<main class="stage" id="stage">
+
+<!-- ═════════════════════ COMPARE — Models × One task ═════════════════ -->
+<section class="surface" id="s-compare" data-surface="compare" aria-label="Compare">
+  <div class="surface-head">
+    <div>
+      <div class="eyebrow"><span class="who">Models</span><span class="x">·</span><span>One task</span><span class="x">—</span><span>Compare</span></div>
+      <h1 class="surface-title">PulseFit launch narrative</h1>
+      <p class="surface-sub">Ranked 3 candidates · judged blind by DeepSeek V4 Pro</p>
+    </div>
+    <div class="head-actions">
+      <!-- Finish lives here and nowhere else — never rail, never strip -->
+      <div class="finish" role="radiogroup" aria-label="Finish mode">
+        <button role="radio" aria-checked="true" class="on">Rank</button>
+        <button role="radio" aria-checked="false">Fuse</button>
+      </div>
+      <button class="btn btn-ghost">Open task <span class="kbd">⌘E</span></button>
+    </div>
+  </div>
+
+  <div class="compare-grid">
+    <!-- Composer -->
+    <div class="stack">
+      <div class="panel task-card stagger" style="--i:0">
+        <div class="card-title">Task <span class="mono" style="text-transform:none; letter-spacing:0">v3</span></div>
+        <p class="prompt">Write the launch narrative for PulseFit's adaptive-heart-rate feature — 600 words, tone: clinical-precision-meets-hopeful. Lead with the overnight-shift nurse persona; close on the recovery metric, not the sensor.</p>
+        <div class="meta"><span>Edited 2m ago</span><span class="mono">412 tok</span><span class="mono">≈ $0.002 / model</span></div>
+      </div>
+
+      <div class="panel stagger" style="--i:1">
+        <div class="card-title">Models <span><b style="color:var(--accent)">3</b>&nbsp;selected</span></div>
+        <div class="hairline"></div>
+        <div class="model-row">
+          <span class="check on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+          <span class="avatar av-luna">Lu</span>
+          <span class="names"><span class="n">GPT-5.6 Luna</span><span class="s">openai/gpt-5.6-luna</span></span>
+          <span class="tele"><b>62% win</b> · 4.3<br>$0.60/M · ~8s</span>
+        </div>
+        <div class="model-row">
+          <span class="check on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+          <span class="avatar av-opus">Op</span>
+          <span class="names"><span class="n">Claude Opus 4.7</span><span class="s">anthropic/claude-opus-4.7</span></span>
+          <span class="tele"><b>48% win</b> · 4.1<br>$1.10/M · ~11s</span>
+        </div>
+        <div class="model-row">
+          <span class="check on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+          <span class="avatar av-gem">Ge</span>
+          <div class="names"><span class="n">Gemini 3.7 Pro</span><span class="s">google/gemini-3.7-pro</span></div>
+          <span class="tele"><b>35% win</b> · 3.9<br>$0.45/M · ~6s</span>
+        </div>
+      </div>
+
+      <div class="panel stagger" style="--i:2">
+        <div class="card-title">Judge</div>
+        <div class="judge-line">
+          <span class="avatar av-ds">DV</span>
+          <span class="names"><span class="n">DeepSeek V4 Pro</span><span class="s">neutral — not a candidate</span></span>
+        </div>
+        <div class="criteria">
+          <span class="chip">Accuracy · 40%</span><span class="chip">Depth · 30%</span><span class="chip">Clarity · 30%</span>
+        </div>
+      </div>
+
+      <div class="run-block stagger" style="--i:3">
+        <button class="btn btn-primary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.8v14.4c0 .9 1 1.5 1.8 1L20 13a1.2 1.2 0 0 0 0-2L8.8 3.8C8 3.3 7 3.9 7 4.8Z"/></svg>
+          Run comparison <span class="kbd">⌘ Enter</span>
+        </button>
+        <div class="run-forecast">3 models · 1 judge · <span class="mono">~$0.04 · ~25s</span></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="stack">
+      <div class="panel stagger" style="--i:1">
+        <div class="verdict">
+          <h2><svg class="crown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 4 3.5L12 5l5 6.5L21 8l-1.6 10.5H4.6L3 8Z"/></svg>GPT-5.6 Luna</h2>
+          <div class="vsub">
+            <span class="mono" style="color:var(--accent)">4.62 weighted</span><span class="sep">·</span>
+            <span>Rank finish</span><span class="sep">·</span><span class="mono">22s · $0.031</span><span class="sep">·</span>
+            <span style="color:var(--ink-3)">2m ago</span>
+          </div>
+        </div>
+        <div class="lb-row win stagger" style="--i:2; --w:1">
+          <span class="lb-rank">1</span>
+          <span class="avatar av-luna">Lu</span>
+          <div class="lb-name"><span class="n">GPT-5.6 Luna</span><span class="s">criterion sweep: 3 of 3</span></div>
+          <div class="lb-bar"><i></i></div>
+          <span class="lb-score">4.62</span>
+          <span class="lb-delta">—</span>
+        </div>
+        <div class="lb-row stagger" style="--i:3; --w:0.955">
+          <span class="lb-rank">2</span>
+          <span class="avatar av-opus">Op</span>
+          <div class="lb-name"><span class="n">Claude Opus 4.7</span><span class="s">lost on Depth</span></div>
+          <div class="lb-bar"><i></i></div>
+          <span class="lb-score">4.41</span>
+          <span class="lb-delta">−0.21</span>
+        </div>
+        <div class="lb-row stagger" style="--i:4; --w:0.905">
+          <span class="lb-rank">3</span>
+          <span class="avatar av-gem">Ge</span>
+          <div class="lb-name"><span class="n">Gemini 3.7 Pro</span><span class="s">lost on Accuracy</span></div>
+          <div class="lb-bar"><i></i></div>
+          <span class="lb-score">4.18</span>
+          <span class="lb-delta">−0.44</span>
+        </div>
+      </div>
+
+      <div class="panel answer-panel stagger" style="--i:5">
+        <div class="card-title">Winning answer <span>Candidate B · blind</span></div>
+        <div class="quoted">
+          At 3:40 a.m., Maria doesn't check her patient's monitor first — she checks her own pulse. Twelve hours into a night shift, her resting rate is 84 and climbing. PulseFit notices before she does.<span class="fade"> The narrative continues through the recovery metric, closing on adaptive baselines rather than sensor specs …</span>
+        </div>
+        <div class="provenance">
+          <span class="chip">452 words</span><span class="chip">judge-1 · sealed</span><span class="chip">τ rank Q−λ(1−C)</span><span class="chip" style="color:var(--ink-3)">record 8f3a…c2</span>
+        </div>
+      </div>
+
+      <!-- Escalations live on the surface — the axes are never flipped in chrome -->
+      <div class="escalate-row stagger" style="--i:6">
+        <a class="escalate-link" href="#calibrate" data-surface="calibrate">
+          Calibrate finish policies on this task
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></svg>
+        </a>
+        <a class="escalate-link" href="#benchmark" data-surface="benchmark">
+          Create a Task Set from this task
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ CALIBRATE — Strategies × One task ═════════════ -->
+<section class="surface" id="s-calibrate" data-surface="calibrate" aria-label="Calibrate" hidden>
+  <div class="surface-head">
+    <div>
+      <div class="eyebrow"><span class="who">Strategies</span><span class="x">·</span><span>One task</span><span class="x">—</span><span>Calibrate</span></div>
+      <h1 class="surface-title">PulseFit launch narrative</h1>
+      <p class="surface-sub">Same task, same drafts, same judge — only the finish varies</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-ghost">Re-run <span class="kbd">⌘R</span></button>
+    </div>
+  </div>
+
+  <!-- Evidence honesty is chrome, not copy buried in docs -->
+  <div class="honesty stagger" style="--i:0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.2"/></svg>
+    <span class="h-txt"><b>Snapshot · one task · unconfirmed.</b> A compass reading, not a conclusion — the policies below shared identical drafts and judge evidence.</span>
+  </div>
+
+  <!-- The pool is always visible: strategies are treatments over models (§C.2a) -->
+  <div class="panel pool-strip stagger" style="--i:1">
+    <span class="lbl">Pool</span>
+    <span class="pool-ava"><span class="avatar av-luna" style="width:22px;height:22px;border-radius:6px;font-size:9px">Lu</span><span class="avatar av-opus" style="width:22px;height:22px;border-radius:6px;font-size:9px">Op</span><span class="avatar av-gem" style="width:22px;height:22px;border-radius:6px;font-size:9px">Ge</span></span>
+    <span class="chip">Core Trio · v2 pinned</span>
+    <span class="chip">Judge · DeepSeek V4 Pro</span>
+    <span class="chip">Rubric · Narrative v3</span>
+    <span class="why">held constant across every policy</span>
+  </div>
+
+  <div class="panel policy-table stagger" style="--i:2" role="table" aria-label="Policy comparison">
+    <div class="pt-row head" role="row">
+      <span role="columnheader">Finish policy</span><span role="columnheader">Score</span><span role="columnheader">Cost</span><span role="columnheader">What it did</span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name">
+        <span class="p">Fuse <span class="best">LEADS — barely</span></span>
+        <span class="c">AnalysisScores v1 · 2-of-3 synthesizer</span>
+      </div>
+      <span class="pt-score">4.58</span>
+      <span class="pt-cost">1.8×</span>
+      <span class="pt-note">Merged Luna + Opus; kept Opus's persona, Luna's close. <span class="faint">+0.06 vs Rank on this task.</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name">
+        <span class="p">Refine</span>
+        <span class="c">winner revision · rubric identical to Fuse</span>
+      </div>
+      <span class="pt-score">4.52</span>
+      <span class="pt-cost">1.3×</span>
+      <span class="pt-note">Revised the Rank winner against the rubric. <span class="faint">The confound control — nearly matched Fuse.</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name">
+        <span class="p">Rank</span>
+        <span class="c">blocked baseline · shared Judge-1 evidence</span>
+      </div>
+      <span class="pt-score">4.47</span>
+      <span class="pt-cost">1.1×</span>
+      <span class="pt-note">Judge's pick unchanged: GPT-5.6 Luna.</span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name">
+        <span class="p">Best single</span>
+        <span class="c">best_fixed control</span>
+      </div>
+      <span class="pt-score" style="color:var(--ink-2)">4.47</span>
+      <span class="pt-cost">1.0×</span>
+      <span class="pt-note">Same underlying draft as Rank — the floor.</span>
+    </div>
+    <div class="table-foot">
+      <b>Read this honestly:</b> +0.06 sits inside judge noise on a single task. Nothing on this screen is a recommendation — it's a signal worth (or not worth) replicating.
+    </div>
+  </div>
+
+  <!-- Escalation is one tap: the snapshot's only job is to earn a study -->
+  <div class="escalate-card stagger" style="--i:3">
+    <div>
+      <h3>Turn this snapshot into a finding</h3>
+      <p>Run the same blocked policies across a pinned Task Set. Prefills pool, policies, recipe, and rubric into a Policy Study draft — nothing re-entered, nothing mutated here.</p>
+    </div>
+    <a class="btn btn-accent-quiet" href="#studies" data-surface="studies" style="text-decoration:none">Test across a Task Set
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></svg>
+    </a>
+  </div>
+</section>
+
+<!-- ═══════════════════ BENCHMARK — Models × Task set ═════════════════ -->
+<section class="surface" id="s-benchmark" data-surface="benchmark" aria-label="Benchmark" hidden>
+  <div class="surface-head">
+    <div>
+      <div class="eyebrow"><span class="who">Models</span><span class="x">·</span><span>Task set</span><span class="x">—</span><span>Benchmark</span></div>
+      <h1 class="surface-title">Support Macro QA <span style="color:var(--ink-3); font-weight:500">· v4 pinned</span></h1>
+      <p class="surface-sub">12 tasks × 4 models · 47 of 48 cells complete · rerun 3d ago</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-ghost">Task Set</button>
+      <button class="btn btn-primary">Re-run matrix <span class="kbd">⌘ Enter</span></button>
+    </div>
+  </div>
+
+  <div class="panel matrix-wrap stagger" style="--i:1">
+    <div class="matrix">
+      <div class="mx-row head" role="row">
+        <div class="mx-cell">Task</div>
+        <div class="mx-cell head-model"><span class="avatar av-luna" style="width:22px;height:22px;border-radius:6px;font-size:9px">Lu</span><span>Luna<span class="m-slug">gpt-5.6</span></span></div>
+        <div class="mx-cell head-model"><span class="avatar av-opus" style="width:22px;height:22px;border-radius:6px;font-size:9px">Op</span><span>Opus<span class="m-slug">4.7</span></span></div>
+        <div class="mx-cell head-model"><span class="avatar av-gem" style="width:22px;height:22px;border-radius:6px;font-size:9px">Ge</span><span>Gemini<span class="m-slug">3.7</span></span></div>
+        <div class="mx-cell head-model"><span class="avatar av-kimi" style="width:22px;height:22px;border-radius:6px;font-size:9px">Ki</span><span>Kimi<span class="m-slug">K3</span></span></div>
+      </div>
+      <div class="mx-row body stagger" style="--i:2">
+        <div class="mx-cell mx-task"><span class="t">Refund triage — angry customer</span><span class="d">tone rubric · 320 tok</span></div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.61</div>
+        <div class="mx-cell mx-score">4.44</div>
+        <div class="mx-cell mx-score">4.12</div>
+        <div class="mx-cell mx-score">4.30</div>
+      </div>
+      <div class="mx-row body stagger" style="--i:3">
+        <div class="mx-cell mx-task"><span class="t">Macro — subscription pause</span><span class="d">procedural · 210 tok</span></div>
+        <div class="mx-cell mx-score">4.38</div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.55</div>
+        <div class="mx-cell mx-score">3.98</div>
+        <div class="mx-cell mx-score">4.21</div>
+      </div>
+      <div class="mx-row body stagger" style="--i:4">
+        <div class="mx-cell mx-task"><span class="t">Edge — double charge dispute</span><span class="d">factual · 280 tok</span></div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.72</div>
+        <div class="mx-cell mx-score">4.50</div>
+        <div class="mx-cell mx-score">4.31</div>
+        <div class="mx-cell mx-score">4.44</div>
+      </div>
+      <div class="mx-row body stagger" style="--i:5">
+        <div class="mx-cell mx-task"><span class="t">De-escalation — threat to churn</span><span class="d">tone rubric · 350 tok</span></div>
+        <div class="mx-cell mx-score">4.41</div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.58</div>
+        <div class="mx-cell mx-score">4.05</div>
+        <div class="mx-cell mx-missing">— <a href="#">Recover</a></div>
+      </div>
+      <div class="mx-row body stagger" style="--i:6">
+        <div class="mx-cell mx-task"><span class="t">Macro — export annual data</span><span class="d">procedural · 190 tok</span></div>
+        <div class="mx-cell mx-score">4.29</div>
+        <div class="mx-cell mx-score">4.36</div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.52</div>
+        <div class="mx-cell mx-score">4.18</div>
+      </div>
+      <div class="mx-row body stagger" style="--i:7">
+        <div class="mx-cell mx-task"><span class="t">Ambiguous warranty window</span><span class="d">factual · 260 tok</span></div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.66</div>
+        <div class="mx-cell mx-score">4.49</div>
+        <div class="mx-cell mx-score">4.28</div>
+        <div class="mx-cell mx-score">4.37</div>
+      </div>
+      <div class="mx-row agg">
+        <div class="mx-cell mx-task"><span class="t">Mean · 12 tasks</span></div>
+        <div class="mx-cell mx-score">4.51</div>
+        <div class="mx-cell mx-score">4.49</div>
+        <div class="mx-cell mx-score">4.21</div>
+        <div class="mx-cell mx-score">4.30<span style="color:var(--ink-3); font-size:10px">*</span></div>
+      </div>
+    </div>
+    <div class="matrix-foot">
+      <span>6 of 12 tasks shown · <span class="mono">*</span> Kimi mean excludes the missing cell</span>
+      <span>Best-in-row marked — color <i>and</i> dot, never hue alone</span>
+    </div>
+  </div>
+
+  <!-- Escalation: the matrix's one open question is a policy question -->
+  <div class="escalate-row stagger" style="--i:8; margin-top:14px">
+    <a class="escalate-link" href="#studies" data-surface="studies">
+      Run a Policy Study on this Task Set
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></svg>
+    </a>
+    <a class="escalate-link" href="#calibrate" data-surface="calibrate">
+      Calibrate one task first
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></svg>
+    </a>
+  </div>
+</section>
+
+<!-- ═════════════════ POLICY STUDY — Strategies × Task set ════════════ -->
+<section class="surface" id="s-studies" data-surface="studies" aria-label="Policy Study" hidden>
+  <div class="surface-head">
+    <div>
+      <div class="eyebrow"><span class="who">Strategies</span><span class="x">·</span><span>Task set</span><span class="x">—</span><span>Policy Study</span></div>
+      <h1 class="surface-title">Is fusion worth it on support tasks?</h1>
+      <p class="surface-sub">Support Macro QA v4 · Core Trio pool · predeclared MPID <span class="mono">+0.40</span></p>
+    </div>
+    <div class="head-actions">
+      <span class="chip claim">Exploratory</span>
+    </div>
+  </div>
+
+  <div class="stage-rail stagger" style="--i:0">
+    <div class="stage-step">
+      <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+      <div><div class="st-name">Recipe elimination</div><div class="st-sub">2 families survived · refine control held</div></div>
+      <span class="st-key" style="margin-left:auto">A</span>
+    </div>
+    <div class="stage-step">
+      <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+      <div><div class="st-name">Pool sweep + blocked holdout</div><div class="st-sub">predeclared shortlist · 12 fit tasks</div></div>
+      <span class="st-key" style="margin-left:auto">B</span>
+    </div>
+    <div class="stage-step">
+      <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+      <div><div class="st-name">Runner-up spot check</div><div class="st-sub">ranking stable · not recipe-sensitive</div></div>
+      <span class="st-key" style="margin-left:auto">C</span>
+    </div>
+  </div>
+
+  <div class="panel playbook stagger" style="--i:1">
+    <div class="pb-eyebrow"><span class="dot green"></span>Playbook · recommended policy</div>
+    <h3>Adopt <span style="color:var(--green)">Fuse · AnalysisScores v1</span> for this Task Set</h3>
+    <p class="rationale">Fusion clears the <span class="mono">+0.40</span> MPID against both Rank and the refine-the-winner control — mean <span class="mono">4.52</span> at <span class="mono">1.8×</span> cost. The refine control trailed at <span class="mono">4.09</span>, so the second model bought real complementary information, not just a second pass.</p>
+    <div class="pb-next">
+      <button class="btn btn-primary">Confirm on 12 fresh tasks</button>
+      <span class="hint">Moves the claim from <b style="color:var(--orange)">Exploratory</b> to <b style="color:var(--green)">Confirmed</b> if it holds</span>
+    </div>
+  </div>
+
+  <div class="panel policy-table stagger" style="--i:2" role="table" aria-label="Holdout policies">
+    <div class="pt-row head" role="row">
+      <span role="columnheader">Blocked holdout</span><span role="columnheader">Mean</span><span role="columnheader">Cost</span><span role="columnheader">MPID verdicts</span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name"><span class="p">Fuse · AnalysisScores v1</span><span class="c">synthesizer: GPT-5.6 Sol</span></div>
+      <span class="pt-score">4.52</span><span class="pt-cost">1.8×</span>
+      <span class="pt-note"><span class="verdict-mini adopt">ADOPT vs rank +0.50</span>&nbsp;<span class="verdict-mini adopt">ADOPT vs refine +0.43</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name"><span class="p">Refine</span><span class="c">winner revision · confound control</span></div>
+      <span class="pt-score">4.09</span><span class="pt-cost">1.3×</span>
+      <span class="pt-note"><span class="verdict-mini no">vs rank +0.07 · not justified</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name"><span class="p">Rank</span><span class="c">blind leaderboard pick</span></div>
+      <span class="pt-score">4.02</span><span class="pt-cost">1.1×</span>
+      <span class="pt-note"><span class="verdict-mini no">vs best single +0.14 · not justified</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name"><span class="p">Best single</span><span class="c">best_fixed control</span></div>
+      <span class="pt-score" style="color:var(--ink-2)">3.88</span><span class="pt-cost">1.0×</span>
+      <span class="pt-note" style="color:var(--ink-3)">the floor everything must clear</span>
+    </div>
+  </div>
+
+  <div class="claim-strip stagger" style="--i:3">
+    <span class="dot orange"></span>
+    <span class="txt"><b>Exploratory</b> — the playbook holds on all 12 fit tasks but is unconfirmed on unseen tasks. <span class="mono">claim_level: exploratory · study 7d21…9e</span></span>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <span>RSemble AI — Concept Atlas · collapsible rail era</span>
+  <span class="mono">axes organize · links navigate · surfaces escalate · illustrative data</span>
+</footer>
+
+<!-- ═══ Mobile bottom bar — the four testing cells in the thumb zone ══ -->
+<nav class="bottom-bar" aria-label="Primary">
+  <a href="#compare" data-surface="compare" aria-current="page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1.5v3M15 1.5v3M9 19.5v3M15 19.5v3M1.5 9h3M1.5 15h3M19.5 9h3M19.5 15h3"/></svg>
+    Compare
+  </a>
+  <a href="#benchmark" data-surface="benchmark">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+    Benchmark
+  </a>
+  <a href="#calibrate" data-surface="calibrate">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19.5 9 15l3 3 7.5-7.5"/><path d="M14.5 10.5h5v5"/></svg>
+    Calibrate
+  </a>
+  <a href="#studies" data-surface="studies">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5h5M10.5 2.5v5.2c0 .5-.14.98-.4 1.4L4.5 18a3 3 0 0 0 2.6 4.5h9.8a3 3 0 0 0 2.6-4.5l-5.6-8.9c-.26-.42-.4-.9-.4-1.4V2.5"/><path d="M7.5 14.5h9"/></svg>
+    Studies
+  </a>
+</nav>
+
+<!-- ═══ Annotation sheet ══════════════════════════════════════════════ -->
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <button class="sheet-close" id="sheetClose" aria-label="Close">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5 5 19"/></svg>
+  </button>
+  <h2 id="sheetTitle">Concept Atlas — the decisions</h2>
+  <p class="sub">Companion to <span style="font-family:var(--mono); font-size:11px">atlas-rail-concept.md</span>. Every claim below is demonstrated live — click the map, collapse the rail, follow an escalation.</p>
+  <div class="notes">
+    <div class="note"><span class="num">1</span><div><b>Orientation moves to the edge; the canvas is never overlaid.</b><span>The Meridian capsule floated over the work. Atlas anchors chrome to the left edge and the top strip — Compare's split panes and Benchmark's matrix get every pixel of canvas, at every scroll position.</span><span class="spec-ref">concept §A.1 · §C</span></div></div>
+    <div class="note"><span class="num">2</span><div><b>The 2×2 is a map, not two dials.</b><span>Subjects are rows, scale is columns, cells are links. You recognize your destination — "test models across my task set" — instead of computing subject × scope. The taxonomy stays visible and self-teaching; it just stops being a control. Links use standard nav semantics, not radiogroups.</span><span class="spec-ref">concept §A.2 · §C.1</span></div></div>
+    <div class="note"><span class="num">3</span><div><b>One click to any cell; you always know where you are.</b><span>Compare sits top-left — the home position. The active cell carries an accent bar, weight, and a dot (never hue alone). The eyebrow restates the axis on every surface, so wayfinding survives even with the rail collapsed.</span><span class="spec-ref">concept §C.1 · spec §K law</span></div></div>
+    <div class="note"><span class="num">4</span><div><b>Cross-cell movement is escalation, on the surface, in context.</b><span>"Calibrate finish policies on this task", "Create a Task Set from this task", "Test across a Task Set", "Run a Policy Study on this Task Set" — the carry semantics the spec already defines (F2–F5), rendered as actions where the work lives. Nothing flips an axis in chrome.</span><span class="spec-ref">concept §B · spec §F</span></div></div>
+    <div class="note"><span class="num">5</span><div><b>Finish never leaves Compare.</b><span>Rank/Fuse is an execution setting, so it renders inside the Compare surface only — never in the rail, never in the strip. In Strategies, the same words are the experiment itself: rows in a table, never a selector.</span><span class="spec-ref">spec §C.2b</span></div></div>
+    <div class="note"><span class="num">6</span><div><b>The pool is always on stage in Strategies.</b><span>A strategy test is a treatment over a pinned model pool. Calibrate and Policy Study both pin it visibly — pool chips, judge, rubric, "held constant across every policy."</span><span class="spec-ref">spec §C.2a</span></div></div>
+    <div class="note"><span class="num">7</span><div><b>Calibrate wears its evidence grade on its sleeve.</b><span>One task yields a compass reading, so the surface says exactly that — snapshot banner, per-policy table, zero confidence theater. Its single call to action is escalation.</span><span class="spec-ref">spec §G.3.3–G.3.4</span></div></div>
+    <div class="note"><span class="num">8</span><div><b>The rail collapses to a column of icons — order preserved.</b><span>Press <span class="mono" style="font-size:11px">[</span> or the chevron: labels fold away and the four cells stay in map order as 44px icon targets. Tooltips and accessible names carry the full descriptors, and the eyebrow keeps stating the axis on the surface. State persists per session.</span><span class="spec-ref">concept §C.2</span></div></div>
+    <div class="note"><span class="num">9</span><div><b>Mobile: drawer + thumb-zone bar.</b><span>Below 780px the rail becomes a drawer from the leading edge; the four testing cells live in a bottom bar with safe-area padding. The strip keeps awareness (live run, search, attention) — never navigation.</span><span class="spec-ref">concept §C.2 · §E.4</span></div></div>
+    <div class="note"><span class="num">10</span><div><b>What this concept deliberately omits.</b><span>No axis controls anywhere. No floating chrome. No global analytics. Observatory and Records stay library utilities — grouped subordinate to Testing, never peers of the cells. One accent color; mono + tabular numerals for every number; motion only where it communicates state.</span><span class="spec-ref">concept §D–E · spec §I</span></div></div>
+  </div>
+</aside>
+
+<script>
+(function() {
+  'use strict';
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var SURFACES = ['compare', 'calibrate', 'benchmark', 'studies'];
+
+  /* ── Surface switching: blur-masked crossfade, aria-current on links ── */
+  var current = document.querySelector('.surface:not([hidden])');
+  var switching = false;
+  function showSurface(key) {
+    var next = document.getElementById('s-' + key);
+    if (!next || next === current || switching) return;
+    document.querySelectorAll('[data-surface]').forEach(function(el) {
+      if (el.tagName === 'A') {
+        if (el.getAttribute('data-surface') === key) el.setAttribute('aria-current', 'page');
+        else el.removeAttribute('aria-current');
+      }
+    });
+    if (reduceMotion) {
+      current.hidden = true; current.classList.remove('entering');
+      next.hidden = false; current = next; return;
+    }
+    switching = true;
+    current.classList.add('exiting');
+    var outgoing = current;
+    setTimeout(function() {
+      outgoing.hidden = true;
+      outgoing.classList.remove('exiting', 'entering');
+      next.hidden = false;
+      next.classList.add('entering');
+      current = next;
+      setTimeout(function() { next.classList.remove('entering'); switching = false; }, 640);
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, 130);
+  }
+
+  /* All nav links (rail map, bottom bar, escalation links) drive the router */
+  document.querySelectorAll('a[data-surface]').forEach(function(a) {
+    a.addEventListener('click', function(e) {
+      var key = a.getAttribute('data-surface');
+      if (SURFACES.indexOf(key) === -1) return;
+      e.preventDefault();
+      showSurface(key);
+      if (history.replaceState) history.replaceState(null, '', '#' + key);
+      closeDrawer();
+    });
+  });
+
+  /* Deep link support: #compare #calibrate #benchmark #studies */
+  (function initialFromHash() {
+    var m = /^#(compare|calibrate|benchmark|studies)$/.exec(location.hash || '');
+    if (!m) return;
+    showSurface(m[1]);
+  })();
+
+  /* ── Rail collapse: expanded ↔ icon mode. Session-persisted. ── */
+  var railToggle = document.getElementById('railToggle');
+  function applyCollapsed(collapsed) {
+    document.body.classList.toggle('rail-collapsed', collapsed);
+    document.body.classList.toggle('rail-open', !collapsed);
+    railToggle.setAttribute('aria-label', collapsed ? 'Expand navigation rail' : 'Collapse navigation rail');
+    railToggle.title = collapsed ? 'Expand rail  [' : 'Collapse rail  [';
+    try { sessionStorage.setItem('atlas-rail', collapsed ? '1' : '0'); } catch (e) {}
+  }
+  railToggle.addEventListener('click', function() {
+    applyCollapsed(!document.body.classList.contains('rail-collapsed'));
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === '[' && !e.target.closest('input, textarea, [contenteditable]')) {
+      applyCollapsed(!document.body.classList.contains('rail-collapsed'));
+    }
+  });
+  (function initRail() {
+    var stored = null;
+    try { stored = sessionStorage.getItem('atlas-rail'); } catch (e) {}
+    if (stored === null) stored = (window.innerWidth < 1140) ? '1' : '0';
+    applyCollapsed(stored === '1');
+  })();
+
+  /* ── Mobile drawer ── */
+  var hamburger = document.getElementById('hamburger');
+  var drawerScrim = document.getElementById('drawerScrim');
+  function closeDrawer() {
+    document.body.classList.remove('drawer-open');
+    hamburger.setAttribute('aria-label', 'Open navigation');
+  }
+  hamburger.addEventListener('click', function() {
+    var open = document.body.classList.toggle('drawer-open');
+    hamburger.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+  });
+  drawerScrim.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.body.classList.contains('drawer-open')) closeDrawer();
+  });
+
+  /* ── Finish toggle (Compare-interior only, spec §C.2b) ── */
+  document.querySelectorAll('.finish button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      btn.parentElement.querySelectorAll('button').forEach(function(b) {
+        b.classList.toggle('on', b === btn);
+        b.setAttribute('aria-checked', b === btn ? 'true' : 'false');
+      });
+    });
+  });
+
+  /* ── Model checkbox feedback ── */
+  document.querySelectorAll('.check').forEach(function(c) {
+    c.addEventListener('click', function() { c.classList.toggle('on'); });
+  });
+
+  /* ── Live pill: elapsed timer ticks everywhere (spec §F7) ── */
+  (function tick() {
+    var t = 21, el = document.getElementById('liveTimer');
+    setInterval(function() { t += 1; el.textContent = t + 's'; }, 1000);
+  })();
+
+  /* ── Annotation sheet ── */
+  var sheet = document.getElementById('sheet'),
+      scrim = document.getElementById('scrim'),
+      lastFocus = null;
+  function openSheet() {
+    lastFocus = document.activeElement;
+    sheet.hidden = false;
+    requestAnimationFrame(function() { sheet.classList.add('open'); scrim.classList.add('open'); });
+    document.getElementById('sheetClose').focus();
+  }
+  function closeSheet() {
+    sheet.classList.remove('open'); scrim.classList.remove('open');
+    setTimeout(function() { sheet.hidden = true; }, reduceMotion ? 0 : 210);
+    if (lastFocus) lastFocus.focus();
+  }
+  document.getElementById('infoBtn').addEventListener('click', openSheet);
+  document.getElementById('sheetClose').addEventListener('click', closeSheet);
+  scrim.addEventListener('click', closeSheet);
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && sheet.classList.contains('open')) closeSheet(); });
+})();
+</script>
+</body>
+</html>

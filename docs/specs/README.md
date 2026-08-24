@@ -1,8 +1,9 @@
 # Specs
 
 Specs are split by status: `archive/` for work that shipped, `pending/` for
-everything else. Cross-references keep the full paths, so `grep docs/specs/`
-still finds everything.
+written contracts waiting on an authorized cycle, `open/` for design that is
+still being argued and **must not be implemented**. Cross-references keep the
+full paths, so `grep docs/specs/` still finds everything.
 
 ## archive/
 
@@ -26,9 +27,19 @@ re-execute. Each has commits landing the work; most have QA evidence under
 
 ## pending/
 
-Written but not executed as a project. New work should start here — or, if the
-spec is stale, read its grounding audit first.
+Written contracts waiting on an authorized implementation cycle. If the spec
+is stale, read its grounding audit first. Unsettled design does **not** belong
+here — use `open/`.
 
 | Spec | Status |
 | --- | --- |
-| ui-redesign-spec.md | **Stale (audit 2026-08-04)** — predates 140 commits; most items already shipped via other components; palette and icon-rail sections conflict with current DESIGN.md. See `ui-redesign-grounding-audit.md`. Genuinely unshipped remnants: gradient CTA, focus mode (⌘\), self-judge warning, compare diff highlighting. |
+| ui-redesign-spec.md | **Stale (audit 2026-08-04)** — predates 140 commits; most items already shipped via other components; palette and icon-rail sections conflict with current DESIGN.md. See `ui-redesign-grounding-audit.md`. Genuinely unshipped remnants: gradient CTA, focus mode (⌘\\), self-judge warning, compare diff highlighting. |
+| two-axis-navigation/ | **Pointer only.** The work is not pending execution. See `docs/specs/open/two-axis-navigation/`. |
+
+## open/
+
+Still being argued. **Not implemented. Not authorized. Do not build from these files.**
+
+| Spec | Status |
+| --- | --- |
+| [two-axis-navigation/](./open/two-axis-navigation/) | Navigation chrome in iteration. Live app is still Compare · Evaluations · Lab · Models. Index: `open/two-axis-navigation/README.md`. |

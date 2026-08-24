@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSemble · Jobs, not dials — navigation concept v1</title>
+<style>
+:root {
+  --canvas: #08090a;
+  --shell: #0c0e10;
+  --panel: #121416;
+  --raised: #181b1e;
+  --hover: #1e2226;
+  --edge: #2a3036;
+  --edge-2: #3a424a;
+  --ink: rgba(255,255,255,0.92);
+  --ink-2: rgba(255,255,255,0.62);
+  --ink-3: rgba(255,255,255,0.42);
+  --accent: #5ee0c8;
+  --accent-ink: #06241f;
+  --accent-soft: rgba(94,224,200,0.12);
+  --warn: #f2bd65;
+  --danger: #f47e7e;
+  --violet: #b5a4ff;
+  --sans: "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: var(--sans);
+  background: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+}
+body::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(900px 420px at 12% -10%, rgba(94,224,200,0.05), transparent 60%);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 56px 28px 120px; }
+.kicker {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 14px;
+}
+h1 { font-size: 40px; font-weight: 650; letter-spacing: -0.035em; line-height: 1.08; max-width: 18ch; }
+.lede { margin-top: 18px; font-size: 20px; color: var(--ink-2); max-width: 42em; letter-spacing: -0.015em; }
+.meta { margin-top: 22px; font-size: 12px; color: var(--ink-3); font-family: var(--mono); }
+hr.rule { border: 0; border-top: 1px solid var(--edge); margin: 48px 0; }
+
+h2 { font-size: 26px; font-weight: 650; letter-spacing: -0.03em; margin: 56px 0 14px; }
+h3 { font-size: 17px; font-weight: 650; letter-spacing: -0.02em; margin: 28px 0 8px; }
+p { max-width: 42em; color: var(--ink-2); margin: 0 0 14px; }
+p.ink { color: var(--ink); }
+ul, ol { max-width: 42em; color: var(--ink-2); padding-left: 1.2em; margin: 0 0 16px; }
+li { margin: 0 0 8px; }
+strong { color: var(--ink); font-weight: 650; }
+
+.thesis {
+  margin: 36px 0 0;
+  padding: 22px 24px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  max-width: 46em;
+}
+.thesis p { color: var(--ink); margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0 28px; max-width: 880px; }
+@media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 18px 18px 16px;
+}
+.card h3 { margin-top: 0; }
+.card .tag {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; margin-bottom: 8px;
+}
+.tag.bad { color: var(--danger); }
+.tag.good { color: var(--accent); }
+
+table.map {
+  width: 100%; max-width: 720px; border-collapse: collapse; margin: 16px 0 24px;
+  font-size: 14px;
+}
+table.map th, table.map td {
+  border: 1px solid var(--edge); padding: 12px 14px; text-align: left; vertical-align: top;
+}
+table.map th { color: var(--ink-3); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 650; }
+table.map td strong { display: block; margin-bottom: 4px; }
+table.map .quiet { color: var(--ink-3); font-size: 12px; }
+
+/* ── Interactive shell ── */
+.shell-block { margin: 28px 0 8px; }
+.shell-caption { font-size: 12px; color: var(--ink-3); margin-bottom: 10px; font-family: var(--mono); }
+.shell {
+  display: flex; height: 560px;
+  background: var(--shell);
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.45);
+}
+.rail {
+  width: 220px; flex: none;
+  display: flex; flex-direction: column;
+  background: #0a0c0e;
+  border-right: 1px solid var(--edge);
+  transition: width 280ms var(--ease);
+}
+.rail.is-collapsed { width: 56px; }
+.rail-top {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 48px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--edge);
+}
+.word { font-weight: 700; font-size: 13px; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; }
+.word em { font-style: normal; color: var(--accent); }
+.collapse-btn {
+  width: 32px; height: 32px; border: 0; background: transparent; color: var(--ink-2);
+  border-radius: 8px; cursor: pointer; display: grid; place-items: center; flex: none;
+}
+.collapse-btn:hover { background: var(--hover); color: var(--ink); }
+.nav-group { padding: 14px 8px 4px; }
+.nav-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-3); padding: 0 8px 6px; white-space: nowrap; overflow: hidden;
+}
+.rail.is-collapsed .nav-label, .rail.is-collapsed .word, .rail.is-collapsed .child-label { display: none; }
+.nav-item, .nav-child {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 36px; padding: 0 8px; border-radius: 8px;
+  color: var(--ink-2); cursor: pointer; border: 0; background: transparent;
+  width: 100%; text-align: left; font: inherit; font-size: 13.5px;
+}
+.nav-item:hover, .nav-child:hover { background: var(--hover); color: var(--ink); }
+.nav-item.is-active { background: var(--accent-soft); color: var(--accent); }
+.nav-item svg, .nav-child svg { width: 16px; height: 16px; flex: none; }
+.nav-children { padding: 2px 0 6px 12px; }
+.rail.is-collapsed .nav-children { display: none; }
+.nav-child { min-height: 32px; font-size: 13px; padding-left: 28px; position: relative; }
+.nav-child::before {
+  content: ""; position: absolute; left: 14px; top: 8px; bottom: 8px; width: 1px; background: var(--edge);
+}
+.nav-child.is-active { color: var(--accent); }
+.stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  height: 48px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; border-bottom: 1px solid var(--edge); background: #0d0f11;
+}
+.topbar .where { font-size: 13.5px; font-weight: 600; letter-spacing: -0.015em; }
+.topbar .utils { display: flex; gap: 6px; color: var(--ink-2); font-size: 12px; }
+.util {
+  height: 32px; padding: 0 10px; border-radius: 8px; display: grid; place-items: center;
+  border: 1px solid transparent; color: var(--ink-2);
+}
+.canvas { flex: 1; padding: 22px 24px; overflow: auto; }
+.canvas h3 { margin-top: 0; font-size: 22px; }
+.canvas .eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; font-weight: 650; }
+.fake-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 14px; border: 1px solid var(--edge); border-radius: 10px;
+  background: var(--panel); margin-bottom: 8px; font-size: 13.5px;
+}
+.fake-row span { color: var(--ink-3); font-size: 12px; font-family: var(--mono); }
+.bridge {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 14px; padding: 8px 12px; border-radius: 8px;
+  border: 1px dashed var(--edge-2); color: var(--ink-2); font-size: 13px;
+}
+.note {
+  display: flex; gap: 14px; padding: 16px 18px; border: 1px solid var(--edge);
+  border-radius: 12px; background: var(--panel); margin: 12px 0 0; max-width: 46em;
+}
+.note .n { font-family: var(--mono); color: var(--accent); font-size: 12px; padding-top: 2px; }
+.keep-drop { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 880px; margin-top: 12px; }
+@media (max-width: 800px) { .keep-drop { grid-template-columns: 1fr; } .shell { height: auto; min-height: 520px; } }
+.keep-drop ul { margin-bottom: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="kicker">Navigation concept · v1 · 2026-08-24</p>
+<h1>Jobs, not dials.</h1>
+<p class="lede">The 2×2 is a true map of the work. It is a bad steering wheel. Put named jobs in a collapsible sidebar, and treat single-vs-suite as a depth of commitment inside a job — never as a toggle that follows you around.</p>
+<p class="meta">Companion to two-axis-navigation-spec.md · does not amend it until accepted · no implementation</p>
+
+<div class="thesis">
+  <p>People do not navigate a classification. They go to a place that does a job. Compare is a place. A “Models × Single” coordinate is a homework problem.</p>
+</div>
+
+<h2>What felt wrong</h2>
+<p class="ink">Two separate instincts, same root cause.</p>
+<p><strong>The top is cramped.</strong> Compare is already a dense studio — task, candidates, judge, output. A header that also holds four destinations, then two more dials, then utilities, then a live pill, is an instrument cluster sitting on the work. Vertical space is the scarce resource. A sidebar steals unused left margin, not the stage.</p>
+<p><strong>The same toggle on every page made the concept feel fake.</strong> If Models has Single / Suite, and Strategies has the same Single / Suite, the chrome is saying these are two skins of one empty grid. They are not. Compare is a studio. A benchmark is a matrix. A calibration is a snapshot. A policy study is a protocol. A toggle that teleports you between those is not a mode switch. It is a disguise.</p>
+
+<h2>The map is real. The control is the mistake.</h2>
+<p>RSemble really does have two questions, at two depths:</p>
+
+<table class="map">
+  <thead>
+    <tr><th></th><th>One task — try it</th><th>A pinned set — mean it</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Which model is better?</th>
+      <td><strong>Compare</strong><span class="quiet">today · daily driver</span></td>
+      <td><strong>Evaluations</strong><span class="quiet">today · Task Sets + matrix</span></td>
+    </tr>
+    <tr>
+      <th>Which finish policy is worth it?</th>
+      <td><strong>Calibrate</strong><span class="quiet">missing · snapshot, no claims</span></td>
+      <td><strong>Policy Study</strong><span class="quiet">today’s Lab</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>That table belongs in help, empty states, and the first-run story. It does not belong in the chrome as two switches you must compose on every click. Four named destinations and two binary dials carry the same two bits. The dials do not make destinations faster. They make every destination feel like a coordinate.</p>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="tag bad">Rejected — AxisBar</div>
+    <h3>[ Models | Strategies ] [ Single | Suite ]</h3>
+    <p>You compute the place. The same two controls render on every testing surface, so the pages feel like modes of one thing. “Models” collides with the Observatory. Single→Suite is not a zoom level — the entire tool changes.</p>
+  </div>
+  <div class="card">
+    <div class="tag good">Recommended — places</div>
+    <h3>Compare · Evaluations · Strategies · Models</h3>
+    <p>You go to a named job. Scale is a sibling or a child inside that job, not a global filter. The Observatory keeps the word Models. Strategies owns studies, calibrate, recipes, and pools — the way Lab already does.</p>
+  </div>
+</div>
+
+<h2>The concept</h2>
+<p class="ink">A collapsible sidebar of jobs. A thin top bar of utilities. Local children only under the job that owns them. No Single / Suite control anywhere in chrome.</p>
+
+<div class="shell-block">
+  <p class="shell-caption">Interactive · collapse the rail · click the jobs · notice there is no scale toggle</p>
+  <div class="shell" id="shell">
+    <aside class="rail" id="rail">
+      <div class="rail-top">
+        <div class="word">RS<em>em</em>ble</div>
+        <button class="collapse-btn" id="collapseBtn" aria-label="Collapse sidebar" title="Collapse">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6 9 12l6 6"/></svg>
+        </button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Work</div>
+        <button class="nav-item is-active" data-place="compare">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 7h6v6H7zM11 11h6v6h-6z"/></svg>
+          <span class="child-label">Compare</span>
+        </button>
+        <button class="nav-item" data-place="evaluations">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 12h8M8 15h5"/></svg>
+          <span class="child-label">Evaluations</span>
+        </button>
+        <div class="nav-children" id="evalChildren" hidden>
+          <button class="nav-child is-active" data-child="sets">Task sets</button>
+          <button class="nav-child" data-child="rubrics">Rubrics</button>
+        </div>
+        <button class="nav-item" data-place="strategies">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9.5 3h5M10.5 3v5.2c0 .5-.14.98-.4 1.4L4.5 18a3 3 0 0 0 2.6 4.5h9.8a3 3 0 0 0 2.6-4.5l-5.6-8.9c-.26-.42-.4-.9-.4-1.4V3"/></svg>
+          <span class="child-label">Strategies</span>
+        </button>
+        <div class="nav-children" id="stratChildren" hidden>
+          <button class="nav-child is-active" data-child="studies">Studies</button>
+          <button class="nav-child" data-child="calibrate">Calibrate</button>
+          <button class="nav-child" data-child="recipes">Recipes</button>
+          <button class="nav-child" data-child="pools">Pools</button>
+        </div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Library</div>
+        <button class="nav-item" data-place="models">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+          <span class="child-label">Models</span>
+        </button>
+      </div>
+    </aside>
+    <section class="stage">
+      <header class="topbar">
+        <div class="where" id="where">Compare</div>
+        <div class="utils">
+          <span class="util">Search</span>
+          <span class="util">Records</span>
+          <span class="util">Attention</span>
+          <span class="util" style="color:#5ee0c8">Live</span>
+        </div>
+      </header>
+      <div class="canvas" id="canvas"></div>
+    </section>
+  </div>
+</div>
+
+<h2>How single vs suite actually works</h2>
+<p>It is not a view filter. It is how serious you are.</p>
+<ul>
+  <li><strong>One task</strong> is a try. You want an answer tonight. Compare. Or, for policies, Calibrate.</li>
+  <li><strong>A pinned set</strong> is a claim. You want something you can stand on. Evaluations. Or a Policy Study.</li>
+</ul>
+<p>Those should be <strong>sibling places</strong> (or a child under the same job), connected by verbs — not a switch that restyles the current page.</p>
+<ul>
+  <li>From Compare: <em>Run this across a Task Set</em> → Evaluations, draft prefilled.</li>
+  <li>From a suite row: <em>Open this task in Compare</em>.</li>
+  <li>From Calibrate: <em>Test across a Task Set</em> → Policy Study draft. (This verb is the one thing the two-axis spec already got right.)</li>
+</ul>
+<p>The relationship is in the work. The nav just names the rooms.</p>
+
+<h2>Where Calibrate lives</h2>
+<p>The missing cell is real. Finish-policy machinery already exists. It should not become a fourth peer of Compare just to complete a diagram.</p>
+<p><strong>Nest it under Strategies</strong> — Studies · Calibrate · Recipes · Pools — the same local rail Lab already ships. Calibrate is a quick snapshot next to the serious study. It stays honest (one task, no playbook, no claim) because its chrome is quiet, not because a global “Single” dial said so.</p>
+<p>If it later earns daily use, promote it. Do not promote it to make the matrix look symmetric.</p>
+
+<h2>Why a sidebar, specifically</h2>
+<div class="note"><div class="n">1</div><div>Lab already proved the pattern: a 220px rail for Studies / Recipes / Pools. The shell should use that grammar, not invent a floating capsule and then a second local nav underneath it.</div></div>
+<div class="note"><div class="n">2</div><div>Collapsed to ~56px icons, Compare gets its vertical stage back. Expanded, Evaluations and Strategies can show their children without a second top bar. That is the “two types” topology — as grouping, not as a repeated toggle.</div></div>
+<div class="note"><div class="n">3</div><div>The old “no left sidebar” decision was for a single split-pane studio. The product is now four workspaces plus a library. That decision is stale. A rail is not the retired 3-panel platform chrome.</div></div>
+
+<h2>What this keeps, and what it drops</h2>
+<div class="keep-drop">
+  <div class="card">
+    <div class="tag good">Keep from the two-axis spec</div>
+    <ul>
+      <li>The 2×2 as a teaching map</li>
+      <li>Calibrate as a real surface (nested)</li>
+      <li>Carry rules: task text, pool, “test across a set”</li>
+      <li>Finish mode stays inside Compare only</li>
+      <li>Observatory is not a testing cell</li>
+      <li>Records / Attention / Search as utilities</li>
+      <li>Renames: Lab → Strategies; Evaluations may become Benchmark later</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="tag bad">Drop</div>
+    <ul>
+      <li>AxisBar / floating dual dials</li>
+      <li>Single / Suite as global chrome</li>
+      <li>Subject label “Models” (collides with the library)</li>
+      <li>Making Calibrate a top-level peer to complete the grid</li>
+      <li>Replacing four named destinations with two abstract switches</li>
+    </ul>
+  </div>
+</div>
+
+<h2>The one decision left</h2>
+<p>Sidebar grouping is the concept. The only real fork is how loud Calibrate is:</p>
+<ol>
+  <li><strong>Child of Strategies</strong> (recommended). Quiet, honest, matches today’s Lab rail.</li>
+  <li><strong>Top-level sibling.</strong> Only if you expect to live there. Four work items plus Models is a long rail.</li>
+</ol>
+<p>Everything else — collapse behavior, header utilities, bridges between places — follows from “jobs, not dials.”</p>
+
+<p class="meta" style="margin-top:48px">RSemble AI · navigation concept v1 · jobs-not-dials.html · not authority until accepted</p>
+</div>
+
+<script>
+(function () {
+  var rail = document.getElementById("rail");
+  var btn = document.getElementById("collapseBtn");
+  var where = document.getElementById("where");
+  var canvas = document.getElementById("canvas");
+  var evalChildren = document.getElementById("evalChildren");
+  var stratChildren = document.getElementById("stratChildren");
+  var collapsed = false;
+  var place = "compare";
+  var child = null;
+
+  var copy = {
+    compare: {
+      where: "Compare",
+      eyebrow: "One task · which model",
+      title: "PulseFit launch narrative",
+      body: '<div class="fake-row">deepseek/v4-pro<span>leader · 4.6</span></div><div class="fake-row">kimi-k3<span>4.1</span></div><div class="fake-row">glm-5.2<span>3.9</span></div><div class="bridge">→ Run this across a Task Set</div>'
+    },
+    evaluations: {
+      where: "Evaluations",
+      eyebrow: "A pinned set · which model",
+      title: "Writing desk — 24 tasks",
+      body: '<div class="fake-row">Task sets<span>workloads you run</span></div><div class="fake-row">Rubrics<span>how they get scored</span></div><div class="bridge">→ Open this task in Compare</div>'
+    },
+    strategies: {
+      where: "Strategies",
+      eyebrow: "Finish policy · the other question",
+      title: "Is fusion worth it on writing?",
+      body: '<div class="fake-row">Studies<span>claims across a set</span></div><div class="fake-row">Calibrate<span>snapshot on one task</span></div><div class="fake-row">Recipes · Pools<span>assets</span></div>'
+    },
+    calibrate: {
+      where: "Strategies · Calibrate",
+      eyebrow: "One task · snapshot · no claim",
+      title: "Four policies on this prompt",
+      body: '<div class="fake-row">best_fixed<span>1.0× cost</span></div><div class="fake-row">rank<span>1.0×</span></div><div class="fake-row">fuse<span>1.4×</span></div><div class="fake-row">refine<span>1.8×</span></div><div class="bridge">→ Test across a Task Set</div>'
+    },
+    models: {
+      where: "Models",
+      eyebrow: "Library · not a test",
+      title: "What you know about each model",
+      body: '<div class="fake-row">deepseek/v4-pro<span>31 observations</span></div><div class="fake-row">kimi-k3<span>18 observations</span></div><div class="bridge">Compare this pool · Calibrate this pool</div>'
+    }
+  };
+
+  function render() {
+    var key = (place === "strategies" && child === "calibrate") ? "calibrate" : place;
+    var c = copy[key];
+    where.textContent = c.where;
+    canvas.innerHTML = '<div class="eyebrow">' + c.eyebrow + '</div><h3>' + c.title + '</h3>' + c.body;
+    evalChildren.hidden = place !== "evaluations";
+    stratChildren.hidden = place !== "strategies";
+  }
+
+  btn.addEventListener("click", function () {
+    collapsed = !collapsed;
+    rail.classList.toggle("is-collapsed", collapsed);
+    btn.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+  });
+
+  document.querySelectorAll(".nav-item").forEach(function (el) {
+    el.addEventListener("click", function () {
+      document.querySelectorAll(".nav-item").forEach(function (n) { n.classList.remove("is-active"); });
+      el.classList.add("is-active");
+      place = el.getAttribute("data-place");
+      child = place === "strategies" ? "studies" : place === "evaluations" ? "sets" : null;
+      document.querySelectorAll(".nav-child").forEach(function (n) { n.classList.remove("is-active"); });
+      if (place === "strategies") stratChildren.querySelector('[data-child="studies"]').classList.add("is-active");
+      if (place === "evaluations") evalChildren.querySelector('[data-child="sets"]').classList.add("is-active");
+      render();
+    });
+  });
+
+  document.querySelectorAll(".nav-child").forEach(function (el) {
+    el.addEventListener("click", function (e) {
+      e.stopPropagation();
+      el.parentElement.querySelectorAll(".nav-child").forEach(function (n) { n.classList.remove("is-active"); });
+      el.classList.add("is-active");
+      child = el.getAttribute("data-child");
+      render();
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

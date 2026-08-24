@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<!--
+═════════════════════════════════════════════════════════════════════════════
+RSemble AI — Design Concept "Meridian"
+Two-axis navigation era · interactive design concept · 2026-08-24
+
+Companion to two-axis-navigation-spec.md. This is a concept, not a production
+surface: it demonstrates the floating dial cluster, the four testing cells,
+and the material/motion language. All data is illustrative.
+
+Design language: Apple pro-dark. One accent (system cyan). Materials carry
+hierarchy, hairlines carry structure, weight carries typography. Motion is
+critically damped by default; crossfades are blur-masked; press = scale(0.97).
+═════════════════════════════════════════════════════════════════════════════
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RSemble · Concept Meridian</title>
+<style>
+/* ═══ Tokens ═══════════════════════════════════════════════════════════ */
+:root {
+  --canvas: #08080a;
+  --ink: rgba(255,255,255,0.92);
+  --ink-2: rgba(255,255,255,0.60);
+  --ink-3: rgba(255,255,255,0.52);
+  --hairline: rgba(255,255,255,0.09);
+  --hairline-soft: rgba(255,255,255,0.055);
+  --fill-1: rgba(255,255,255,0.055);   /* card fill */
+  --fill-2: rgba(255,255,255,0.085);   /* hover fill */
+  --fill-3: rgba(255,255,255,0.13);    /* active/track fill */
+  --accent: #64d2ff;                    /* iOS systemCyan (dark) */
+  --accent-ink: #062a38;
+  --accent-soft: rgba(100,210,255,0.14);
+  --green: #30d158;
+  --orange: #ff9f0a;
+  --red: #ff453a;
+  --violet: #bf8fff;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-inout: cubic-bezier(0.77, 0, 0.175, 1);
+  --r-card: 14px;
+  --r-panel: 18px;
+  --shadow-panel: 0 1px 0 rgba(255,255,255,0.06) inset, 0 18px 50px -18px rgba(0,0,0,0.65);
+  --shadow-capsule: 0 1px 0 rgba(255,255,255,0.09) inset, 0 22px 60px -16px rgba(0,0,0,0.75), 0 4px 14px rgba(0,0,0,0.4);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { font-size: 15px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-optical-sizing: auto;
+}
+/* Ambient studio glow — barely-there, sets the material scene */
+body::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(1100px 480px at 50% -180px, rgba(100,210,255,0.055), transparent 62%),
+    radial-gradient(900px 600px at 88% 118%, rgba(120,90,255,0.035), transparent 60%);
+}
+::selection { background: rgba(100,210,255,0.28); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+button:focus-visible, [tabindex]:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px;
+}
+@media (hover: hover) and (pointer: fine) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 6px; border: 2px solid var(--canvas); }
+}
+
+svg.icon { width: 15px; height: 15px; flex: none; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* ═══ Floating capsule — the instrument cluster ════════════════════════ */
+.chrome {
+  position: sticky; top: 14px; z-index: 50;
+  display: flex; justify-content: center;
+  padding: 0 24px; margin-bottom: 34px;
+}
+.capsule {
+  display: flex; align-items: center; gap: 18px;
+  height: 58px; padding: 0 10px 0 20px;
+  border-radius: 999px;
+  background: rgba(22,22,26,0.66);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: var(--shadow-capsule);
+}
+
+.wordmark { display: flex; align-items: baseline; gap: 7px; padding-right: 2px; user-select: none; }
+.wordmark .mark { font-weight: 700; font-size: 15.5px; letter-spacing: -0.022em; }
+.wordmark .mark em { font-style: normal; color: var(--accent); }
+.wordmark .tag {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--ink-3);
+  border: 1px solid var(--hairline-soft); padding: 2.5px 6px; border-radius: 5px;
+}
+
+.chrome-divider { width: 1px; height: 26px; background: var(--hairline); flex: none; }
+
+/* The dials */
+.dials { display: flex; align-items: center; gap: 14px; }
+.dial { position: relative; display: flex; padding: 3px; border-radius: 999px; background: rgba(255,255,255,0.07); }
+.dial-thumb {
+  position: absolute; top: 3px; left: 0; height: calc(100% - 6px);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.155);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.14) inset, 0 2px 8px rgba(0,0,0,0.35);
+  transition: transform 340ms var(--ease-drawer), width 340ms var(--ease-drawer);
+  will-change: transform;
+}
+.dial-thumb.no-anim { transition: none; }
+.dial button {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 6px;
+  height: 33px; padding: 0 14px; border-radius: 999px;
+  font-size: 13px; font-weight: 550; letter-spacing: -0.006em;
+  color: var(--ink-2);
+  transition: color 180ms ease, transform 160ms var(--ease-out);
+  white-space: nowrap;
+}
+.dial button:active { transform: scale(0.965); }
+.dial button.is-active { color: var(--ink); }
+.dial button svg { opacity: 0.85; }
+.dial-caption { font-size: 10px; font-weight: 650; letter-spacing: 0.13em; color: var(--ink-3); text-transform: uppercase; }
+
+/* Utility cluster */
+.utilities { display: flex; align-items: center; gap: 2px; }
+.util-btn {
+  position: relative; display: grid; place-items: center;
+  width: 38px; height: 38px; border-radius: 999px;
+  color: var(--ink-2);
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms var(--ease-out);
+}
+@media (hover: hover) { .util-btn:hover { color: var(--ink); background: var(--fill-2); } }
+.util-btn:active { transform: scale(0.92); }
+.util-btn .badge-dot {
+  position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--orange); box-shadow: 0 0 0 2.5px rgba(22,22,26,0.95);
+}
+
+.live-pill {
+  display: flex; align-items: center; gap: 7px;
+  height: 38px; padding: 0 14px; border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em;
+  transition: transform 160ms var(--ease-out), filter 160ms ease;
+}
+.live-pill:active { transform: scale(0.96); }
+.live-pill .pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: pulse 1.6s var(--ease-inout) infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.8); } }
+
+/* ═══ Stage ════════════════════════════════════════════════════════════ */
+.stage { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 0 32px 110px; }
+.surface[hidden] { display: none; }
+.surface.exiting { opacity: 0; filter: blur(3px); transition: opacity 130ms ease, filter 130ms ease; }
+.surface.entering { animation: surface-in 300ms var(--ease-out) both; }
+@keyframes surface-in {
+  from { opacity: 0; transform: scale(0.986) translateY(5px); filter: blur(5px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+.entering .stagger { animation: item-in 380ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes item-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+/* Surface header — wayfinding eyebrow + content verdict, not furniture */
+.surface-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.eyebrow {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-3); margin-bottom: 9px;
+}
+.eyebrow .x { color: var(--ink-3); opacity: 0.6; font-weight: 500; }
+.eyebrow .who { color: var(--accent); }
+.surface-title { font-size: 23px; font-weight: 650; letter-spacing: -0.021em; line-height: 1.12; }
+.surface-sub { margin-top: 5px; font-size: 13.5px; color: var(--ink-2); letter-spacing: -0.004em; }
+.head-actions { display: flex; align-items: center; gap: 10px; padding-bottom: 3px; flex: none; }
+
+/* Panels & cards */
+.panel {
+  border-radius: var(--r-panel);
+  background: linear-gradient(180deg, rgba(255,255,255,0.052), rgba(255,255,255,0.030));
+  border: 1px solid var(--hairline-soft);
+  box-shadow: var(--shadow-panel);
+}
+.card-title {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3);
+  padding: 15px 17px 0;
+}
+.hairline { height: 1px; background: var(--hairline-soft); margin: 13px 0 0; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 17px; border-radius: 11px;
+  font-size: 13.5px; font-weight: 600; letter-spacing: -0.008em;
+  transition: transform 160ms var(--ease-out), filter 160ms ease, background-color 160ms ease;
+  user-select: none;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary {
+  color: var(--accent-ink);
+  background: linear-gradient(135deg, #7fdcff, #4aa8ff);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 8px 24px -6px rgba(80,190,255,0.45);
+}
+@media (hover: hover) { .btn-primary:hover { filter: brightness(1.07); } }
+.btn-ghost { background: var(--fill-1); color: var(--ink); border: 1px solid var(--hairline-soft); }
+@media (hover: hover) { .btn-ghost:hover { background: var(--fill-2); } }
+.btn-quiet { color: var(--accent); height: 32px; padding: 0 11px; font-size: 12.5px; }
+@media (hover: hover) { .btn-quiet:hover { background: var(--accent-soft); } }
+.btn .kbd, kbd {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  padding: 2.5px 6px; border-radius: 6px;
+  background: rgba(6,42,56,0.28); color: inherit;
+}
+.btn-ghost .kbd, .kbd-ink { background: var(--fill-3); color: var(--ink-2); }
+
+/* Chips */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 9px; border-radius: 7px;
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  background: var(--fill-1); color: var(--ink-2);
+  border: 1px solid var(--hairline-soft);
+}
+.chip.claim { color: var(--orange); background: rgba(255,159,10,0.10); border-color: rgba(255,159,10,0.22); height: 26px; border-radius: 999px; padding: 0 11px; font-family: inherit; font-weight: 650; font-size: 10.5px; letter-spacing: 0.1em; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.dot.orange { background: var(--orange); }
+.dot.green { background: var(--green); }
+
+/* Brand avatars */
+.avatar {
+  width: 27px; height: 27px; border-radius: 8px; flex: none;
+  display: grid; place-items: center;
+  font-size: 10.5px; font-weight: 750; color: rgba(0,0,0,0.55); letter-spacing: -0.02em;
+}
+.av-luna { background: linear-gradient(135deg, #7decc4, #3ecf9a); }
+.av-opus { background: linear-gradient(135deg, #f2b79c, #df8a63); }
+.av-gem  { background: linear-gradient(135deg, #a8c4ff, #6f93f5); }
+.av-kimi { background: linear-gradient(135deg, #d8ccf0, #a58fd4); }
+.av-ds   { background: linear-gradient(135deg, #b6c6ef, #7d95d8); }
+
+/* ═══ COMPARE (Models × Single) ═══════════════════════════════════════ */
+.compare-grid { display: grid; grid-template-columns: 355px minmax(0,1fr); gap: 20px; align-items: start; }
+.stack { display: flex; flex-direction: column; gap: 14px; }
+
+.task-card .prompt { padding: 11px 17px 15px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); letter-spacing: -0.004em; }
+.task-card .meta { display: flex; gap: 12px; padding: 0 17px 14px; font-size: 11.5px; color: var(--ink-3); }
+
+.model-row { display: flex; align-items: center; gap: 11px; padding: 11px 17px; }
+.model-row + .model-row { border-top: 1px solid var(--hairline-soft); }
+.model-row .names { flex: 1; min-width: 0; }
+.model-row .names .n { display: block; font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; }
+.model-row .names .s { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.model-row .tele { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); text-align: right; line-height: 1.5; }
+.model-row .tele b { color: var(--ink-2); font-weight: 600; }
+.check {
+  width: 19px; height: 19px; border-radius: 6px; flex: none;
+  border: 1.5px solid rgba(255,255,255,0.22);
+  display: grid; place-items: center; color: transparent;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms var(--ease-out);
+}
+.check:hover { transform: scale(1.08); }
+.check.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.check svg { width: 11px; height: 11px; }
+
+.judge-line { display: flex; align-items: center; gap: 10px; padding: 12px 17px 6px; }
+.judge-line .names .n { display: block; font-size: 13px; font-weight: 600; }
+.judge-line .names .s { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.criteria { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 17px 15px; }
+
+.run-block { padding: 4px 2px 0; }
+.run-block .btn-primary { width: 100%; height: 46px; border-radius: 13px; font-size: 14px; }
+.run-forecast { text-align: center; margin-top: 9px; font-size: 11.5px; color: var(--ink-3); }
+.run-forecast .mono { color: var(--ink-2); }
+
+/* Finish toggle — surface-interior only (spec §C.2b) */
+.finish {
+  display: flex; padding: 3px; border-radius: 10px;
+  background: var(--fill-1); border: 1px solid var(--hairline-soft);
+}
+.finish button {
+  height: 29px; padding: 0 13px; border-radius: 8px;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: var(--ink-2);
+  transition: color 150ms ease, background-color 150ms ease, transform 150ms var(--ease-out);
+}
+.finish button:active { transform: scale(0.96); }
+.finish button.on { background: var(--fill-3); color: var(--ink); }
+
+/* Verdict + leaderboard */
+.verdict { padding: 20px 22px 6px; }
+.verdict h2 { font-size: 19px; font-weight: 650; letter-spacing: -0.019em; display: flex; align-items: center; gap: 9px; }
+.crown { color: var(--accent); width: 17px; height: 17px; }
+.verdict .vsub { margin-top: 6px; font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.vsub .sep { color: var(--ink-3); }
+
+.lb-row { display: grid; grid-template-columns: 21px 27px minmax(0,1.35fr) minmax(0,1.9fr) 62px 74px; align-items: center; gap: 12px; padding: 12px 22px; }
+.lb-row + .lb-row { border-top: 1px solid var(--hairline-soft); }
+.lb-rank { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.lb-row.win .lb-rank { color: var(--accent); font-weight: 700; }
+.lb-name { min-width: 0; }
+.lb-name .n { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: 7px; }
+.lb-name .s { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+.lb-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.lb-bar i {
+  display: block; height: 100%; border-radius: 3px; transform-origin: left center;
+  background: linear-gradient(90deg, rgba(100,210,255,0.45), rgba(100,210,255,0.9));
+  transform: scaleX(var(--w, 0));
+  transition: transform 700ms var(--ease-out);
+}
+.lb-row:not(.win) .lb-bar i { background: rgba(255,255,255,0.18); }
+.entering .lb-bar i { transform: scaleX(0); animation: bar-in 650ms var(--ease-out) forwards; animation-delay: calc(var(--i, 0) * 90ms + 120ms); }
+@keyframes bar-in { to { transform: scaleX(var(--w)); } }
+.lb-score { font-family: var(--mono); font-size: 14px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.lb-row.win .lb-score { color: var(--accent); }
+.lb-delta { align-self: center; font-family: var(--mono); font-size: 10.5px; line-height: 1; color: var(--ink-3); text-align: right; }
+
+.answer-panel .quoted {
+  margin: 13px 22px 17px; padding: 15px 17px;
+  border-radius: 12px; background: rgba(255,255,255,0.035); border: 1px solid var(--hairline-soft);
+  font-size: 13.5px; line-height: 1.62; color: var(--ink); letter-spacing: -0.004em;
+}
+.answer-panel .quoted .fade { color: var(--ink-3); }
+.provenance { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 22px 20px; }
+
+/* ═══ CALIBRATE (Strategies × Single) ═════════════════════════════════ */
+.honesty {
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 16px; border-radius: 13px; margin-bottom: 14px;
+  background: rgba(255,159,10,0.07); border: 1px solid rgba(255,159,10,0.18);
+}
+.honesty svg { width: 16px; height: 16px; color: var(--orange); flex: none; }
+.honesty .h-txt { font-size: 13px; color: var(--ink-2); letter-spacing: -0.004em; }
+.honesty .h-txt b { color: var(--ink); font-weight: 650; }
+
+.pool-strip { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 13px 17px; }
+.pool-strip .lbl { font-size: 10.5px; font-weight: 650; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); margin-right: 3px; }
+.pool-strip .why { margin-left: auto; font-size: 11.5px; color: var(--ink-3); }
+.pool-ava { display: inline-flex; align-items: center; gap: 7px; }
+
+.policy-table .pt-row {
+  display: grid; grid-template-columns: minmax(0,2.1fr) 84px 86px minmax(0,2.4fr); align-items: center; gap: 14px;
+  padding: 13px 17px;
+}
+.policy-table .pt-row.head { padding: 13px 17px 8px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+.policy-table .pt-row.head span:nth-child(2),
+.policy-table .pt-row.head span:nth-child(3) { text-align: right; }
+.pt-row.body + .pt-row.body, .pt-row.head + .pt-row.body { border-top: 1px solid var(--hairline-soft); }
+.pt-name .p { font-size: 13.5px; font-weight: 650; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+.pt-name .c { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.pt-name .best { font-size: 9.5px; font-weight: 750; letter-spacing: 0.09em; color: var(--accent); background: var(--accent-soft); padding: 2.5px 6px; border-radius: 5px; }
+.pt-score { font-family: var(--mono); font-size: 14.5px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.pt-cost { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); text-align: right; }
+.pt-note { font-size: 12px; color: var(--ink-2); letter-spacing: -0.004em; }
+.pt-note .faint { color: var(--ink-3); }
+.table-foot { padding: 12px 17px 14px; font-size: 12px; color: var(--ink-3); border-top: 1px solid var(--hairline-soft); line-height: 1.55; }
+.table-foot b { color: var(--ink-2); font-weight: 600; }
+
+.escalate {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 19px 22px; border-radius: var(--r-panel); margin-top: 14px;
+  border: 1px solid rgba(100,210,255,0.22);
+  background: linear-gradient(120deg, rgba(100,210,255,0.10), rgba(100,210,255,0.028) 55%, transparent);
+}
+.escalate::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(420px 130px at 12% 0%, rgba(100,210,255,0.14), transparent 70%);
+}
+.escalate h3 { font-size: 15.5px; font-weight: 650; letter-spacing: -0.014em; }
+.escalate p { margin-top: 5px; font-size: 12.5px; color: var(--ink-2); max-width: 64ch; line-height: 1.5; }
+.escalate .btn { flex: none; position: relative; z-index: 1; }
+.btn-accent-quiet {
+  color: var(--accent);
+  background: rgba(100,210,255,0.11);
+  border: 1px solid rgba(100,210,255,0.22);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset;
+}
+@media (hover: hover) { .btn-accent-quiet:hover { background: rgba(100,210,255,0.16); } }
+
+/* ═══ BENCHMARK (Models × Suite) ══════════════════════════════════════ */
+.matrix-wrap { overflow-x: auto; border-radius: var(--r-panel); }
+.matrix { min-width: 760px; }
+.mx-row { display: grid; grid-template-columns: minmax(0,2.15fr) repeat(4, minmax(112px,1fr)); align-items: center; }
+.mx-row.head { padding: 14px 20px 9px; }
+.mx-row.head .mx-cell { font-size: 10.5px; font-weight: 650; letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink-3); }
+.mx-row.head .mx-cell.head-model { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: -0.005em; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.mx-row.head .mx-cell.head-model .m-slug { display: block; font-family: var(--mono); font-size: 9.5px; font-weight: 400; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+.mx-row.body { padding: 0 20px; }
+.mx-row.body + .mx-row.body .mx-cell, .mx-row.head + .mx-row.body .mx-cell { border-top: 1px solid var(--hairline-soft); }
+.mx-cell { padding: 11.5px 0; font-size: 13px; }
+.mx-task .t { font-size: 13px; font-weight: 550; letter-spacing: -0.008em; display: flex; align-items: center; gap: 8px; }
+.mx-task .d { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.mx-score { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--ink-2); display: flex; align-items: center; gap: 7px; }
+.mx-score.best { color: var(--accent); font-weight: 650; }
+.mx-score .cell-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.mx-missing { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.mx-missing a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.mx-row.agg .mx-cell { border-top: 1px solid var(--hairline); }
+.mx-row.agg .mx-score { color: var(--ink); font-weight: 700; font-size: 13.5px; }
+.mx-row.agg .mx-task .t { font-weight: 700; font-size: 10.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); }
+.matrix-foot { display: flex; justify-content: space-between; padding: 12px 20px 14px; font-size: 11.5px; color: var(--ink-3); border-top: 1px solid var(--hairline-soft); }
+
+/* ═══ POLICY STUDY (Strategies × Suite) ═══════════════════════════════ */
+.stage-rail { display: flex; gap: 10px; margin-bottom: 14px; }
+.stage-step {
+  flex: 1; display: flex; align-items: center; gap: 10px;
+  padding: 12px 15px; border-radius: 13px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.026));
+  border: 1px solid var(--hairline-soft);
+}
+.stage-step .ring {
+  width: 22px; height: 22px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: rgba(48,209,88,0.14); color: var(--green);
+}
+.stage-step .ring svg { width: 11px; height: 11px; }
+.stage-step .st-name { font-size: 12px; font-weight: 650; letter-spacing: -0.005em; }
+.stage-step .st-sub { font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+.stage-step .st-key { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+
+.playbook { padding: 20px 22px; position: relative; overflow: hidden; }
+.playbook::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(560px 200px at 4% -30%, rgba(48,209,88,0.09), transparent 65%);
+}
+.playbook .pb-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.playbook h3 { margin-top: 9px; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.playbook .rationale { margin-top: 8px; font-size: 13px; line-height: 1.6; color: var(--ink-2); max-width: 72ch; }
+.playbook .rationale .mono { color: var(--ink); font-size: 12px; }
+.playbook .pb-next { display: flex; align-items: center; gap: 11px; margin-top: 15px; position: relative; z-index: 1; }
+.playbook .pb-next .hint { font-size: 11.5px; color: var(--ink-3); }
+
+.claim-strip { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.claim-strip .txt { font-size: 12px; color: var(--ink-2); }
+.claim-strip .txt .mono { color: var(--ink-3); font-size: 11px; }
+
+.verdict-mini { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; padding: 3px 7px; border-radius: 6px; }
+.verdict-mini.adopt { color: var(--green); background: rgba(48,209,88,0.11); }
+.verdict-mini.no { color: var(--ink-3); background: var(--fill-1); }
+
+/* ═══ Info sheet (annotations) ════════════════════════════════════════ */
+.scrim {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(0,0,0,0.42);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  opacity: 1; transition: opacity 200ms ease;
+}
+.scrim.closing, .scrim:not(.open) { opacity: 0; pointer-events: none; }
+.sheet {
+  position: fixed; z-index: 91; left: 50%; top: 50%;
+  width: min(660px, calc(100vw - 48px)); max-height: min(78vh, 760px); overflow-y: auto;
+  border-radius: 22px; padding: 26px 28px 24px;
+  background: rgba(26,26,31,0.88);
+  -webkit-backdrop-filter: blur(36px) saturate(180%); backdrop-filter: blur(36px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.11);
+  box-shadow: 0 40px 110px -20px rgba(0,0,0,0.8);
+  transform: translate(-50%, -50%);
+  transition: transform 260ms var(--ease-out), opacity 200ms ease;
+}
+.sheet:not(.open) { opacity: 0; transform: translate(-50%, -50%) scale(0.96); pointer-events: none; }
+.sheet.open { transform: translate(-50%, -50%) scale(1); }
+.sheet h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.019em; }
+.sheet .sub { margin-top: 4px; font-size: 12.5px; color: var(--ink-2); }
+.sheet-close {
+  position: absolute; top: 16px; right: 16px;
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--fill-2); color: var(--ink-2);
+  transition: transform 160ms var(--ease-out), background-color 160ms ease;
+}
+.sheet-close:active { transform: scale(0.92); }
+.notes { margin-top: 17px; display: flex; flex-direction: column; }
+.note { display: flex; gap: 13px; padding: 11.5px 0; border-top: 1px solid var(--hairline-soft); }
+.note .num {
+  width: 21px; height: 21px; border-radius: 50%; flex: none; margin-top: 1px;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  background: var(--fill-3); color: var(--ink-2);
+}
+.note b { font-size: 13px; font-weight: 650; letter-spacing: -0.008em; display: block; }
+.note span { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; display: block; margin-top: 3px; }
+.note .spec-ref { font-family: var(--mono); font-size: 10.5px; color: rgba(100,210,255,0.70); margin-top: 5px; display: block; }
+
+/* ═══ Footer ═══════════════════════════════════════════════════════════ */
+.foot {
+  max-width: 1180px; margin: 0 auto; padding: 0 32px 46px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; color: var(--ink-3);
+  position: relative; z-index: 1;
+}
+.foot .mono { font-size: 10px; }
+
+/* ═══ Small screens ═══════════════════════════════════════════════════ */
+@media (max-width: 1060px) {
+  .capsule { gap: 12px; }
+  .wordmark .tag, .dial-caption, .chrome-divider.thin { display: none; }
+  .compare-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 780px) {
+  .chrome { padding: 0 10px; }
+  .capsule { height: auto; flex-wrap: wrap; justify-content: center; border-radius: 26px; padding: 10px 12px; }
+  .wordmark { display: none; }
+  .surface-head { flex-direction: column; align-items: flex-start; }
+  .pt-row { grid-template-columns: 1.6fr 70px 64px !important; }
+  .pt-note { display: none; }
+  .stage-rail { flex-direction: column; }
+}
+
+/* ═══ Reduced motion / transparency ═══════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .surface.entering, .entering .stagger, .entering .lb-bar i { animation: none; opacity: 1; transform: none; filter: none; }
+  .entering .lb-bar i { transform: scaleX(var(--w)); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .capsule, .sheet { background: #17171b; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  :root { --hairline: rgba(255,255,255,0.28); --hairline-soft: rgba(255,255,255,0.2); --ink-2: rgba(255,255,255,0.75); }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ FLOATING INSTRUMENT CLUSTER ══════════════════════════════════ -->
+<header class="chrome">
+  <div class="capsule" role="banner">
+    <div class="wordmark">
+      <span class="mark">RS<em>em</em>ble</span>
+      <span class="tag">MERIDIAN</span>
+    </div>
+    <div class="chrome-divider"></div>
+
+    <!-- The two dials: subject × scope. The nav IS the mental model. -->
+    <div class="dials">
+      <span class="dial-caption">Testing</span>
+      <div class="dial" role="radiogroup" aria-label="Testing subject" id="subjectDial">
+        <div class="dial-thumb" aria-hidden="true"></div>
+        <button role="radio" aria-checked="true" class="is-active" data-subject="models" tabindex="0">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1.5v3M15 1.5v3M9 19.5v3M15 19.5v3M1.5 9h3M1.5 15h3M19.5 9h3M19.5 15h3"/></svg>
+          Models
+        </button>
+        <button role="radio" aria-checked="false" data-subject="strategies" tabindex="-1">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5h5M10.5 2.5v5.2c0 .5-.14.98-.4 1.4L4.5 18a3 3 0 0 0 2.6 4.5h9.8a3 3 0 0 0 2.6-4.5l-5.6-8.9c-.26-.42-.4-.9-.4-1.4V2.5"/><path d="M7.5 14.5h9"/></svg>
+          Strategies
+        </button>
+      </div>
+      <span class="dial-caption">Scale</span>
+      <div class="dial" role="radiogroup" aria-label="Scope" id="scopeDial">
+        <div class="dial-thumb" aria-hidden="true"></div>
+        <button role="radio" aria-checked="true" class="is-active" data-scope="single" tabindex="0">Single</button>
+        <button role="radio" aria-checked="false" data-scope="suite" tabindex="-1">Suite</button>
+      </div>
+    </div>
+
+    <div class="chrome-divider thin"></div>
+
+    <!-- Non-testing surfaces stay utility chrome — never peers of the cells -->
+    <div class="utilities" role="group" aria-label="Utilities">
+      <button class="util-btn" aria-label="Models Observatory" title="Observatory — what you know about each model">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>
+      </button>
+      <button class="util-btn" aria-label="Records" title="Records — everything that has run">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+      </button>
+      <button class="util-btn" aria-label="Attention, 2 items" title="Attention — 2 items need review">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 22 20H2L12 3.5Z"/><path d="M12 10v4M12 16.8v.2"/></svg>
+        <span class="badge-dot"></span>
+      </button>
+      <button class="util-btn" aria-label="Search" title="Search">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.8-4.8"/></svg>
+      </button>
+    </div>
+
+    <div class="chrome-divider"></div>
+
+    <!-- Global execution awareness: survives every axis switch -->
+    <button class="live-pill" title="Run in progress — Compare holds the execution">
+      <span class="pulse"></span>Running&nbsp;<span class="mono" id="liveTimer">21s</span>
+    </button>
+
+    <button class="util-btn" id="infoBtn" aria-label="About this concept" title="About Concept Meridian">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.2"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="stage">
+
+<!-- ═══════════════════════ COMPARE — Models × Single ═══════════════════ -->
+<section class="surface" id="s-compare" data-cell="models|single" aria-label="Compare">
+  <div class="surface-head">
+    <div>
+      <div class="eyebrow"><span class="who">Models</span><span class="x">×</span><span>Single · Compare</span></div>
+      <h1 class="surface-title">PulseFit launch narrative</h1>
+      <p class="surface-sub">Ranked 3 candidates · judged blind by DeepSeek V4 Pro</p>
+    </div>
+    <div class="head-actions">
+      <!-- Finish mode lives here and nowhere else — never global chrome -->
+      <div class="finish" role="radiogroup" aria-label="Finish mode">
+        <button role="radio" aria-checked="true" class="on">Rank</button>
+        <button role="radio" aria-checked="false">Fuse</button>
+      </div>
+      <button class="btn btn-ghost">Open task <span class="kbd">⌘E</span></button>
+    </div>
+  </div>
+
+  <div class="compare-grid">
+    <!-- Composer -->
+    <div class="stack">
+      <div class="panel task-card stagger" style="--i:0">
+        <div class="card-title">Task <span class="mono" style="text-transform:none; letter-spacing:0">v3</span></div>
+        <p class="prompt">Write the launch narrative for PulseFit's adaptive-heart-rate feature — 600 words, tone: clinical-precision-meets-hopeful. Lead with the overnight-shift nurse persona; close on the recovery metric, not the sensor.</p>
+        <div class="meta"><span>Edited 2m ago</span><span class="mono">412 tok</span><span class="mono">≈ $0.002 / model</span></div>
+      </div>
+
+      <div class="panel stagger" style="--i:1">
+        <div class="card-title">Models <span><b style="color:var(--accent)">3</b>&nbsp;selected</span></div>
+        <div class="hairline"></div>
+        <div class="model-row">
+          <span class="check on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+          <span class="avatar av-luna">Lu</span>
+          <span class="names"><span class="n">GPT-5.6 Luna</span><span class="s">openai/gpt-5.6-luna</span></span>
+          <span class="tele"><b>62% win</b> · 4.3<br>$0.60/M · ~8s</span>
+        </div>
+        <div class="model-row">
+          <span class="check on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+          <span class="avatar av-opus">Op</span>
+          <span class="names"><span class="n">Claude Opus 4.7</span><span class="s">anthropic/claude-opus-4.7</span></span>
+          <span class="tele"><b>48% win</b> · 4.1<br>$1.10/M · ~11s</span>
+        </div>
+        <div class="model-row">
+          <span class="check on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+          <span class="avatar av-gem">Ge</span>
+          <div class="names"><span class="n">Gemini 3.7 Pro</span><span class="s">google/gemini-3.7-pro</span></div>
+          <span class="tele"><b>35% win</b> · 3.9<br>$0.45/M · ~6s</span>
+        </div>
+      </div>
+
+      <div class="panel stagger" style="--i:2">
+        <div class="card-title">Judge</div>
+        <div class="judge-line">
+          <span class="avatar av-ds">DV</span>
+          <span class="names"><span class="n">DeepSeek V4 Pro</span><span class="s">neutral — not a candidate</span></span>
+        </div>
+        <div class="criteria">
+          <span class="chip">Accuracy · 40%</span><span class="chip">Depth · 30%</span><span class="chip">Clarity · 30%</span>
+        </div>
+      </div>
+
+      <div class="run-block stagger" style="--i:3">
+        <button class="btn btn-primary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.8v14.4c0 .9 1 1.5 1.8 1L20 13a1.2 1.2 0 0 0 0-2L8.8 3.8C8 3.3 7 3.9 7 4.8Z"/></svg>
+          Run comparison <span class="kbd">⌘ Enter</span>
+        </button>
+        <div class="run-forecast">3 models · 1 judge · <span class="mono">~$0.04 · ~25s</span></div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="stack">
+      <div class="panel stagger" style="--i:1">
+        <div class="verdict">
+          <h2><svg class="crown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 4 3.5L12 5l5 6.5L21 8l-1.6 10.5H4.6L3 8Z"/></svg>GPT-5.6 Luna</h2>
+          <div class="vsub">
+            <span class="mono" style="color:var(--accent)">4.62 weighted</span><span class="sep">·</span>
+            <span>Rank finish</span><span class="sep">·</span><span class="mono" id="compareRunMeta">22s · $0.031</span><span class="sep">·</span>
+            <span style="color:var(--ink-3)">2m ago</span>
+          </div>
+        </div>
+        <div class="lb-row win stagger" style="--i:2; --w:1">
+          <span class="lb-rank">1</span>
+          <span class="avatar av-luna">Lu</span>
+          <div class="lb-name"><span class="n">GPT-5.6 Luna</span><span class="s">criterion sweep: 3 of 3</span></div>
+          <div class="lb-bar"><i></i></div>
+          <span class="lb-score">4.62</span>
+          <span class="lb-delta">—</span>
+        </div>
+        <div class="lb-row stagger" style="--i:3; --w:0.955">
+          <span class="lb-rank">2</span>
+          <span class="avatar av-opus">Op</span>
+          <div class="lb-name"><span class="n">Claude Opus 4.7</span><span class="s">lost on Depth</span></div>
+          <div class="lb-bar"><i></i></div>
+          <span class="lb-score">4.41</span>
+          <span class="lb-delta">−0.21</span>
+        </div>
+        <div class="lb-row stagger" style="--i:4; --w:0.905">
+          <span class="lb-rank">3</span>
+          <span class="avatar av-gem">Ge</span>
+          <div class="lb-name"><span class="n">Gemini 3.7 Pro</span><span class="s">lost on Accuracy</span></div>
+          <div class="lb-bar"><i></i></div>
+          <span class="lb-score">4.18</span>
+          <span class="lb-delta">−0.44</span>
+        </div>
+      </div>
+
+      <div class="panel answer-panel stagger" style="--i:5">
+        <div class="card-title">Winning answer <span>Candidate B · blind</span></div>
+        <div class="quoted">
+          At 3:40 a.m., Maria doesn't check her patient's monitor first — she checks her own pulse. Twelve hours into a night shift, her resting rate is 84 and climbing. PulseFit notices before she does.<span class="fade"> The narrative continues through the recovery metric, closing on adaptive baselines rather than sensor specs …</span>
+        </div>
+        <div class="provenance">
+          <span class="chip">452 words</span><span class="chip">judge-1 · sealed</span><span class="chip">τ rank Q−λ(1−C)</span><span class="chip" style="color:var(--ink-3)">record 8f3a…c2</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ CALIBRATE — Strategies × Single ═══════════ -->
+<section class="surface" id="s-calibrate" data-cell="strategies|single" aria-label="Calibrate" hidden>
+  <div class="surface-head">
+    <div>
+      <div class="eyebrow"><span class="who">Strategies</span><span class="x">×</span><span>Single · Calibrate</span></div>
+      <h1 class="surface-title">PulseFit launch narrative</h1>
+      <p class="surface-sub">Same task, same drafts, same judge — only the finish varies</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-ghost">Re-run <span class="kbd">⌘R</span></button>
+    </div>
+  </div>
+
+  <!-- Evidence honesty is chrome, not copy buried in docs -->
+  <div class="honesty stagger" style="--i:0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.2"/></svg>
+    <span class="h-txt"><b>Snapshot · one task · unconfirmed.</b> A compass reading, not a conclusion — the policies below shared identical drafts and judge evidence.</span>
+  </div>
+
+  <!-- The pool is always visible: strategies are treatments over models (§C.2a) -->
+  <div class="panel pool-strip stagger" style="--i:1">
+    <span class="lbl">Pool</span>
+    <span class="pool-ava"><span class="avatar av-luna" style="width:22px;height:22px;border-radius:6px;font-size:9px">Lu</span><span class="avatar av-opus" style="width:22px;height:22px;border-radius:6px;font-size:9px">Op</span><span class="avatar av-gem" style="width:22px;height:22px;border-radius:6px;font-size:9px">Ge</span></span>
+    <span class="chip">Core Trio · v2 pinned</span>
+    <span class="chip">Judge · DeepSeek V4 Pro</span>
+    <span class="chip">Rubric · Narrative v3</span>
+    <span class="why">held constant across every policy</span>
+  </div>
+
+  <div class="panel policy-table stagger" style="--i:2" role="table" aria-label="Policy comparison">
+    <div class="pt-row head" role="row">
+      <span role="columnheader">Finish policy</span><span role="columnheader">Score</span><span role="columnheader">Cost</span><span role="columnheader">What it did</span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name">
+        <span class="p">Fuse <span class="best">LEADS — barely</span></span>
+        <span class="c">AnalysisScores v1 · 2-of-3 synthesizer</span>
+      </div>
+      <span class="pt-score">4.58</span>
+      <span class="pt-cost">1.8×</span>
+      <span class="pt-note">Merged Luna + Opus; kept Opus's persona, Luna's close. <span class="faint">+0.06 vs Rank on this task.</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name">
+        <span class="p">Refine</span>
+        <span class="c">winner revision · rubric identical to Fuse</span>
+      </div>
+      <span class="pt-score">4.52</span>
+      <span class="pt-cost">1.3×</span>
+      <span class="pt-note">Revised the Rank winner against the rubric. <span class="faint">The confound control — nearly matched Fuse.</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name">
+        <span class="p">Rank</span>
+        <span class="c">blocked baseline · shared Judge-1 evidence</span>
+      </div>
+      <span class="pt-score">4.47</span>
+      <span class="pt-cost">1.1×</span>
+      <span class="pt-note">Judge's pick unchanged: GPT-5.6 Luna.</span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name">
+        <span class="p">Best single</span>
+        <span class="c">best_fixed control</span>
+      </div>
+      <span class="pt-score" style="color:var(--ink-2)">4.47</span>
+      <span class="pt-cost">1.0×</span>
+      <span class="pt-note">Same underlying draft as Rank — the floor.</span>
+    </div>
+    <div class="table-foot">
+      <b>Read this honestly:</b> +0.06 sits inside judge noise on a single task. Nothing on this screen is a recommendation — it's a signal worth (or not worth) replicating.
+    </div>
+  </div>
+
+  <!-- Escalation is one tap: the snapshot's only job is to earn a study -->
+  <div class="escalate stagger" style="--i:3">
+    <div>
+      <h3>Turn this snapshot into a finding</h3>
+      <p>Run the same blocked policies across a pinned Task Set. Prefills pool, policies, recipe, and rubric into a Policy Study draft — nothing re-entered, nothing mutated here.</p>
+    </div>
+    <button class="btn btn-accent-quiet">Test across a Task Set
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+</section>
+
+<!-- ═══════════════════════ BENCHMARK — Models × Suite ════════════════ -->
+<section class="surface" id="s-benchmark" data-cell="models|suite" aria-label="Benchmark" hidden>
+  <div class="surface-head">
+    <div>
+      <div class="eyebrow"><span class="who">Models</span><span class="x">×</span><span>Suite · Benchmark</span></div>
+      <h1 class="surface-title">Support Macro QA <span style="color:var(--ink-3); font-weight:500">· v4 pinned</span></h1>
+      <p class="surface-sub">12 tasks × 4 models · 47 of 48 cells complete · rerun 3d ago</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-ghost">Task Set</button>
+      <button class="btn btn-primary">Re-run matrix <span class="kbd">⌘ Enter</span></button>
+    </div>
+  </div>
+
+  <div class="panel matrix-wrap stagger" style="--i:1">
+    <div class="matrix">
+      <div class="mx-row head" role="row">
+        <div class="mx-cell">Task</div>
+        <div class="mx-cell head-model"><span class="avatar av-luna" style="width:22px;height:22px;border-radius:6px;font-size:9px">Lu</span><span>Luna<span class="m-slug">gpt-5.6</span></span></div>
+        <div class="mx-cell head-model"><span class="avatar av-opus" style="width:22px;height:22px;border-radius:6px;font-size:9px">Op</span><span>Opus<span class="m-slug">4.7</span></span></div>
+        <div class="mx-cell head-model"><span class="avatar av-gem" style="width:22px;height:22px;border-radius:6px;font-size:9px">Ge</span><span>Gemini<span class="m-slug">3.7</span></span></div>
+        <div class="mx-cell head-model"><span class="avatar av-kimi" style="width:22px;height:22px;border-radius:6px;font-size:9px">Ki</span><span>Kimi<span class="m-slug">K3</span></span></div>
+      </div>
+      <div class="mx-row body stagger" style="--i:2">
+        <div class="mx-cell mx-task"><span class="t">Refund triage — angry customer</span><span class="d">tone rubric · 320 tok</span></div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.61</div>
+        <div class="mx-cell mx-score">4.44</div>
+        <div class="mx-cell mx-score">4.12</div>
+        <div class="mx-cell mx-score">4.30</div>
+      </div>
+      <div class="mx-row body stagger" style="--i:3">
+        <div class="mx-cell mx-task"><span class="t">Macro — subscription pause</span><span class="d">procedural · 210 tok</span></div>
+        <div class="mx-cell mx-score">4.38</div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.55</div>
+        <div class="mx-cell mx-score">3.98</div>
+        <div class="mx-cell mx-score">4.21</div>
+      </div>
+      <div class="mx-row body stagger" style="--i:4">
+        <div class="mx-cell mx-task"><span class="t">Edge — double charge dispute</span><span class="d">factual · 280 tok</span></div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.72</div>
+        <div class="mx-cell mx-score">4.50</div>
+        <div class="mx-cell mx-score">4.31</div>
+        <div class="mx-cell mx-score">4.44</div>
+      </div>
+      <div class="mx-row body stagger" style="--i:5">
+        <div class="mx-cell mx-task"><span class="t">De-escalation — threat to churn</span><span class="d">tone rubric · 350 tok</span></div>
+        <div class="mx-cell mx-score">4.41</div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.58</div>
+        <div class="mx-cell mx-score">4.05</div>
+        <div class="mx-cell mx-missing">— <a href="#">Recover</a></div>
+      </div>
+      <div class="mx-row body stagger" style="--i:6">
+        <div class="mx-cell mx-task"><span class="t">Macro — export annual data</span><span class="d">procedural · 190 tok</span></div>
+        <div class="mx-cell mx-score">4.29</div>
+        <div class="mx-cell mx-score">4.36</div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.52</div>
+        <div class="mx-cell mx-score">4.18</div>
+      </div>
+      <div class="mx-row body stagger" style="--i:7">
+        <div class="mx-cell mx-task"><span class="t">Ambiguous warranty window</span><span class="d">factual · 260 tok</span></div>
+        <div class="mx-cell mx-score best"><span class="cell-dot"></span>4.66</div>
+        <div class="mx-cell mx-score">4.49</div>
+        <div class="mx-cell mx-score">4.28</div>
+        <div class="mx-cell mx-score">4.37</div>
+      </div>
+      <div class="mx-row agg">
+        <div class="mx-cell mx-task"><span class="t">Mean · 12 tasks</span></div>
+        <div class="mx-cell mx-score">4.51</div>
+        <div class="mx-cell mx-score">4.49</div>
+        <div class="mx-cell mx-score">4.21</div>
+        <div class="mx-cell mx-score">4.30<span style="color:var(--ink-3); font-size:10px">*</span></div>
+      </div>
+    </div>
+    <div class="matrix-foot">
+      <span>6 of 12 tasks shown · <span class="mono">*</span> Kimi mean excludes the missing cell</span>
+      <span>Best-in-row marked — color <i>and</i> dot, never hue alone</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ POLICY STUDY — Strategies × Suite ═════════ -->
+<section class="surface" id="s-study" data-cell="strategies|suite" aria-label="Policy Study" hidden>
+  <div class="surface-head">
+    <div>
+      <div class="eyebrow"><span class="who">Strategies</span><span class="x">×</span><span>Suite · Policy Study</span></div>
+      <h1 class="surface-title">Is fusion worth it on support tasks?</h1>
+      <p class="surface-sub">Support Macro QA v4 · Core Trio pool · predeclared MPID <span class="mono">+0.40</span></p>
+    </div>
+    <div class="head-actions">
+      <span class="chip claim">Exploratory</span>
+    </div>
+  </div>
+
+  <div class="stage-rail stagger" style="--i:0">
+    <div class="stage-step">
+      <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+      <div><div class="st-name">Recipe elimination</div><div class="st-sub">2 families survived · refine control held</div></div>
+      <span class="st-key" style="margin-left:auto">A</span>
+    </div>
+    <div class="stage-step">
+      <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+      <div><div class="st-name">Pool sweep + blocked holdout</div><div class="st-sub">predeclared shortlist · 12 fit tasks</div></div>
+      <span class="st-key" style="margin-left:auto">B</span>
+    </div>
+    <div class="stage-step">
+      <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg></span>
+      <div><div class="st-name">Runner-up spot check</div><div class="st-sub">ranking stable · not recipe-sensitive</div></div>
+      <span class="st-key" style="margin-left:auto">C</span>
+    </div>
+  </div>
+
+  <div class="panel playbook stagger" style="--i:1">
+    <div class="pb-eyebrow"><span class="dot green"></span>Playbook · recommended policy</div>
+    <h3>Adopt <span style="color:var(--green)">Fuse · AnalysisScores v1</span> for this suite</h3>
+    <p class="rationale">Fusion clears the <span class="mono">+0.40</span> MPID against both Rank and the refine-the-winner control — mean <span class="mono">4.52</span> at <span class="mono">1.8×</span> cost. The refine control trailed at <span class="mono">4.09</span>, so the second model bought real complementary information, not just a second pass.</p>
+    <div class="pb-next">
+      <button class="btn btn-primary">Confirm on 12 fresh tasks</button>
+      <span class="hint">Moves the claim from <b style="color:var(--orange)">Exploratory</b> to <b style="color:var(--green)">Confirmed</b> if it holds</span>
+    </div>
+    <div class="playbook" style="padding:0; overflow:visible"></div>
+  </div>
+
+  <div class="panel policy-table stagger" style="--i:2" role="table" aria-label="Holdout policies">
+    <div class="pt-row head" role="row">
+      <span role="columnheader">Blocked holdout</span><span role="columnheader">Mean</span><span role="columnheader">Cost</span><span role="columnheader">MPID verdicts</span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name"><span class="p">Fuse · AnalysisScores v1</span><span class="c">synthesizer: GPT-5.6 Sol</span></div>
+      <span class="pt-score">4.52</span><span class="pt-cost">1.8×</span>
+      <span class="pt-note"><span class="verdict-mini adopt">ADOPT vs rank +0.50</span>&nbsp;<span class="verdict-mini adopt">ADOPT vs refine +0.43</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name"><span class="p">Refine</span><span class="c">winner revision · confound control</span></div>
+      <span class="pt-score">4.09</span><span class="pt-cost">1.3×</span>
+      <span class="pt-note"><span class="verdict-mini no">vs rank +0.07 · not justified</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name"><span class="p">Rank</span><span class="c">blind leaderboard pick</span></div>
+      <span class="pt-score">4.02</span><span class="pt-cost">1.1×</span>
+      <span class="pt-note"><span class="verdict-mini no">vs best single +0.14 · not justified</span></span>
+    </div>
+    <div class="pt-row body" role="row">
+      <div class="pt-name"><span class="p">Best single</span><span class="c">best_fixed control</span></div>
+      <span class="pt-score" style="color:var(--ink-2)">3.88</span><span class="pt-cost">1.0×</span>
+      <span class="pt-note" style="color:var(--ink-3)">the floor everything must clear</span>
+    </div>
+  </div>
+
+  <div class="claim-strip stagger" style="--i:3">
+    <span class="dot orange"></span>
+    <span class="txt"><b>Exploratory</b> — the playbook holds on all 12 fit tasks but is unconfirmed on unseen tasks. <span class="mono">claim_level: exploratory · study 7d21…9e</span></span>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <span>RSemble AI — Concept Meridian · two-axis navigation era</span>
+  <span class="mono">subject × scope · mode stays execution-side · illustrative data</span>
+</footer>
+
+<!-- ═══ Annotation sheet ═══════════════════════════════════════════════ -->
+<div class="scrim" id="scrim"></div>
+<aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <button class="sheet-close" id="sheetClose" aria-label="Close">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5 5 19"/></svg>
+  </button>
+  <h2 id="sheetTitle">Concept Meridian — the decisions</h2>
+  <p class="sub">Companion to <span style="font-family:var(--mono); font-size:11px">two-axis-navigation-spec.md</span>. Click the dials — every claim below is demonstrated live.</p>
+  <div class="notes">
+    <div class="note"><span class="num">1</span><div><b>Two dials, one rule.</b><span>Navigation asks the only two questions that matter: what varies (subject) and at what scale (scope). Any workflow — seen or unseen — has a computable home. The old Lab/Evaluations confusion was category overlap; dials don't overlap.</span><span class="spec-ref">spec §C.1</span></div></div>
+    <div class="note"><span class="num">2</span><div><b>The cluster floats.</b><span>A translucent capsule separates orientation from content — material hierarchy instead of painted bars. It persists across every surface; the dials never move, so your hands learn them.</span><span class="spec-ref">spec §E · materials: WWDC fluid interfaces</span></div></div>
+    <div class="note"><span class="num">3</span><div><b>Surfaces lead with verdicts, not chrome.</b><span>The eyebrow locates you (Models × Single); the headline is the <em>content</em> — the task, the set, the question. No redundant page furniture repeating what the dials already say.</span><span class="spec-ref">wayfinding: answer where am I with content</span></div></div>
+    <div class="note"><span class="num">4</span><div><b>The pool is always on stage in Strategies.</b><span>A strategy test is a treatment applied over a pinned model pool — hiding the pool would make the dials lie. In Calibrate and Policy Study it's pinned, visible, subordinate.</span><span class="spec-ref">spec §C.2a</span></div></div>
+    <div class="note"><span class="num">5</span><div><b>Calibrate wears its evidence grade on its sleeve.</b><span>One task yields a compass reading, so the surface says exactly that — snapshot banner, per-policy table, zero confidence theater. Its single call to action is escalation: earn a study in one tap.</span><span class="spec-ref">spec §G.3.3 – G.3.4</span></div></div>
+    <div class="note"><span class="num">6</span><div><b>Finish never leaves Compare.</b><span>Rank/Fuse is an execution setting, so it renders inside the Compare surface only. In Strategies, the same words are the experiment itself — rows in a table, never a selector.</span><span class="spec-ref">spec §C.2b (strengthens Child 08 §C.3)</span></div></div>
+    <div class="note"><span class="num">7</span><div><b>Numbers are instruments.</b><span>Mono + tabular numerals for every score, cost, and timer — nothing jitters while values tick. Hierarchy comes from weight and position; color is paired with dots and glyphs, never hue alone.</span><span class="spec-ref">type: WWDC details of UI typography</span></div></div>
+    <div class="note"><span class="num">8</span><div><b>Motion is critically damped and interruptible.</b><span>Dial thumbs slide on the drawer curve; surfaces cross-fade through a 3px blur mask; every press lands at scale(0.97). All of it collapses to a gentle fade under prefers-reduced-motion.</span><span class="spec-ref">damping 1.0, response 0.3–0.4 · reduced-motion variant</span></div></div>
+    <div class="note"><span class="num">9</span><div><b>What this concept deliberately omits.</b><span>The Observatory, Records, Attention, and Search never become dials — they live in the utility cluster because they answer different questions (what do I know / what happened / what's broken). One accent color. No gradients on text. No decoration pretending to be state.</span><span class="spec-ref">spec §I</span></div></div>
+  </div>
+</aside>
+
+<script>
+(function() {
+  'use strict';
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ── Dial machinery: sliding thumb, radio semantics, arrow keys ── */
+  function setupDial(dialEl, onPick) {
+    var thumb = dialEl.querySelector('.dial-thumb');
+    var segs = Array.prototype.slice.call(dialEl.querySelectorAll('button'));
+
+    function placeThumb(btn, animate) {
+      if (!animate) thumb.classList.add('no-anim');
+      thumb.style.width = btn.offsetWidth + 'px';
+      thumb.style.transform = 'translateX(' + (btn.offsetLeft - 3) + 'px)';
+      if (!animate) requestAnimationFrame(function() { thumb.classList.remove('no-anim'); });
+    }
+    function activate(btn, animate) {
+      segs.forEach(function(b) {
+        b.classList.toggle('is-active', b === btn);
+        b.setAttribute('aria-checked', b === btn ? 'true' : 'false');
+        b.tabIndex = b === btn ? 0 : -1;
+      });
+      placeThumb(btn, animate !== false && !reduceMotion);
+      if (onPick) onPick(btn);
+    }
+    segs.forEach(function(btn, i) {
+      btn.addEventListener('click', function() { activate(btn, true); });
+      btn.addEventListener('keydown', function(e) {
+        var idx = null;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') idx = (i + 1) % segs.length;
+        if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   idx = (i - 1 + segs.length) % segs.length;
+        if (idx !== null) { e.preventDefault(); segs[idx].focus(); activate(segs[idx], true); }
+      });
+    });
+    placeThumb(dialEl.querySelector('.is-active'), false);
+    window.addEventListener('resize', function() { placeThumb(dialEl.querySelector('.is-active'), false); });
+    return { activate: activate };
+  }
+
+  /* ── Surface crossfade: blur-masked, critically damped feel ── */
+  var current = document.querySelector('.surface:not([hidden])');
+  var switching = false;
+  function showSurface(key) {
+    var next = document.querySelector('.surface[data-cell="' + key + '"]');
+    if (!next || next === current || switching) return;
+
+    if (reduceMotion) {
+      current.hidden = true; current.classList.remove('entering');
+      next.hidden = false; current = next; return;
+    }
+    switching = true;
+    current.classList.add('exiting');
+    var outgoing = current;
+    setTimeout(function() {
+      outgoing.hidden = true;
+      outgoing.classList.remove('exiting', 'entering');
+      next.hidden = false;
+      next.classList.add('entering');
+      current = next;
+      setTimeout(function() { next.classList.remove('entering'); switching = false; }, 640);
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, 130);
+  }
+
+  /* ── Axis state → surface. URL hash keeps the concept deep-linkable ── */
+  var state = { subject: 'models', scope: 'single' };
+  function route() {
+    if (state.subject === 'models'     && state.scope === 'single') showSurface('models|single');
+    if (state.subject === 'models'     && state.scope === 'suite')  showSurface('models|suite');
+    if (state.subject === 'strategies' && state.scope === 'single') showSurface('strategies|single');
+    if (state.subject === 'strategies' && state.scope === 'suite')  showSurface('strategies|suite');
+    if (history.replaceState) history.replaceState(null, '', '#' + state.subject + '-' + state.scope);
+  }
+
+  var subjectDial = setupDial(document.getElementById('subjectDial'), function(btn) {
+    state.subject = btn.dataset.subject; route();
+  });
+  var scopeDial = setupDial(document.getElementById('scopeDial'), function(btn) {
+    state.scope = btn.dataset.scope; route();
+  });
+
+  /* Deep link support: #strategies-suite etc. */
+  (function initialFromHash() {
+    var m = /^#(models|strategies)-(single|suite)$/.exec(location.hash || '');
+    if (!m) return;
+    state.subject = m[1]; state.scope = m[2];
+    subjectDial.activate(document.querySelector('[data-subject="' + m[1] + '"]'), false);
+    scopeDial.activate(document.querySelector('[data-scope="' + m[2] + '"]'), false);
+    var target = document.querySelector('.surface[data-cell="' + m[1] + '|' + m[2] + '"]');
+    if (target && target !== current) { current.hidden = true; target.hidden = false; current = target; }
+  })();
+
+  /* Finish toggle visual state (surface-interior only) */
+  document.querySelectorAll('.finish button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      btn.parentElement.querySelectorAll('button').forEach(function(b) {
+        b.classList.toggle('on', b === btn);
+        b.setAttribute('aria-checked', b === btn ? 'true' : 'false');
+      });
+    });
+  });
+
+  /* Checkbox row feedback */
+  document.querySelectorAll('.check').forEach(function(c) {
+    c.addEventListener('click', function() { c.classList.toggle('on'); });
+  });
+
+  /* Live pill: elapsed timer ticks — execution awareness persists everywhere */
+  (function tick() {
+    var t = 21, el = document.getElementById('liveTimer');
+    setInterval(function() { t += 1; el.textContent = t + 's'; }, 1000);
+  })();
+
+  /* ── Annotation sheet ── */
+  var sheet = document.getElementById('sheet'),
+      scrim = document.getElementById('scrim'),
+      lastFocus = null;
+  function openSheet() {
+    lastFocus = document.activeElement;
+    sheet.hidden = false;
+    requestAnimationFrame(function() { sheet.classList.add('open'); scrim.classList.add('open'); });
+    document.getElementById('sheetClose').focus();
+  }
+  function closeSheet() {
+    sheet.classList.remove('open'); scrim.classList.remove('open');
+    setTimeout(function() { sheet.hidden = true; }, reduceMotion ? 0 : 210);
+    if (lastFocus) lastFocus.focus();
+  }
+  document.getElementById('infoBtn').addEventListener('click', openSheet);
+  document.getElementById('sheetClose').addEventListener('click', closeSheet);
+  scrim.addEventListener('click', closeSheet);
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && sheet.classList.contains('open')) closeSheet(); });
+})();
+</script>
+</body>
+</html>
