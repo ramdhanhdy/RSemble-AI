@@ -1,7 +1,30 @@
-# Evaluation Fixtures — Business Analytics Suite
+# Evaluation Fixtures
 
 Importable fixtures for testing RSemble's two import paths with real, discriminating
-evaluation content. Validate both mechanically with:
+evaluation content.
+
+## Generalist Advisor program (current)
+
+The active evaluation program — domain-diverse advisory cases measuring general-purpose
+reasoning (framing, aggregation, evidence discipline, decision quality) with a strict
+five-anchor rubric, binary compliance checks, and per-task judge calibration keys:
+
+- `generalist-advisor-01-problem-framing.suite.json` — Task Set 1 (6 tasks)
+- `generalist-advisor-02-quantitative-aggregation.suite.json` — Task Set 2 (6 tasks)
+- `generalist-advisor-program.md` — program map, adversarial review, transfer pairs,
+  coverage audit, holdout designations, and the plan for Task Sets 3–6
+
+Validate any suite package mechanically (parse → normalize → execution gate):
+
+```bash
+npx tsx scripts/validate-suite-package.ts
+```
+
+## PulseFit suites (legacy)
+
+The PulseFit fixtures below predate the graded/binary criterion model and the current
+Task Set conventions; they remain importable and serve the archive/suite import tests.
+Validate both import paths with:
 
 ```bash
 npx tsx scripts/validate-archive-fixture.ts
