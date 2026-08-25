@@ -305,7 +305,7 @@ function TaskBindingBadge({ binding }: { binding: ComparisonTaskBinding }) {
       <Link
         to={`/tasks/${binding.taskId}/versions/${binding.taskVersion}`}
         data-task-binding="canonical"
-        title={`View canonical Task ${binding.taskId} v${binding.taskVersion}`}
+        title={`View saved task ${binding.taskId} v${binding.taskVersion}`}
         className="flex min-h-[28px] items-center gap-1 rounded-sm border border-accent/30 bg-accent/[0.06] px-2 font-mono text-xs text-accent transition-colors hover:border-accent hover:bg-accent/10"
       >
         <Sparkles size={12} />
@@ -321,7 +321,7 @@ function TaskBindingBadge({ binding }: { binding: ComparisonTaskBinding }) {
       data-task-binding="ad_hoc"
       className="flex min-h-[28px] items-center gap-1 rounded-sm border border-edge bg-panel px-2 font-mono text-xs text-text-secondary"
     >
-      Ad hoc · exploratory
+      One-time task
     </span>
   );
 }
@@ -713,10 +713,10 @@ export function ComparisonResultRoute({
           <Link
             to={`/runs/${record.id}`}
             data-action="view-record"
-            title="Inspect full immutable run audit record"
+            title="Inspect full run details"
             className="pressable flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge px-3 font-mono text-xs text-text-secondary transition-colors hover:border-edge-bright hover:text-text"
           >
-            <FileText size={13} /> View exact Record
+            <FileText size={13} /> View run details
           </Link>
         </div>
       </div>
@@ -818,16 +818,15 @@ export function ComparisonResultRoute({
             className="rounded-md border border-edge bg-card p-3 text-xs text-text-secondary"
           >
             <span className="font-semibold text-text">Evidence status:</span> Preserved as
-            exploratory evidence. Save or link this work to a canonical Task before it can
-            contribute to a model evidence {"profile"}.
+            exploratory evidence. Save or link this work to a saved task before it can contribute to
+            a model evidence {"profile"}.
           </div>
         ) : (
           <div
             data-evidence-receipt="canonical"
             className="rounded-md border border-accent/20 bg-accent/[0.04] p-3 text-xs text-text-secondary"
           >
-            <span className="font-semibold text-text">Evidence status:</span> Canonical evidence
-            bound to Task{" "}
+            <span className="font-semibold text-text">Evidence status:</span> Evidence bound to Task{" "}
             <Link
               to={`/tasks/${index.taskBinding.taskId}/versions/${index.taskBinding.taskVersion}`}
               className="font-medium text-accent underline hover:text-accent-deep"

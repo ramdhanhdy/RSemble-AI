@@ -6,7 +6,7 @@ import type { Candidate } from "../studio-data";
 import type { StreamDeltaBuffer } from "./stream-buffer";
 import { ProviderError, type ProviderId } from "./providers/types";
 import type { RubricSnapshot } from "./evaluations/evaluation-types";
-import { InMemoryExecutionLease, type ExecutionLease } from "./execution-lease";
+import { InMemoryExecutionLease, type ExecutionLease, type LeaseInfo } from "./execution-lease";
 import { InMemoryComparisonRepository } from "./persistence/in-memory-comparison-repository";
 import { InMemoryTaskRepository } from "./persistence/in-memory-task-repository";
 import { InMemoryRunRepository } from "./persistence/run-repository";
@@ -2614,7 +2614,7 @@ describe("run-controller — pre-call persistence and zero-paid-call boundary (s
     expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
   });
 
-  it("lease acquisition failure marks run aborted and makes zero provider calls", async () => {
+  it("lease acquisition failure blocks before persistence and makes zero provider calls", async () => {
     const state = stateWithSlots(TWO_SLOTS);
     const { deps, dispatched } = makeDeps(state);
     const recorder = makeRecorderSpies();
@@ -2632,8 +2632,79 @@ describe("run-controller — pre-call persistence and zero-paid-call boundary (s
 
     expect(chatStreamMock).not.toHaveBeenCalled();
     expect(chatCompletionMock).not.toHaveBeenCalled();
-    expect(recorder.markAborted).toHaveBeenCalled();
+    expect(recorder.begin).not.toHaveBeenCalled();
+    expect(recorder.markAborted).not.toHaveBeenCalled();
     expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
+  });
+
+  it("acquires lease before recorder creation and propagates real fence to persisted record under lease enforcement", async () => {
+    const state = stateWithSlots(TWO_SLOTS);
+    const { deps } = makeDeps(state);
+    const shared = { lease: null as LeaseInfo | null, fence: 0 };
+    const lease = new InMemoryExecutionLease(shared, null, {
+      ownerId: "tab-owner-1",
+      now: () => 1000,
+      ttl: 10_000,
+    });
+    const runRepo = new InMemoryRunRepository({ leaseStore: shared, now: () => 1000 });
+    const recorder = createRunRecorder(runRepo, { now: () => 1000 }, { enforceLease: true });
+
+    deps.lease = lease;
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+
+    chatStreamMock.mockImplementation(() => streamOf("answer"));
+    chatCompletionMock.mockResolvedValue(
+      judgeResponse([
+        ["A", 4],
+        ["B", 3],
+      ]),
+    );
+
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    expect(chatStreamMock).toHaveBeenCalled();
+    expect(chatCompletionMock).toHaveBeenCalled();
+
+    const runs = await runRepo.list({ limit: 10 });
+    expect(runs).toHaveLength(1);
+    const runId = runs[0].id;
+    expect(runId).toBeTruthy();
+    const record = await runRepo.get(runId);
+    expect(record).not.toBeNull();
+    expect(record!.execution.ownerId).toBe("tab-owner-1");
+    expect(record!.execution.fence).toBe(1);
+    expect(record!.execution.leaseId).toBeDefined();
+    // Lease is cleanly released on completion in finally block
+    expect(shared.lease).toBeNull();
+  });
+
+  it("releases acquired lease when pre-call persistence fails with zero provider calls", async () => {
+    const state = stateWithSlots(TWO_SLOTS);
+    state.taskBinding = { kind: "canonical", taskId: "unresolvable-task", taskVersion: 1 };
+    const { deps, dispatched } = makeDeps(state);
+    const shared = { lease: null as LeaseInfo | null, fence: 0 };
+    const lease = new InMemoryExecutionLease(shared, null, {
+      ownerId: "tab-owner-1",
+      now: () => 1000,
+      ttl: 10_000,
+    });
+    const taskRepo = new InMemoryTaskRepository(); // empty
+    const runRepo = new InMemoryRunRepository({ leaseStore: shared, now: () => 1000 });
+    const recorder = createRunRecorder(runRepo, { now: () => 1000 }, { enforceLease: true });
+
+    deps.lease = lease;
+    deps.recorder = recorder as unknown as RunControllerDeps["recorder"];
+    deps.taskRepo = taskRepo;
+
+    const controller = createRunController(deps);
+    await controller.runFanout();
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
+    // Lease was acquired, but persistence failed, and finally released it
+    expect(shared.lease).toBeNull();
   });
 
   it("stream deltas are buffered to UI actions and never passed to the persistence recorder queue", async () => {

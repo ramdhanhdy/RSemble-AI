@@ -151,10 +151,10 @@ describe("ComparisonTaskBindingControl", () => {
     await settle();
 
     // Check ad-hoc label and link action
-    expect(h.$("[data-testid='task-binding-status']")?.textContent).toContain("Ad hoc comparison");
+    expect(h.$("[data-testid='task-binding-status']")?.textContent).toContain("One-time task");
     const linkBtn = h.$("button[data-action='open-task-picker']");
     expect(linkBtn).not.toBeNull();
-    expect(linkBtn?.getAttribute("aria-label")).toBe("Link canonical task");
+    expect(linkBtn?.getAttribute("aria-label")).toBe("Link saved task");
 
     // Click link button to open picker
     act(() => {
@@ -165,7 +165,7 @@ describe("ComparisonTaskBindingControl", () => {
     // Picker search input appears
     const searchInput = h.$("input[data-action='search-tasks']") as HTMLInputElement | null;
     expect(searchInput).not.toBeNull();
-    expect(searchInput?.getAttribute("aria-label")).toBe("Search canonical tasks");
+    expect(searchInput?.getAttribute("aria-label")).toBe("Search saved tasks");
 
     // Task from repository is listed
     expect(h.container.textContent).toContain("Binary Search Implementation");

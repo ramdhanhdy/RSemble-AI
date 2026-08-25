@@ -211,7 +211,7 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
   const errorKind = state.error?.kind ?? (repo === null ? "unavailable" : null);
   const errorMessage = useMemo(() => {
     if (repo === null) {
-      return "Task catalog storage is unavailable. Compare remains operational; reload the page to retry storage initialization.";
+      return "Task storage is unavailable. Compare remains operational; reload the page to retry storage initialization.";
     }
     if (state.error === null) return "";
     switch (state.error.kind) {
@@ -224,7 +224,7 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
       case "unavailable":
       case "validation":
       case "conflict":
-        return "The task catalog query failed.";
+        return "The task query failed.";
     }
   }, [repo, state.error]);
 
@@ -250,7 +250,7 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
         <div className="flex min-w-0 flex-col">
           <h1 className="text-lg font-semibold text-text">Tasks</h1>
           <p className="text-sm text-text-secondary">
-            Canonical tasks, versions, and origins. Historical tasks stay routable after archive.
+            Tasks, saved versions, and origins. Historical tasks stay accessible after archive.
           </p>
         </div>
         <Link
@@ -376,7 +376,7 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
           <AlertCircle size={20} className="text-error" aria-hidden="true" />
           <p className="text-sm font-medium text-error">
             {repo === null
-              ? "Task catalog storage is unavailable."
+              ? "Task storage is unavailable."
               : `Failed to load tasks (${errorKind}).`}
           </p>
           <p className="text-sm text-text-secondary">{errorMessage}</p>
@@ -418,7 +418,7 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
           <p className="text-sm text-text-secondary">
             {hasActiveFilters
               ? "Adjust the search or filters to widen the catalog."
-              : "Create a task to start building the canonical catalog, or run the legacy migration to import suite tasks."}
+              : "Create a task to get started, or import tasks from older suites."}
           </p>
           <Link
             to="/tasks/new"

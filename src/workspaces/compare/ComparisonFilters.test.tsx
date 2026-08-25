@@ -119,8 +119,8 @@ describe("ComparisonFilters", () => {
     const bindingSelect = h.$("select[data-filter='binding']") as HTMLSelectElement | null;
     expect(bindingSelect).not.toBeNull();
     expect(bindingSelect?.textContent).toContain("All bindings");
-    expect(bindingSelect?.textContent).toContain("Ad hoc");
-    expect(bindingSelect?.textContent).toContain("Canonical");
+    expect(bindingSelect?.textContent).toContain("One-time task");
+    expect(bindingSelect?.textContent).toContain("Saved task");
 
     cleanup(h);
   });

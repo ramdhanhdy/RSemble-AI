@@ -51,7 +51,7 @@ export interface ComparisonListProps {
 
 function formatTaskBindingLabel(item: ComparisonResultIndex): string {
   if (item.taskBinding.kind === "ad_hoc") {
-    return "Ad hoc · exploratory";
+    return "One-time task";
   }
   return `Task ${item.taskBinding.taskId} v${item.taskBinding.taskVersion}`;
 }

@@ -40,7 +40,7 @@ function StorageUnavailable() {
       <AlertCircle size={20} className="text-error" aria-hidden="true" />
       <p className="text-sm font-medium text-error">Task storage is unavailable.</p>
       <p className="text-sm text-text-secondary">
-        The canonical Task catalog could not be initialized. Compare remains operational.
+        Task storage could not be initialized. Compare remains operational.
       </p>
       <BackToCatalog />
     </div>
@@ -69,8 +69,8 @@ function NotFound({ label, taskId }: { label: string; taskId: string }) {
       <AlertCircle size={20} className="text-text-muted" aria-hidden="true" />
       <p className="text-sm font-medium text-text">{label}</p>
       <p className="text-sm text-text-secondary">
-        No canonical Task exists at <span className="font-mono text-xs">{taskId}</span>. Direct
-        links to unknown tasks stay explicit instead of redirecting silently.
+        No task exists at <span className="font-mono text-xs">{taskId}</span>. Direct links to
+        unknown tasks stay explicit instead of redirecting silently.
       </p>
       <BackToCatalog />
     </div>

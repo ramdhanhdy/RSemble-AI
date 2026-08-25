@@ -426,6 +426,21 @@ describe("pre-call-persistence: plan builder", () => {
     expect(plan.candidateInstance?.taskVersion).toBe(1);
     expect(plan.envelopeOptions.repeatedFrom).toBe("cmp-prev-99");
   });
+
+  it("propagates an explicit execution fence into the BeginRunInput", () => {
+    const explicitFence = { ownerId: "tab-real", fence: 7, leaseId: "lease-xyz" };
+    const input = makeValidInput({ fence: explicitFence });
+    const plan = buildPreCallPersistencePlan(input, { now: () => 1000 });
+
+    expect(plan.beginRunInput.fence).toEqual(explicitFence);
+  });
+
+  it("falls back to default fence when fence is omitted for unit test seam", () => {
+    const input = makeValidInput();
+    const plan = buildPreCallPersistencePlan(input, { now: () => 1000 });
+
+    expect(plan.beginRunInput.fence).toEqual({ ownerId: "tab-1", fence: 0 });
+  });
 });
 
 describe("pre-call-persistence: atomic execution and failure boundaries (spec §5)", () => {
@@ -560,5 +575,25 @@ describe("pre-call-persistence: atomic execution and failure boundaries (spec §
     expect(result.ok).toBe(true);
     expect(result.runId).toBe("run-100");
     expect(result.taskBinding.kind).toBe("ad_hoc");
+  });
+
+  it("passes caller-supplied fence to recorder begin and abort compensation", async () => {
+    const explicitFence = { ownerId: "tab-live", fence: 3, leaseId: "lease-abc" };
+    const input = makeValidInput({ fence: explicitFence });
+
+    // Happy path passes explicit fence to begin
+    await executePreCallPersistence(harness.deps, input);
+    expect(harness.spies.recorderBegin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fence: explicitFence,
+      }),
+    );
+
+    // Failure path passes explicit fence to markAborted
+    harness.spies.createComparisonEnvelope.mockRejectedValueOnce(
+      new StorageError("unavailable", "Disk full"),
+    );
+    await expect(executePreCallPersistence(harness.deps, input)).rejects.toThrow(/Disk full/i);
+    expect(harness.spies.recorderMarkAborted).toHaveBeenCalledWith("run-100", explicitFence);
   });
 });

@@ -19,6 +19,7 @@ import {
   type PinnedTaskSetVersionView,
   type PlaybookCompatibilityReceipt,
 } from "../studies/policy/playbook-compatibility";
+import { InMemoryExecutionLease, type LeaseInfo } from "../execution-lease";
 import { InMemoryRunRepository } from "../persistence/run-repository";
 import { createRunRecorder } from "../persistence/run-recorder";
 import type { ComparisonResultIndex } from "./comparison-result-types";
@@ -645,6 +646,112 @@ describe("run-controller — explicit playbook execution (spec §8)", () => {
     // Judge only — no synthesis provider call was attached by any playbook.
     expect(chatCompletionMock).toHaveBeenCalledTimes(1);
     expect(stateRef.current.fusedText).toBeNull();
+  });
+
+  it("runWithPlaybook acquires execution lease before pre-call persistence and succeeds under lease enforcement", async () => {
+    const shared = { lease: null as LeaseInfo | null, fence: 0 };
+    const lease = new InMemoryExecutionLease(shared, null, {
+      ownerId: "tab-playbook-owner",
+      now: () => 1000,
+      ttl: 10_000,
+    });
+    const runRepo = new InMemoryRunRepository({ leaseStore: shared, now: () => 1000 });
+    const recorder = createRunRecorder(runRepo, { now: () => 1000 }, { enforceLease: true });
+    const comparisonRepo = new InMemoryComparisonRepository(runRepo);
+
+    const { deps, stateRef } = makeDeps(stateWithSlots());
+    deps.lease = lease;
+    deps.recorder = recorder;
+    deps.comparisonRepo = comparisonRepo;
+
+    chatCompletionMock
+      .mockResolvedValueOnce(
+        judgeResponse([
+          ["A", 4.5],
+          ["B", 4.0],
+        ]),
+      )
+      .mockResolvedValueOnce("Policy-fused answer.");
+
+    const binding = makeBinding();
+    const controller = createRunController(deps);
+    await controller.runWithPlaybook(binding);
+
+    expect(stateRef.current.fusedText).toBe("Policy-fused answer.");
+    const playbookRunId = stateRef.current.runId!;
+    expect(playbookRunId).toBeTruthy();
+    const record = await runRepo.get(playbookRunId);
+    expect(record).not.toBeNull();
+    expect(record!.execution.ownerId).toBe("tab-playbook-owner");
+    expect(record!.execution.fence).toBe(1);
+    expect(record!.execution.leaseId).toBeDefined();
+    // Lease is cleanly released on completion
+    expect(shared.lease).toBeNull();
+  });
+
+  it("runWithPlaybook blocks before persistence when lease acquisition fails", async () => {
+    const shared = { lease: null as LeaseInfo | null, fence: 0 };
+    const otherLease = new InMemoryExecutionLease(shared, null, {
+      ownerId: "tab-other",
+      now: () => 1000,
+      ttl: 10_000,
+    });
+    await otherLease.acquire({ kind: "compare", executionId: "other-run" });
+
+    const lease = new InMemoryExecutionLease(shared, null, {
+      ownerId: "tab-playbook-owner",
+      now: () => 1000,
+      ttl: 10_000,
+    });
+    const runRepo = new InMemoryRunRepository({ leaseStore: shared, now: () => 1000 });
+    const recorder = createRunRecorder(runRepo, { now: () => 1000 }, { enforceLease: true });
+    const comparisonRepo = new InMemoryComparisonRepository(runRepo);
+
+    const { deps, dispatched } = makeDeps(stateWithSlots());
+    deps.lease = lease;
+    deps.recorder = recorder;
+    deps.comparisonRepo = comparisonRepo;
+
+    const binding = makeBinding();
+    const controller = createRunController(deps);
+    await controller.runWithPlaybook(binding);
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
+    const summaries = await runRepo.list({ limit: 10 });
+    expect(summaries).toHaveLength(0);
+  });
+
+  it("runWithPlaybook releases acquired lease when pre-call persistence fails with zero provider calls", async () => {
+    const shared = { lease: null as LeaseInfo | null, fence: 0 };
+    const lease = new InMemoryExecutionLease(shared, null, {
+      ownerId: "tab-playbook-owner",
+      now: () => 1000,
+      ttl: 10_000,
+    });
+    const taskRepo = new InMemoryTaskRepository(); // empty
+    const runRepo = new InMemoryRunRepository({ leaseStore: shared, now: () => 1000 });
+    const recorder = createRunRecorder(runRepo, { now: () => 1000 }, { enforceLease: true });
+    const comparisonRepo = new InMemoryComparisonRepository(runRepo);
+
+    const { deps, dispatched } = makeDeps(stateWithSlots());
+    deps.lease = lease;
+    deps.recorder = recorder;
+    deps.comparisonRepo = comparisonRepo;
+    deps.taskRepo = taskRepo;
+
+    const binding = makeBinding({
+      taskBinding: { kind: "canonical", taskId: "unresolvable-task", taskVersion: 1 },
+    });
+    const controller = createRunController(deps);
+    await controller.runWithPlaybook(binding);
+
+    expect(chatStreamMock).not.toHaveBeenCalled();
+    expect(chatCompletionMock).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === "FANOUT_BLOCKED")).toBe(true);
+    // Lease was acquired, but persistence failed, and finally released it
+    expect(shared.lease).toBeNull();
   });
 });
 

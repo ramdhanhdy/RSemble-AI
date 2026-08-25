@@ -1853,3 +1853,157 @@ describe("TaskSetEditor — accessibility", () => {
     cleanup(h);
   });
 });
+
+describe("TaskSetEditor — empty draft and add first task flow", () => {
+  it("renders empty state with Add first task button for an empty task set", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    await seedSuite(
+      repo,
+      makeSuite("s-empty", {
+        name: "Empty Set",
+        version: 1,
+        tasks: [],
+      }),
+    );
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} taskRepo={taskRepo} models={[]} />,
+      "/evaluations/sets/s-empty",
+    );
+    await settle();
+
+    // Shows empty state text
+    expect(h.container.textContent).toContain("No tasks yet. Add tasks to build this task set.");
+    const addFirstTaskBtn = h
+      .$$("button[data-action='add-task']")
+      .find((b) => b.textContent?.includes("Add first task"));
+    expect(addFirstTaskBtn).toBeTruthy();
+    expect(addFirstTaskBtn?.textContent).toContain("Add first task");
+
+    // Clicking opens TaskVersionSelector
+    await act(async () => {
+      addFirstTaskBtn!.click();
+    });
+    await settle();
+
+    const selector = document.body.querySelector("[data-task-version-selector]");
+    expect(selector).toBeTruthy();
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — canonical vs legacy unlinked member handling", () => {
+  it("renders working Edit task link for canonical members but legacy warning with no detail link for unlinked members", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+
+    // Seed canonical task t-canon
+    await seedCanonicalTask(taskRepo, "t-canon", "Canonical Task Title", {
+      instruction: "Canonical candidate prompt.",
+    });
+
+    // Seed suite with one canonical member and one unresolved legacy member
+    await seedSuite(
+      repo,
+      makeSuite("s-mixed", {
+        name: "Mixed Suite",
+        version: 1,
+        tasks: [
+          makeTask("t-canon", {
+            title: "Canonical Task Title",
+            prompt: "Canonical candidate prompt.",
+            order: 0,
+          }),
+          makeTask("t-legacy-synthetic", {
+            title: "Old Embedded Task",
+            prompt: "Legacy embedded prompt text.",
+            order: 1,
+          }),
+        ],
+      }),
+    );
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} taskRepo={taskRepo} models={[]} />,
+      "/evaluations/sets/s-mixed",
+    );
+    await settle();
+
+    // 1. Select canonical task (t-canon)
+    const canonicalItem =
+      h.$("[data-task-item='t-canon']") ?? h.$("button[data-task-id='t-canon']");
+    if (canonicalItem) {
+      await act(async () => {
+        canonicalItem.click();
+      });
+      await settle();
+    }
+
+    // Canonical task has Edit task link pointing to /tasks/t-canon
+    const editLink = h.$("a[data-action='open-task-detail']");
+    expect(editLink).toBeTruthy();
+    expect(editLink?.getAttribute("href")).toBe("/tasks/t-canon");
+    expect(h.$("[data-legacy-member-warning]")).toBeNull();
+
+    // 2. Select legacy unlinked task (t-legacy-synthetic)
+    const legacyItem =
+      h.$("[data-task-item='t-legacy-synthetic']") ??
+      h.$$("button").find((b) => b.textContent?.includes("Old Embedded Task"));
+    expect(legacyItem).toBeTruthy();
+    await act(async () => {
+      legacyItem!.click();
+    });
+    await settle();
+
+    // Legacy task MUST NOT have broken Edit task link
+    const brokenEditLink = h.$("a[data-action='open-task-detail']");
+    expect(brokenEditLink).toBeNull();
+
+    // Legacy task renders explicit warning banner explaining read-only candidate instruction & removal/replacement
+    const legacyWarning = h.$("[data-legacy-member-warning]");
+    expect(legacyWarning).toBeTruthy();
+    expect(legacyWarning?.textContent).toContain("not found in Tasks");
+    expect(legacyWarning?.textContent).toContain("Candidate instruction is read-only in task sets");
+    expect(legacyWarning?.textContent).toContain(
+      "remove it from the task set and add a saved task",
+    );
+    expect(h.container.textContent).toContain("Older unlinked task (not in Tasks)");
+
+    cleanup(h);
+  });
+});
+
+describe("TaskSetEditor — valid dark background styling on member controls", () => {
+  it("inputs, textareas, and selects carry valid dark background classes with zero undefined bg-input-bg tokens", async () => {
+    const repo = new InMemoryEvaluationRepository();
+    const taskRepo = new InMemoryTaskRepository();
+    await seedCanonicalTask(taskRepo, "t-canon", "Canonical Task", {
+      instruction: "Instruction",
+      extraVersions: 2,
+    });
+    await seedSuite(
+      repo,
+      makeSuite("s-ctrls", {
+        name: "Controls Suite",
+        version: 1,
+        tasks: [makeTask("t-canon", { order: 0 })],
+      }),
+    );
+
+    const h = renderWithRouter(
+      <TaskSetEditor repo={repo} taskRepo={taskRepo} models={[]} />,
+      "/evaluations/sets/s-ctrls",
+    );
+    await settle();
+
+    const controls = h.$$("input, textarea, select");
+    expect(controls.length).toBeGreaterThan(0);
+    for (const el of controls) {
+      const classes = el.className.split(/\s+/);
+      expect(classes).not.toContain("bg-input-bg");
+      expect(classes).toContain("bg-card");
+    }
+    cleanup(h);
+  });
+});

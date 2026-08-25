@@ -2,6 +2,7 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-repository";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import { TaskVersionSelector, type TaskVersionSelection } from "./TaskVersionSelector";
@@ -30,7 +31,7 @@ function render(node: React.ReactNode): Harness {
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(node);
+    root.render(<MemoryRouter>{node}</MemoryRouter>);
   });
   return {
     container,
@@ -392,6 +393,58 @@ describe("TaskVersionSelector — closing and accessibility", () => {
     for (const btn of buttons) {
       const cls = btn.getAttribute("class") ?? "";
       expect(cls).toMatch(/min-h-\[44px\]|h-11|h-10|min-h-\[36px\]/);
+    }
+    cleanup(h);
+  });
+});
+
+describe("TaskVersionSelector — empty catalog escape", () => {
+  it("renders working /tasks/new link when canonical task catalog is empty", async () => {
+    const repo = new InMemoryTaskRepository();
+    const onClose = vi.fn();
+    const h = render(
+      <TaskVersionSelector repo={repo} open={true} onClose={onClose} onSelect={vi.fn()} />,
+    );
+    await settle();
+
+    expect(h.container.textContent).toContain("No tasks available.");
+    const createLink = h.$("a[data-action='create-canonical-task']") as HTMLAnchorElement | null;
+    expect(createLink).toBeTruthy();
+    expect(createLink?.getAttribute("href")).toBe("/tasks/new");
+    expect(createLink?.textContent).toContain("Create new task");
+
+    // Clicking the link closes the selector
+    await act(async () => {
+      createLink!.click();
+    });
+    await settle();
+    expect(onClose).toHaveBeenCalled();
+    cleanup(h);
+  });
+});
+
+describe("TaskVersionSelector — valid dark background styling", () => {
+  it("inputs and selects carry valid dark background classes with zero undefined tokens", async () => {
+    const repo = new InMemoryTaskRepository();
+    await seedTask(repo, "t-multi", "Multi-version Task", { extraVersions: 2 });
+    const h = render(
+      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={vi.fn()} />,
+    );
+    await settle();
+
+    // Select task to show version picker
+    const taskRow = h.$("[data-task-id='t-multi']");
+    await act(async () => {
+      taskRow!.click();
+    });
+    await settle();
+
+    const controls = h.$$("input, select");
+    expect(controls.length).toBeGreaterThan(0);
+    for (const el of controls) {
+      const classes = el.className.split(/\s+/);
+      expect(classes).not.toContain("bg-input-bg");
+      expect(classes).toContain("bg-card");
     }
     cleanup(h);
   });

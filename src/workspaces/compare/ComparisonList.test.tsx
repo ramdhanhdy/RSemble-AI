@@ -267,8 +267,7 @@ describe("ComparisonList", () => {
     // Ad hoc row
     expect(rows[1]?.textContent).toContain("Ad Hoc Evaluation");
     expect(rows[1]?.textContent?.toLowerCase()).toContain("rank");
-    expect(rows[1]?.textContent).toMatch(/ad hoc|exploratory/i);
-
+    expect(rows[1]?.textContent).toMatch(/one-time task/i);
     cleanup(h);
   });
 

@@ -721,7 +721,7 @@ describe("TaskObservations — Disclosures of unknown and legacy provenance", ()
     // Check accessible disclosures exist in text (not color/badge alone)
     expect(row?.textContent).toMatch(/unreported version/i);
     expect(row?.textContent).toMatch(/partial/i);
-    expect(row?.textContent).toMatch(/legacy/i);
+    expect(row?.textContent).toMatch(/older source details/i);
 
     cleanup(h);
   });

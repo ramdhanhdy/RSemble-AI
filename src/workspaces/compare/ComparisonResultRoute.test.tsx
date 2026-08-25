@@ -469,7 +469,7 @@ describe("ComparisonResultRoute", () => {
     expect(h.container.textContent).toContain("Write QuickSort in Python");
     expect(h.container.textContent).toContain("rank");
     expect(h.container.textContent).toContain("completed");
-    expect(h.container.textContent).toContain("Ad hoc · exploratory");
+    expect(h.container.textContent).toContain("One-time task");
 
     // Output surface - Rank recommendation
     expect(h.container.textContent).toContain("Claude 3.5 Sonnet");
@@ -499,7 +499,7 @@ describe("ComparisonResultRoute", () => {
     // Exact Record link
     const recordLink = h.$("a[href='/runs/cmp-rank-100']");
     expect(recordLink).not.toBeNull();
-    expect(recordLink?.textContent).toMatch(/record/i);
+    expect(recordLink?.textContent).toMatch(/run details/i);
 
     cleanup(h);
   });
@@ -980,7 +980,7 @@ describe("ComparisonResultRoute", () => {
 
       // Plain language ad hoc notice (spec §8)
       expect(h.container.textContent).toContain(
-        "Preserved as exploratory evidence. Save or link this work to a canonical Task before it can contribute to a model evidence",
+        "Preserved as exploratory evidence. Save or link this work to a saved task before it can contribute to a model evidence",
       );
       // Shared EvidenceReceipt rendered
       const receipts = h.$$("[data-testid='evidence-receipt']");
@@ -989,7 +989,7 @@ describe("ComparisonResultRoute", () => {
       // Ad hoc task is provisional exploratory and not eligible for within_model_profile
       expect(h.container.textContent).toContain("Exploratory");
       expect(h.container.textContent).toContain(
-        "This record has no canonical Task identity yet — it is shown for inspection only.",
+        "This run is not linked to a saved task — it is shown for inspection only.",
       );
       expect(h.container.textContent).not.toContain("Eligible for all declared uses");
 
@@ -1053,9 +1053,7 @@ describe("ComparisonResultRoute", () => {
       expect(h.container.textContent).toContain("Comparable");
 
       // Why it counts items
-      expect(h.container.textContent).toContain(
-        "This record resolves to a canonical Task identity.",
-      );
+      expect(h.container.textContent).toContain("This run links to a saved task.");
       expect(h.container.textContent).toContain(
         "An accepted completed candidate output exists for this cell.",
       );
@@ -1343,7 +1341,7 @@ describe("ComparisonResultRoute", () => {
       const headingTexts = headings.map((heading) => heading.textContent);
       expect(headingTexts).toContain("Why it counts");
       expect(headingTexts).toContain("Allowed Uses");
-      expect(headingTexts).toContain("Evidence Provenance");
+      expect(headingTexts).toContain("Source details");
 
       cleanup(h);
     });
@@ -1385,7 +1383,7 @@ describe("ComparisonResultRoute — 44x44 target rule (Plan Task 13)", () => {
 
     const targets: Array<{ name: string; el: HTMLElement | null }> = [
       { name: "Open in Compare", el: h.$("button[data-action='open-in-compare']") },
-      { name: "View exact Record", el: h.$("a[data-action='view-record']") },
+      { name: "View run details", el: h.$("a[data-action='view-record']") },
       { name: "Repair index", el: h.$("button[data-action='repair-index']") },
       { name: "Candidate copy", el: h.$("button[aria-label^='Copy ']") },
     ];

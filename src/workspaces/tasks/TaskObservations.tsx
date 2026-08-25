@@ -421,7 +421,7 @@ export function TaskObservations({
     <section
       data-task-observations-section
       className={`flex flex-col gap-4 rounded-md border border-edge bg-panel p-4 text-text ${className}`}
-      aria-label="Task observations and evidence provenance"
+      aria-label="Task observations and source details"
     >
       {/* Header */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-edge pb-3">
@@ -434,8 +434,7 @@ export function TaskObservations({
             </h2>
           </div>
           <p className="text-xs text-text-secondary">
-            Derived canonical observations, comparability cohorts, and eligibility provenance (spec
-            §12.2).
+            Derived observations, comparability cohorts, and eligibility details.
           </p>
         </div>
 
@@ -523,8 +522,7 @@ export function TaskObservations({
             <span>Failed to load observations ({error})</span>
           </div>
           <p className="text-text-secondary">
-            An error occurred while reading from the evidence repository. Source records remain
-            safe.
+            An error occurred while reading evidence. Saved run details remain safe.
           </p>
           <div>
             <button
@@ -806,8 +804,8 @@ export function TaskObservations({
           <Layers size={24} className="text-text-muted" aria-hidden="true" />
           <p className="text-sm font-medium text-text">No observations recorded for this task.</p>
           <p className="text-xs text-text-secondary">
-            Derivation generates immutable Observation references from completed candidate/judge
-            attempts during evaluation runs.
+            Observations are generated from completed candidate and judge attempts during evaluation
+            runs.
           </p>
         </div>
       ) : null}
@@ -983,7 +981,8 @@ export function TaskObservations({
                                 ) : null}
                                 {isLegacyLimited ? (
                                   <span>
-                                    Legacy provenance recorded as-is without inferred identity.
+                                    Older source details recorded as-is without inferred task or
+                                    version.
                                   </span>
                                 ) : null}
                               </div>

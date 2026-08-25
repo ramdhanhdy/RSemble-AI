@@ -23,15 +23,15 @@ export const EVIDENCE_REASON_EXPLANATIONS: Readonly<Record<EvidenceReasonCode, s
   assessment_selected_completed: "An accepted assessment exists for this output.",
   candidate_missing_or_failed: "No completed accepted candidate output exists for this cell.",
   candidate_selected_completed: "An accepted completed candidate output exists for this cell.",
-  canonical_task_resolved: "This record resolves to a canonical Task identity.",
+  canonical_task_resolved: "This run links to a saved task.",
   canonical_task_unresolved:
-    "This record has no canonical Task identity yet — it is shown for inspection only.",
+    "This run is not linked to a saved task — it is shown for inspection only.",
   full_pair_coverage: "All declared paired cells have evidence.",
   full_task_set_coverage: "Every declared roster cell of the Task Set has evidence.",
   incomplete_task_set_coverage: "Some declared roster cells are missing evidence.",
   instance_input_incomplete:
-    "The exact Task Instance input is not fully reconstructable, so this cannot support profile use.",
-  instance_reconstructed: "The concrete Task Instance input is reconstructable.",
+    "The exact task input is not fully recoverable from saved data, so this cannot support profile use.",
+  instance_reconstructed: "The concrete task input is available from saved data.",
   model_configuration_exact: "The model identity and version are exactly known.",
   model_configuration_incomplete: "The resolved model identity is unknown for this run.",
   model_version_unreported:
@@ -46,7 +46,7 @@ export const EVIDENCE_REASON_EXPLANATIONS: Readonly<Record<EvidenceReasonCode, s
   rubric_unresolved: "The scoring rubric or its version could not be resolved.",
   source_corrupt: "This source record failed integrity checks and cannot support any use.",
   source_legacy_limited:
-    "Legacy provenance is recorded as-is; no inferred identity or version was added.",
+    "Older source details are recorded as-is; no inferred task or version was added.",
   undeclared_repeat:
     "This is a repeated execution that was not planned as a replicate before running.",
   verifier_failed:

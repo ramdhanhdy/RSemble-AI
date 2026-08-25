@@ -206,7 +206,7 @@ export function PromoteComparisonTaskDialog({
         }
       } catch (err) {
         if (!cancelled) {
-          setActionError(err instanceof Error ? err.message : "Failed to load Task catalog.");
+          setActionError(err instanceof Error ? err.message : "Failed to load tasks.");
         }
       } finally {
         if (!cancelled) {
@@ -267,7 +267,7 @@ export function PromoteComparisonTaskDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskRepo) {
-      setActionError("Task repository is not available.");
+      setActionError("Task storage is not available.");
       return;
     }
     if (isSubmitting) return;
@@ -527,7 +527,7 @@ export function PromoteComparisonTaskDialog({
     <DialogSurface
       open={open}
       onOpenChange={onOpenChange}
-      title="Save or link as a canonical Task"
+      title="Save or link as a saved task"
       className={`max-w-2xl ${className}`}
     >
       <div className="flex max-h-[calc(100dvh-4rem)] min-w-0 flex-col overflow-y-auto p-6">
@@ -540,12 +540,10 @@ export function PromoteComparisonTaskDialog({
                 Promote Result
               </span>
             </div>
-            <h2 className="mt-1 text-lg font-semibold text-text">
-              Save or link as a canonical Task
-            </h2>
+            <h2 className="mt-1 text-lg font-semibold text-text">Save or link as a saved task</h2>
             <p className="mt-0.5 text-xs text-text-secondary">
-              Review the exact stored input before changing identity. No semantic merge occurs
-              automatically.
+              Review the original input before creating or linking a task. RSemble will not combine
+              tasks automatically.
             </p>
           </div>
           <button
@@ -585,8 +583,8 @@ export function PromoteComparisonTaskDialog({
               <span>Exact-content match found</span>
             </div>
             <p className="mt-1 text-xs text-text-secondary">
-              The following existing Tasks share this exact candidate instruction, context manifest,
-              and response contract:
+              The following existing tasks share this exact candidate instruction, attachments, and
+              response contract:
             </p>
             <div className="mt-2.5 space-y-2">
               {exactMatches.map((m) => (
@@ -666,7 +664,7 @@ export function PromoteComparisonTaskDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <span className="font-semibold text-text-secondary uppercase tracking-wider text-[10px]">
-                Context Manifest ({contextManifest.length})
+                Attachments / Context ({contextManifest.length})
               </span>
               <div
                 data-testid="preview-context-manifest"
@@ -787,7 +785,7 @@ export function PromoteComparisonTaskDialog({
               {/* Link Mode: Select Existing Task & Version */}
               <div>
                 <label className="block text-xs font-semibold text-text" htmlFor="link-task-select">
-                  Select Canonical Task <span className="text-accent">*</span>
+                  Select Saved Task <span className="text-accent">*</span>
                 </label>
                 <select
                   id="link-task-select"
@@ -843,8 +841,8 @@ export function PromoteComparisonTaskDialog({
                     <div className="flex items-center gap-2 rounded-md border border-accent/30 bg-accent/[0.06] p-3 text-xs text-accent">
                       <Check size={16} className="shrink-0" />
                       <span>
-                        Exact match: Candidate instruction, context manifest, and response contract
-                        match exactly.
+                        Exact match: Candidate instruction, attachments, and response contract match
+                        exactly.
                       </span>
                     </div>
                   ) : completenessAssessment.isMissingInput ? (
@@ -862,8 +860,8 @@ export function PromoteComparisonTaskDialog({
                     >
                       <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-400" />
                       <div>
-                        <span className="font-semibold">Content mismatch:</span> Only exact
-                        normalized matches may be linked (spec §7.4).
+                        <span className="font-semibold">Content mismatch:</span> Only exact matches
+                        may be linked.
                         <p className="mt-1 text-red-200">{linkValidation?.message}</p>
                       </div>
                     </div>

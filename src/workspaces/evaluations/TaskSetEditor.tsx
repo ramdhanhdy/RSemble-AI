@@ -631,11 +631,11 @@ export function TaskSetEditor({
   const selectedMeta = taskMeta.get(selectedCanonicalTaskId);
   const selectedRecord = selectedMeta?.record ?? null;
   const availableVersions = selectedMeta?.versions ?? [];
+  const isCanonical = selectedRecord !== null;
   const pinnedVersionNum =
     selectedTaskData?.taskVersionRef?.version ??
     (selectedRecord ? selectedRecord.latestVersion : 1);
   const isSelectedTaskArchived = selectedRecord?.archivedAt != null;
-
   const inheritDescription =
     draft.defaultEvaluation.kind === "holistic"
       ? "Inherits the task set default: holistic judgment"
@@ -812,42 +812,78 @@ export function TaskSetEditor({
         <section aria-label="Task editor" className="min-h-0 flex-1 lg:overflow-y-auto lg:pl-3">
           {selectedTask ? (
             <div className="flex flex-col gap-4 p-1">
-              {/* Canonical Task Identity Header */}
-              <div className="flex flex-col gap-2 rounded-md border border-edge bg-panel p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <h2 className="min-w-0 truncate text-base font-semibold text-text">
-                      {selectedTask.title || selectedCanonicalTaskId}
-                    </h2>
-                    <span
-                      data-pinned-version
-                      className="shrink-0 rounded-sm border border-accent/40 bg-accent/[0.08] px-1.5 py-0.5 font-mono text-xs text-accent"
-                    >
-                      v{pinnedVersionNum}
-                    </span>
-                    {isSelectedTaskArchived && (
-                      <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-warning">
-                        Archived
+              {isCanonical ? (
+                /* Canonical Task Identity Header */
+                <div className="flex flex-col gap-2 rounded-md border border-edge bg-panel p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <h2 className="min-w-0 truncate text-base font-semibold text-text">
+                        {selectedTask.title || selectedCanonicalTaskId}
+                      </h2>
+                      <span
+                        data-pinned-version
+                        className="shrink-0 rounded-sm border border-accent/40 bg-accent/[0.08] px-1.5 py-0.5 font-mono text-xs text-accent"
+                      >
+                        v{pinnedVersionNum}
                       </span>
-                    )}
+                      {isSelectedTaskArchived && (
+                        <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-warning">
+                          Archived
+                        </span>
+                      )}
+                    </div>
+                    <Link
+                      to={`/tasks/${selectedCanonicalTaskId}`}
+                      data-action="open-task-detail"
+                      className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-card px-3 text-sm text-text-secondary transition-colors hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      <ExternalLink size={14} aria-hidden="true" />
+                      Edit task
+                    </Link>
                   </div>
-                  <Link
-                    to={`/tasks/${selectedCanonicalTaskId}`}
-                    data-action="open-task-detail"
-                    className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-card px-3 text-sm text-text-secondary transition-colors hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    <ExternalLink size={14} aria-hidden="true" />
-                    Edit task
-                  </Link>
+                  <p className="text-xs text-text-muted">
+                    Tasks are managed globally. Editing this task navigates to the Task editor and
+                    will not change saved task sets.
+                  </p>
                 </div>
-                <p className="text-xs text-text-muted">
-                  Canonical tasks are managed globally. Editing this task navigates to the Task
-                  editor and will not silently mutate saved manifests.
-                </p>
-              </div>
+              ) : (
+                /* Noncanonical / Legacy Task Identity Header */
+                <div
+                  data-legacy-member-warning
+                  role="alert"
+                  className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning/[0.06] p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <h2 className="min-w-0 truncate text-base font-semibold text-text">
+                        {selectedTask.title || selectedTask.id}
+                      </h2>
+                      <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-warning">
+                        Older / Unlinked
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 text-xs text-text-secondary">
+                    <AlertTriangle
+                      size={15}
+                      className="mt-0.5 shrink-0 text-warning"
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <p className="font-medium text-warning">
+                        This task is an older unlinked member not found in Tasks.
+                      </p>
+                      <p className="mt-0.5 text-text-muted">
+                        Candidate instruction is read-only in task sets. To update this task, remove
+                        it from the task set and add a saved task.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              {/* Archived Warning Banner */}
-              {isSelectedTaskArchived && (
+              {/* Archived Warning Banner (canonical tasks only) */}
+              {isCanonical && isSelectedTaskArchived && (
                 <div
                   role="alert"
                   data-archived-warning
@@ -855,17 +891,14 @@ export function TaskSetEditor({
                 >
                   <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
                   <div>
-                    <p className="font-medium">
-                      Warning: This referenced canonical task is archived.
-                    </p>
+                    <p className="font-medium">Warning: This referenced task is archived.</p>
                     <p className="text-text-secondary mt-0.5">
                       Archived tasks remain executable in previously saved sets, but cannot receive
-                      new canonical versions.
+                      new versions.
                     </p>
                   </div>
                 </div>
               )}
-
               {/* Candidate Instruction (Read-only Preview) */}
               <div className="flex flex-col gap-1.5">
                 <span className="font-mono text-xs uppercase tracking-wide text-text-muted">
@@ -884,7 +917,7 @@ export function TaskSetEditor({
                 >
                   Pinned Version
                 </label>
-                {availableVersions.length > 1 ? (
+                {isCanonical && availableVersions.length > 1 ? (
                   <select
                     id="member-version-select"
                     data-field="member-version"
@@ -902,7 +935,7 @@ export function TaskSetEditor({
                         },
                       } as Partial<EvaluationTask>);
                     }}
-                    className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                    className="flex min-h-[44px] rounded-md border border-edge bg-card px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
                   >
                     {availableVersions.map((v) => (
                       <option key={v.version} value={v.version}>
@@ -910,10 +943,14 @@ export function TaskSetEditor({
                       </option>
                     ))}
                   </select>
-                ) : (
+                ) : isCanonical ? (
                   <span className="font-mono text-xs text-text-secondary">
                     v{pinnedVersionNum}{" "}
                     {selectedRecord?.latestVersion === pinnedVersionNum ? "(latest)" : ""}
+                  </span>
+                ) : (
+                  <span className="font-mono text-xs text-text-muted">
+                    Older unlinked task (not in Tasks)
                   </span>
                 )}
               </div>
@@ -937,7 +974,7 @@ export function TaskSetEditor({
                         role: e.target.value as TaskSetMemberRole,
                       } as Partial<EvaluationTask>);
                     }}
-                    className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                    className="flex min-h-[44px] rounded-md border border-edge bg-card px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
                   >
                     <option value="organic">organic (default)</option>
                     <option value="anchor">anchor</option>
@@ -966,7 +1003,7 @@ export function TaskSetEditor({
                       } as Partial<EvaluationTask>);
                     }}
                     placeholder="e.g. math, code, safety"
-                    className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 text-sm text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                    className="flex min-h-[44px] rounded-md border border-edge bg-card px-3 text-sm text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
                   />
                 </div>
 
@@ -993,7 +1030,7 @@ export function TaskSetEditor({
                         } as Partial<EvaluationTask>);
                       }
                     }}
-                    className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                    className="flex min-h-[44px] rounded-md border border-edge bg-card px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
                   />
                 </div>
               </div>
@@ -1031,13 +1068,13 @@ export function TaskSetEditor({
                     }
                   }}
                   placeholder="Evaluator-only guidance override for this task in this task set..."
-                  className="rounded-md border border-edge bg-input-bg p-3 font-mono text-xs text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                  className="rounded-md border border-edge bg-card p-3 font-mono text-xs text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
                 />
               </div>
             </div>
           ) : (
             <div className="flex min-h-[120px] items-center justify-center text-sm text-text-muted">
-              Select a task to inspect details and member configuration, or add a canonical task.
+              Select a task to inspect details and member configuration, or add a task.
             </div>
           )}
         </section>
@@ -1056,7 +1093,7 @@ export function TaskSetEditor({
         <div data-dirty-run-dialog className="flex flex-col gap-3 p-4">
           <h2 className="text-sm font-semibold text-text">This task set has unsaved changes</h2>
           <p className="text-xs text-text-muted">
-            Running must pin an immutable workload. Choose how to proceed:
+            Running requires saving your current changes. Choose how to proceed:
           </p>
           <div className="flex flex-col gap-2">
             <button
@@ -1223,7 +1260,7 @@ function TaskEvaluationPicker({
                   });
                 }
               }}
-              className="flex min-h-[44px] rounded-md border border-edge bg-input-bg px-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+              className="flex min-h-[44px] rounded-md border border-edge bg-card px-3 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
             >
               {rubricRecords.map((r) => (
                 <option key={r.id} value={`${r.id}@${r.latestVersion}`}>

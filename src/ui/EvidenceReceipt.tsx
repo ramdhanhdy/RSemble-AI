@@ -74,9 +74,9 @@ const MISSING_EXPLANATIONS: Record<MissingReason, string> = {
   "no-attempt":
     "This task has not been run for this model yet. It is excluded from all comparative standing and cannot support any within-model use.",
   "no-accepted-attempt":
-    "Execution produced no accepted candidate attempt for this task cell. No canonical Observation was derived.",
+    "Execution produced no accepted candidate attempt for this task cell. No observation was derived.",
   "evidence-missing":
-    "Evidence for this cell is unavailable or unreconstructable. Excluded from all comparative standing.",
+    "Evidence for this cell is unavailable or cannot be recovered from saved data. Excluded from all comparative standing.",
   "no-score":
     "This cell produced no accepted score or assessment. Excluded from comparative standing.",
 };
@@ -310,8 +310,7 @@ export function EvidenceReceipt({
                 </div>
                 <p className="mt-1 text-text-secondary">{errorMsg}</p>
                 <p className="mt-2 text-[11px] text-text-muted">
-                  Exact source run records remain safe and immutable. Derivation can be reindexed
-                  without provider calls.
+                  Saved run details remain safe. Derivation can be reindexed without provider calls.
                 </p>
                 {runId ? (
                   <div className="mt-2">
@@ -319,7 +318,7 @@ export function EvidenceReceipt({
                       to={`/runs/${runId}`}
                       className="inline-flex min-h-[44px] items-center gap-1 text-accent transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      <span>View source record</span>
+                      <span>View run details</span>
                       <ExternalLink size={11} aria-hidden="true" />
                     </Link>
                   </div>
@@ -342,8 +341,7 @@ export function EvidenceReceipt({
         </div>
         <p className="mt-1 text-text-secondary">{errorMsg}</p>
         <p className="mt-2 text-[11px] text-text-muted">
-          Exact source run records remain safe and immutable. Derivation can be reindexed without
-          provider calls.
+          Saved run details remain safe. Derivation can be reindexed without provider calls.
         </p>
         {runId ? (
           <div className="mt-2">
@@ -351,7 +349,7 @@ export function EvidenceReceipt({
               to={`/runs/${runId}`}
               className="inline-flex min-h-[44px] items-center gap-1 text-accent transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <span>View source record</span>
+              <span>View run details</span>
               <ExternalLink size={11} aria-hidden="true" />
             </Link>
           </div>
@@ -445,7 +443,7 @@ export function EvidenceReceipt({
                   <p>{explanationText}</p>
                   <p className="mt-1 text-[11px] text-text-muted">
                     {isDerivationInProgress || isUnindexed
-                      ? "Exact source run records remain safe and immutable."
+                      ? "Saved run details remain safe."
                       : "No Observation was derived. This cell cannot support within-model, comparative, or standing use."}
                   </p>
                 </div>
@@ -455,7 +453,7 @@ export function EvidenceReceipt({
                       to={`/runs/${runId}`}
                       className="inline-flex min-h-[44px] items-center gap-1 text-accent transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      <span>View source run record</span>
+                      <span>View run details</span>
                       <ExternalLink size={11} aria-hidden="true" />
                     </Link>
                   </div>
@@ -485,7 +483,7 @@ export function EvidenceReceipt({
           <p>{explanationText}</p>
           <p className="mt-1 text-[11px] text-text-muted">
             {isDerivationInProgress || isUnindexed
-              ? "Exact source run records remain safe and immutable."
+              ? "Saved run details remain safe."
               : "No Observation was derived. This cell cannot support within-model, comparative, or standing use."}
           </p>
         </div>
@@ -495,7 +493,7 @@ export function EvidenceReceipt({
               to={`/runs/${runId}`}
               className="inline-flex min-h-[44px] items-center gap-1 text-accent transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <span>View source run record</span>
+              <span>View run details</span>
               <ExternalLink size={11} aria-hidden="true" />
             </Link>
           </div>
@@ -657,12 +655,12 @@ export function EvidenceReceipt({
       {/* Provenance details: Task, Model, Rubric, Evaluator, Verifier */}
       <section className="flex flex-col gap-1.5 border-t border-edge pt-2 text-[11px]">
         <h4 className="font-mono text-[11px] uppercase tracking-wider text-text-muted">
-          Evidence Provenance
+          Source details
         </h4>
         <dl className="grid grid-cols-1 gap-x-2 gap-y-1 sm:grid-cols-2">
           {/* Task */}
           <div>
-            <dt className="text-text-muted">Task Identity:</dt>
+            <dt className="text-text-muted">Task:</dt>
             <dd className="font-mono text-text">
               {taskDeepHref ? (
                 <Link
@@ -772,7 +770,7 @@ export function EvidenceReceipt({
             to={runDeepHref}
             className="inline-flex min-h-[44px] items-center gap-1 text-accent transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            <span>View exact run record</span>
+            <span>View run details</span>
             <ExternalLink size={11} aria-hidden="true" />
           </Link>
         ) : null}

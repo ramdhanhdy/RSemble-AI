@@ -153,8 +153,8 @@ export function ComparisonFilters({
   const bindingOptions = (
     <>
       <option value="">All bindings</option>
-      <option value="ad_hoc">Ad hoc (exploratory)</option>
-      <option value="canonical">Canonical Task</option>
+      <option value="ad_hoc">One-time task</option>
+      <option value="canonical">Saved task</option>
     </>
   );
 

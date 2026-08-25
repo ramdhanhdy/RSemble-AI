@@ -51,26 +51,15 @@ function generateId(prefix: string): string {
 
 function blankSuite(): EvaluationSuite {
   const now = Date.now();
-  // The persisted-record guard requires ≥1 valid task and ≥2 enabled, unique
-  // model slots — a blank draft must seed a runnable starting point or the
-  // repository rejects it as a validation failure.
+  // A newly created task set starts as a saveable empty draft (tasks: []).
+  // Canonical task versions are selected explicitly through the editor.
   return {
     id: generateId("suite"),
     revision: 0,
     version: 1,
     name: "Untitled task set",
     description: "",
-    tasks: [
-      {
-        id: generateId("task"),
-        title: "Task 1",
-        prompt: "Describe the task you want the candidate models to answer.",
-        systemPrompt: "",
-        evaluation: { kind: "inherit" },
-        judgeInstructionOverride: "",
-        order: 0,
-      },
-    ],
+    tasks: [],
     modelSlots: [
       {
         id: generateId("slot"),

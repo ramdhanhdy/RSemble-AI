@@ -388,9 +388,9 @@ describe("EvidenceReceipt — Reason codes and plain-language explanations", () 
       <EvidenceReceipt observation={obs} decision={decision} defaultOpen />,
     );
 
-    expect(h.container.textContent).toContain("This record resolves to a canonical Task identity.");
+    expect(h.container.textContent).toContain("This run links to a saved task.");
     expect(h.container.textContent).toContain(
-      "The concrete Task Instance input is reconstructable.",
+      "The concrete task input is available from saved data.",
     );
     expect(h.container.textContent).toContain(
       "An accepted completed candidate output exists for this cell.",

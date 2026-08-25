@@ -580,58 +580,11 @@ export function createRunController(deps: RunControllerDeps) {
       reasoningPolicy: s.reasoningPolicy,
     });
 
-    // Atomic pre-call persistence sequence (spec §5 steps 1–5):
-    // Persist envelope, immutable input snapshot, and canonical Task Instance/linkage
-    // BEFORE any paid provider call.
-    const shouldPersist = Boolean(
-      recorder || deps.comparisonRepo || deps.taskRepo || s.taskBinding,
-    );
-    let preCallResult: PreCallPersistenceResult | null = null;
-    if (shouldPersist) {
-      try {
-        preCallResult = await executePreCallPersistence(
-          {
-            recorder,
-            comparisonRepo: deps.comparisonRepo,
-            taskRepo: deps.taskRepo,
-            now,
-            mintRunId: () => `run-${now()}-${++runCounter}-${random().toString(36).slice(2, 8)}`,
-          },
-          {
-            mode: s.mode,
-            prompt: s.prompt,
-            systemPrompt: s.systemPrompt,
-            temperature: s.temperature,
-            slots,
-            critic: s.critic,
-            judgeInstruction: s.judgeInstruction,
-            evaluation: s.evaluation,
-            attachments: s.attachments,
-            attachmentsToJudge: s.attachmentsToJudge,
-            reasoningPolicy: s.reasoningPolicy,
-            taskBinding: s.taskBinding ?? null,
-          },
-        );
-        runIdRef.current = preCallResult.runId;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        dispatch({ type: "FANOUT_BLOCKED", reason: `Pre-call persistence failed: ${message}` });
-        return;
-      }
-    }
-
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
 
     if (!(await acquireSharedLease(`compare-${epoch}`, abort))) {
-      if (recorder && runIdRef.current) {
-        try {
-          await recorder.markAborted(runIdRef.current);
-        } catch {
-          // best-effort
-        }
-      }
       dispatch({
         type: "FANOUT_BLOCKED",
         reason:
@@ -643,7 +596,49 @@ export function createRunController(deps: RunControllerDeps) {
     }
     const leaseToken = activeLeaseRef.current;
     const leaseScope = leaseEpoch;
+    const fence = fenceFromLease(leaseToken) ?? deps.executionFence?.() ?? undefined;
+
     try {
+      // Atomic pre-call persistence sequence (spec §5 steps 1–5):
+      // Persist envelope, immutable input snapshot, and canonical Task Instance/linkage
+      // BEFORE any paid provider call.
+      const shouldPersist = Boolean(
+        recorder || deps.comparisonRepo || deps.taskRepo || s.taskBinding,
+      );
+      let preCallResult: PreCallPersistenceResult | null = null;
+      if (shouldPersist) {
+        try {
+          preCallResult = await executePreCallPersistence(
+            {
+              recorder,
+              comparisonRepo: deps.comparisonRepo,
+              taskRepo: deps.taskRepo,
+              now,
+              mintRunId: () => `run-${now()}-${++runCounter}-${random().toString(36).slice(2, 8)}`,
+            },
+            {
+              mode: s.mode,
+              prompt: s.prompt,
+              systemPrompt: s.systemPrompt,
+              temperature: s.temperature,
+              slots,
+              critic: s.critic,
+              judgeInstruction: s.judgeInstruction,
+              evaluation: s.evaluation,
+              attachments: s.attachments,
+              attachmentsToJudge: s.attachmentsToJudge,
+              reasoningPolicy: s.reasoningPolicy,
+              taskBinding: s.taskBinding ?? null,
+              fence,
+            },
+          );
+          runIdRef.current = preCallResult.runId;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          dispatch({ type: "FANOUT_BLOCKED", reason: `Pre-call persistence failed: ${message}` });
+          return;
+        }
+      }
       const events = makeEvents(epoch, false, slots, frozenContext, leaseToken ?? undefined);
       await executor.executeTask(
         {
@@ -1081,51 +1076,11 @@ export function createRunController(deps: RunControllerDeps) {
       compatibility: compatibility.receipt,
     };
 
-    let preCallResult: PreCallPersistenceResult | null = null;
-    try {
-      preCallResult = await executePreCallPersistence(
-        {
-          recorder,
-          comparisonRepo: deps.comparisonRepo,
-          taskRepo: deps.taskRepo,
-          now,
-          mintRunId: () => `run-${now()}-${++runCounter}-${random().toString(36).slice(2, 8)}`,
-        },
-        {
-          mode: runMode,
-          prompt: s.prompt,
-          systemPrompt: s.systemPrompt,
-          temperature: s.temperature,
-          slots,
-          critic: s.critic,
-          judgeInstruction: s.judgeInstruction,
-          evaluation: s.evaluation,
-          attachments: s.attachments,
-          attachmentsToJudge: s.attachmentsToJudge,
-          reasoningPolicy: s.reasoningPolicy,
-          taskBinding: resolvedTaskBinding,
-          policyPlaybook: policyPlaybookAttachment,
-        },
-      );
-      runIdRef.current = preCallResult.runId;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      dispatch({ type: "FANOUT_BLOCKED", reason: `Pre-call persistence failed: ${message}` });
-      return;
-    }
-
     const epoch = ++runEpochRef.current;
     abortControllersRef.current.clear();
     const abort = freshAbort();
 
     if (!(await acquireSharedLease(`compare-${epoch}`, abort))) {
-      if (recorder && runIdRef.current) {
-        try {
-          await recorder.markAborted(runIdRef.current);
-        } catch {
-          // best-effort
-        }
-      }
       dispatch({
         type: "FANOUT_BLOCKED",
         reason:
@@ -1137,8 +1092,42 @@ export function createRunController(deps: RunControllerDeps) {
     }
     const leaseToken = activeLeaseRef.current;
     const leaseScope = leaseEpoch;
+    const fence = fenceFromLease(leaseToken) ?? deps.executionFence?.() ?? undefined;
 
     try {
+      let preCallResult: PreCallPersistenceResult | null = null;
+      try {
+        preCallResult = await executePreCallPersistence(
+          {
+            recorder,
+            comparisonRepo: deps.comparisonRepo,
+            taskRepo: deps.taskRepo,
+            now,
+            mintRunId: () => `run-${now()}-${++runCounter}-${random().toString(36).slice(2, 8)}`,
+          },
+          {
+            mode: runMode,
+            prompt: s.prompt,
+            systemPrompt: s.systemPrompt,
+            temperature: s.temperature,
+            slots,
+            critic: s.critic,
+            judgeInstruction: s.judgeInstruction,
+            evaluation: s.evaluation,
+            attachments: s.attachments,
+            attachmentsToJudge: s.attachmentsToJudge,
+            reasoningPolicy: s.reasoningPolicy,
+            taskBinding: resolvedTaskBinding,
+            policyPlaybook: policyPlaybookAttachment,
+            fence,
+          },
+        );
+        runIdRef.current = preCallResult.runId;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        dispatch({ type: "FANOUT_BLOCKED", reason: `Pre-call persistence failed: ${message}` });
+        return;
+      }
       const events = makeEvents(epoch, false, slots, frozenContext, leaseToken ?? undefined);
       await executor.executeTask(
         {

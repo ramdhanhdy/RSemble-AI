@@ -101,9 +101,7 @@ export function TaskSetTaskList({
 
       {sortedTasks.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
-          <p className="text-sm text-text-muted">
-            No tasks yet. Add canonical tasks to build this task set.
-          </p>
+          <p className="text-sm text-text-muted">No tasks yet. Add tasks to build this task set.</p>
           {!readOnly && (
             <button
               type="button"

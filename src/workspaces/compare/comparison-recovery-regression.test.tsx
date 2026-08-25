@@ -868,7 +868,7 @@ describe("Comparison Recovery & Regression (Spec §9)", () => {
       // Exact Record deep link is rendered
       const recordLink = harness.$('a[href="/runs/cmp-rec-1"]');
       expect(recordLink).not.toBeNull();
-      expect(recordLink?.textContent).toContain("View exact Record");
+      expect(recordLink?.textContent).toContain("View run details");
 
       // Open in Compare button is present and triggers onOpenInCompare
       const openBtn = harness.$('button[data-action="open-in-compare"]');

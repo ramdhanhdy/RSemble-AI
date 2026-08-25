@@ -263,7 +263,7 @@ describe("TaskSetList — rows", () => {
 });
 
 describe("TaskSetList — create", () => {
-  it("create button saves a suite record and keeps frozen suite fields", async () => {
+  it("create button saves an empty draft suite record with zero members and keeps frozen suite fields", async () => {
     const repo = new InMemoryEvaluationRepository();
     const h = renderWithRouter(<TaskSetList repo={repo} />);
     await settle();
@@ -277,6 +277,7 @@ describe("TaskSetList — create", () => {
     expect(suites).toHaveLength(1);
     expect(suites[0]).toHaveProperty("id");
     expect(suites[0]).toHaveProperty("version");
+    expect(suites[0]?.tasks).toEqual([]);
     cleanup(h);
   });
 

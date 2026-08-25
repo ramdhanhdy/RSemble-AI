@@ -270,7 +270,7 @@ export function TaskFamilyRegistry({ repo }: { repo: TaskRepository }) {
     setConflict(null);
     try {
       if (!("createTaskFamilyRelation" in repo)) {
-        throw new StorageError("unavailable", "Relation repository is not available");
+        throw new StorageError("unavailable", "Relation storage is not available");
       }
       const relation: TaskFamilyRelation = {
         id: newId("rel"),

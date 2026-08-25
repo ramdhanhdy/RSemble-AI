@@ -173,9 +173,7 @@ export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-12">
         <h1 className="text-lg font-semibold text-text">Task created</h1>
-        <p className="text-sm text-text-secondary">
-          The Task record and version 1 were committed atomically.
-        </p>
+        <p className="text-sm text-text-secondary">Task and version 1 were saved.</p>
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to={`/tasks/${created.id}`}
@@ -200,7 +198,7 @@ export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
       <header className="flex flex-col gap-1">
         <h1 className="text-lg font-semibold text-text">Create task</h1>
         <p className="text-sm text-text-secondary">
-          Creating a task commits the Task record and immutable version 1 atomically.
+          Creating a task saves version 1. Saved versions do not change once created.
         </p>
       </header>
 
@@ -559,7 +557,8 @@ export function TaskDetailEditor({
             {confirm === "version" ? (
               <ConfirmFocus>
                 <span className="text-sm text-text-secondary">
-                  Editing a committed Task creates a new immutable version.
+                  Editing a saved task creates a new version. Saved versions do not change once
+                  created.
                 </span>
                 <button
                   type="button"
@@ -715,8 +714,8 @@ export function TaskVersionView({
       </label>
 
       <p className="text-xs text-text-muted">
-        Committed versions are immutable; this view is always read-only. Edit the latest version
-        from the task detail page to create version {latestVersion + 1}.
+        Saved versions do not change once created; this view is always read-only. Edit the latest
+        version from the task detail page to create version {latestVersion + 1}.
       </p>
     </div>
   );

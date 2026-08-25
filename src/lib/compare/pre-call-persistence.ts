@@ -54,7 +54,7 @@ import type {
 } from "../persistence/comparison-repository";
 import type { TaskRepository } from "../persistence/task-repository";
 import { StorageError } from "../persistence/database";
-import type { RunRecordV2 } from "../persistence/run-types";
+import type { ExecutionFence, RunRecordV2 } from "../persistence/run-types";
 
 // --- Types -------------------------------------------------------------------
 
@@ -74,6 +74,7 @@ export interface PreCallPersistenceInput {
   repeatedFrom?: string | null;
   taskInstanceId?: string | null;
   policyPlaybook?: PolicyPlaybookAttachment | null;
+  fence?: ExecutionFence;
 }
 
 export interface ComparisonInputSnapshotAttachment {
@@ -395,7 +396,7 @@ export function buildPreCallPersistencePlan(
     },
     slots: input.slots.filter((s) => s.enabled),
     critic: input.critic,
-    fence: { ownerId: "tab-1", fence: 0 },
+    fence: input.fence ?? { ownerId: "tab-1", fence: 0 },
     attachments: (input.attachments ?? []).map((a) => ({
       name: a.name,
       kind: a.kind,
@@ -489,7 +490,7 @@ export async function executePreCallPersistence(
         schemaVersion: 2,
         id: runId,
         revision: 0,
-        execution: { ownerId: "tab-1", fence: 0 },
+        execution: plan.beginRunInput.fence,
         createdAt: plan.snapshot.createdAt,
         updatedAt: plan.snapshot.createdAt,
         completedAt: null,
@@ -539,7 +540,7 @@ export async function executePreCallPersistence(
     // Compensation: mark run aborted if recorder created it
     if (recorder && runId) {
       try {
-        await recorder.markAborted(runId);
+        await recorder.markAborted(runId, plan.beginRunInput.fence);
       } catch {
         // best-effort compensation
       }

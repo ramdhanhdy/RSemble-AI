@@ -334,7 +334,7 @@ export function ComparisonTaskBindingControl({
             data-testid="task-binding-status"
             className="rounded bg-card px-2 py-0.5 font-mono text-xs text-text-secondary border border-edge"
           >
-            {isCanonical ? "Canonical Task" : "Ad hoc comparison"}
+            {isCanonical ? "Saved task" : "One-time task"}
           </span>
         </div>
 
@@ -343,12 +343,12 @@ export function ComparisonTaskBindingControl({
             <button
               type="button"
               data-action="open-task-picker"
-              aria-label="Link canonical task"
+              aria-label="Link saved task"
               onClick={() => setIsPickerOpen((prev) => !prev)}
               className="flex min-h-[44px] items-center gap-1.5 rounded-md border border-edge bg-card px-3 text-xs font-medium text-text transition-colors hover:bg-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <Link2 size={14} />
-              Link Task
+              Link task
             </button>
           ) : (
             <button
@@ -431,8 +431,8 @@ export function ComparisonTaskBindingControl({
               <AlertCircle size={14} className="shrink-0" />
               <span>
                 <strong>New Task version draft (v{binding.taskVersion + 1})</strong> — Content
-                modified. Before run you can commit as v{binding.taskVersion + 1} or execute as ad
-                hoc.
+                modified. Before run you can save as v{binding.taskVersion + 1} or run once without
+                saving.
               </span>
             </div>
           )}
@@ -446,7 +446,7 @@ export function ComparisonTaskBindingControl({
           className="flex flex-col gap-2 rounded-md border border-accent/40 bg-card p-3 shadow-lg"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-text">Select Canonical Task</span>
+            <span className="text-xs font-semibold text-text">Select Saved Task</span>
             <button
               type="button"
               data-action="close-task-picker"
@@ -468,8 +468,8 @@ export function ComparisonTaskBindingControl({
               ref={searchInputRef}
               type="search"
               data-action="search-tasks"
-              aria-label="Search canonical tasks"
-              placeholder="Search canonical tasks by title..."
+              aria-label="Search saved tasks"
+              placeholder="Search saved tasks by title..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="min-h-[44px] w-full rounded-md border border-edge bg-panel pl-9 pr-3 text-xs text-text placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
@@ -482,7 +482,7 @@ export function ComparisonTaskBindingControl({
               <div className="p-3 text-center text-xs text-text-muted">Loading tasks...</div>
             ) : searchResults.length === 0 ? (
               <div className="p-3 text-center text-xs text-text-muted">
-                {searchQuery ? "No matching canonical tasks." : "No canonical tasks found."}
+                {searchQuery ? "No matching tasks." : "No tasks found."}
               </div>
             ) : (
               searchResults.map(({ task, title }) => (
@@ -532,7 +532,7 @@ export function ComparisonTaskBindingControl({
             </div>
 
             <p className="text-xs leading-relaxed text-text-secondary">
-              This comparison is bound to canonical Task{" "}
+              This comparison is bound to saved task{" "}
               <strong>
                 {boundVersion?.title ??
                   (binding && binding.kind === "canonical" ? binding.taskId : "")}
@@ -576,11 +576,11 @@ export function ComparisonTaskBindingControl({
                 type="button"
                 data-action="run-ad-hoc"
                 disabled={isCommitting}
-                aria-label="Run as ad hoc"
+                aria-label="Run once without saving"
                 onClick={handleRunAsAdHoc}
                 className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-md border border-edge bg-panel px-4 text-xs font-medium text-text transition-colors hover:bg-card-hover disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
-                Run as ad hoc (preserve canonical v{boundVersion?.version ?? 1})
+                Run once without saving (keeps saved v{boundVersion?.version ?? 1} unchanged)
               </button>
 
               {/* Option 3: Cancel */}

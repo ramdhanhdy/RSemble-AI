@@ -11,7 +11,8 @@
 // =============================================================================
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, AlertTriangle, Check, Layers, Loader2, Search, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertCircle, AlertTriangle, Check, Layers, Loader2, Plus, Search, X } from "lucide-react";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 
@@ -171,7 +172,7 @@ export function TaskVersionSelector({
           <div className="flex items-center gap-2">
             <Layers size={18} className="text-accent" aria-hidden="true" />
             <h2 id="task-version-selector-title" className="text-base font-medium text-text">
-              Select Canonical Task Version
+              Select Task Version
             </h2>
           </div>
           <button
@@ -199,7 +200,7 @@ export function TaskVersionSelector({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search tasks by title or objective…"
-              className="flex min-h-[44px] w-full rounded-md border border-edge bg-input-bg pl-9 pr-3 text-sm text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex min-h-[44px] w-full rounded-md border border-edge bg-card pl-9 pr-3 text-sm text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
         </div>
@@ -211,7 +212,7 @@ export function TaskVersionSelector({
             {loading ? (
               <div className="flex min-h-[140px] items-center justify-center gap-2 text-sm text-text-muted">
                 <Loader2 size={16} className="animate-spin-ease" aria-hidden="true" />
-                <span>Loading canonical tasks…</span>
+                <span>Loading tasks…</span>
               </div>
             ) : error ? (
               <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 p-4 text-center">
@@ -219,10 +220,22 @@ export function TaskVersionSelector({
                 <p className="text-sm text-error">{error}</p>
               </div>
             ) : tasks.length === 0 ? (
-              <div className="flex min-h-[140px] items-center justify-center p-4 text-center text-sm text-text-muted">
-                {search.trim()
-                  ? "No canonical tasks match your search."
-                  : "No canonical tasks available."}
+              <div className="flex min-h-[140px] flex-col items-center justify-center gap-2 p-4 text-center text-sm text-text-muted">
+                {search.trim() ? (
+                  <p>No tasks match your search.</p>
+                ) : (
+                  <>
+                    <p>No tasks available.</p>
+                    <Link
+                      to="/tasks/new"
+                      data-action="create-canonical-task"
+                      onClick={onClose}
+                      className="mt-1 flex min-h-[44px] items-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.08] px-3 font-mono text-xs text-accent hover:bg-accent/[0.16] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      <Plus size={13} aria-hidden="true" /> Create new task
+                    </Link>
+                  </>
+                )}
               </div>
             ) : (
               <ul className="flex flex-col gap-1" role="list">
@@ -318,7 +331,7 @@ export function TaskVersionSelector({
                         id="task-version-select"
                         value={selectedVersionNum ?? selectedRecord.latestVersion}
                         onChange={(e) => setSelectedVersionNum(Number(e.target.value))}
-                        className="flex min-h-[44px] flex-1 rounded-md border border-edge bg-input-bg px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="flex min-h-[44px] flex-1 rounded-md border border-edge bg-card px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         {versions.map((ver) => (
                           <option
@@ -359,7 +372,7 @@ export function TaskVersionSelector({
                     <div className="flex items-start gap-2">
                       <AlertTriangle size={16} className="shrink-0 mt-0.5" aria-hidden="true" />
                       <div>
-                        <p className="font-medium">Warning: This canonical task is archived.</p>
+                        <p className="font-medium">Warning: This task is archived.</p>
                         <p className="text-text-secondary mt-0.5">
                           Archived tasks can only execute in previously saved sets. Adding to a new
                           workload requires explicit confirmation.
