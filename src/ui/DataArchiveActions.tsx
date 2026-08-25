@@ -8,8 +8,8 @@
 // and renders a deterministic preview (format, per-collection create/reuse/
 // collision counts, conflicting IDs).
 //
-// Unsupported legacy Fusion archives (REV-3) reject deterministically with a
-// receipt before any writes, showing the collections and a single Close action.
+// Legacy archives (v1/v2/Fusion) are rejected before preview with an invalid
+// archive error and zero writes.
 // =============================================================================
 
 import { useContext, useRef, useState, type ReactElement } from "react";
@@ -20,19 +20,14 @@ import {
   archiveFailureGuidance,
   ArchiveExportCancelledError,
   ArchiveImportCancelledError,
-  commitPreviewWorkbenchArchiveV2,
   importWorkbenchArchiveV3Phased,
-  exportWorkbenchArchive,
-  exportWorkbenchArchiveV2,
   exportWorkbenchArchiveV3,
-  importWorkbenchArchive,
   previewWorkbenchArchive,
   validateArchiveBytes,
-  type ArchiveExportProgress,
   type ArchiveExportV3Progress,
   type ArchiveImportPreview,
 } from "../lib/persistence/archive";
-import type { WorkbenchArchiveV3 } from "../lib/persistence/archive-v3-types";
+import { isWorkbenchArchiveV3, type WorkbenchArchiveV3 } from "../lib/persistence/archive-v3-types";
 
 const INVALID_ARCHIVE_MESSAGE = "The archive is invalid — nothing was imported.";
 const MAX_LISTED_ERRORS = 5;
@@ -43,18 +38,8 @@ function archiveTimestamp(): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
-/** Human-readable archive serialization. Pretty-printing is intentionally a
+/** Human-readable v3 archive serialization. Pretty-printing is intentionally a
  * presentation-only change: import still parses the exact same JSON data model. */
-export function serializeWorkbenchArchive(archive: unknown): string {
-  return `${JSON.stringify(archive, null, 2)}\n`;
-}
-
-/** Human-readable v2 archive serialization. */
-export function serializeWorkbenchArchiveV2(archive: unknown): string {
-  return `${JSON.stringify(archive, null, 2)}\n`;
-}
-
-/** Human-readable v3 archive serialization. */
 export function serializeWorkbenchArchiveV3(archive: unknown): string {
   return `${JSON.stringify(archive, null, 2)}\n`;
 }
@@ -64,10 +49,6 @@ export function DataArchiveActions(): ReactElement | null {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const importTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [busy, setBusy] = useState(false);
-  const [exportV2Busy, setExportV2Busy] = useState(false);
-  const [exportV2Progress, setExportV2Progress] = useState<ArchiveExportProgress | null>(null);
-  const [exportV2Total, setExportV2Total] = useState<number | null>(null);
-  const exportV2AbortRef = useRef<AbortController | null>(null);
   const [exportV3Busy, setExportV3Busy] = useState(false);
   const [exportV3Progress, setExportV3Progress] = useState<ArchiveExportV3Progress | null>(null);
   const [exportV3Total, setExportV3Total] = useState<number | null>(null);
@@ -82,7 +63,6 @@ export function DataArchiveActions(): ReactElement | null {
     storageState === "versionchange" ||
     storageState === "unavailable";
   const controlsDisabled = busy || db === null || storageBlocked;
-  const exportV2Disabled = controlsDisabled || exportV2Busy;
   const exportV3Disabled = controlsDisabled || exportV3Busy;
 
   const resetFeedback = () => {
@@ -122,7 +102,7 @@ export function DataArchiveActions(): ReactElement | null {
         onProgress: (p) => setExportV3Progress(p),
       });
       deliverArchive(
-        `rsemble-archive-v3-${archiveTimestamp()}.json`,
+        `rsemble-archive-${archiveTimestamp()}.json`,
         serializeWorkbenchArchiveV3(archive),
       );
       const total = Object.values(archive.manifest.counts).reduce((sum, n) => sum + n, 0);
@@ -146,60 +126,6 @@ export function DataArchiveActions(): ReactElement | null {
     exportV3AbortRef.current?.abort();
   }
 
-  async function onExportV2() {
-    if (db === null || exportV2AbortRef.current !== null) return;
-    const controller = new AbortController();
-    exportV2AbortRef.current = controller;
-    setExportV2Busy(true);
-    setExportV2Progress(null);
-    resetFeedback();
-    try {
-      const archive = await exportWorkbenchArchiveV2(db, {
-        signal: controller.signal,
-        onProgress: (p) => setExportV2Progress(p),
-      });
-      deliverArchive(
-        `rsemble-archive-v2-${archiveTimestamp()}.json`,
-        serializeWorkbenchArchiveV2(archive),
-      );
-      const total = Object.values(archive.manifest.counts).reduce((sum, n) => sum + n, 0);
-      setExportV2Total(total);
-    } catch (err) {
-      if (err instanceof ArchiveExportCancelledError) {
-        setFailure(archiveFailureGuidance(err));
-      } else if (err instanceof StorageError && err.kind === "validation") {
-        setErrors([err.message]);
-      } else {
-        setFailure(archiveFailureGuidance(err));
-      }
-    } finally {
-      exportV2AbortRef.current = null;
-      setExportV2Busy(false);
-      setExportV2Progress(null);
-    }
-  }
-
-  function onExportV2Cancel() {
-    exportV2AbortRef.current?.abort();
-  }
-
-  async function onExport() {
-    if (db === null) return;
-    setBusy(true);
-    resetFeedback();
-    try {
-      const archive = await exportWorkbenchArchive(db);
-      deliverArchive(
-        `rsemble-archive-${archiveTimestamp()}.json`,
-        serializeWorkbenchArchive(archive),
-      );
-    } catch (err) {
-      setFailure(archiveFailureGuidance(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   /** Read, validate, and PREVIEW the selected archive — no writes happen here. */
   async function onFileChosen(file: File) {
     if (db === null) return;
@@ -218,6 +144,10 @@ export function DataArchiveActions(): ReactElement | null {
       try {
         parsed = JSON.parse(new TextDecoder().decode(buffer));
       } catch {
+        setErrors([INVALID_ARCHIVE_MESSAGE]);
+        return;
+      }
+      if (!isWorkbenchArchiveV3(parsed)) {
         setErrors([INVALID_ARCHIVE_MESSAGE]);
         return;
       }
@@ -244,27 +174,15 @@ export function DataArchiveActions(): ReactElement | null {
     setBusy(true);
     resetFeedback();
     try {
-      if (confirmed.format === "v1") {
-        const report = await importWorkbenchArchive(db, confirmed.payload as never);
-        setResult(
-          `Imported ${report.created.length} records — ${report.skipped.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
-        );
-      } else if (confirmed.format === "v2") {
-        const commit = await commitPreviewWorkbenchArchiveV2(db, confirmed);
-        setResult(
-          `Imported ${commit.created.length} records — ${commit.reused.length} reused (${JSON.stringify(confirmed.sourceLabel)})`,
-        );
-      } else if (confirmed.format === "v3") {
-        const commit = await importWorkbenchArchiveV3Phased(
-          db,
-          confirmed.payload as WorkbenchArchiveV3,
-        );
-        const remappedNote =
-          commit.remapped.length > 0 ? ` — ${commit.remapped.length} remapped` : "";
-        setResult(
-          `Imported ${commit.created.length} records — ${commit.reused.length} reused${remappedNote} (${JSON.stringify(confirmed.sourceLabel)})`,
-        );
-      }
+      const commit = await importWorkbenchArchiveV3Phased(
+        db,
+        confirmed.payload as WorkbenchArchiveV3,
+      );
+      const remappedNote =
+        commit.remapped.length > 0 ? ` — ${commit.remapped.length} remapped` : "";
+      setResult(
+        `Imported ${commit.created.length} records — ${commit.reused.length} reused${remappedNote} (${JSON.stringify(confirmed.sourceLabel)})`,
+      );
     } catch (err) {
       if (err instanceof ArchiveImportCancelledError) {
         setFailure(archiveFailureGuidance(err));
@@ -321,18 +239,6 @@ export function DataArchiveActions(): ReactElement | null {
         )}
         <button
           type="button"
-          data-action="export"
-          className={buttonClass}
-          disabled={controlsDisabled}
-          onClick={() => {
-            void onExport();
-          }}
-        >
-          <Download size={16} aria-hidden="true" />
-          Export data
-        </button>
-        <button
-          type="button"
           data-action="import"
           ref={importTriggerRef}
           className={buttonClass}
@@ -342,29 +248,6 @@ export function DataArchiveActions(): ReactElement | null {
           <Upload size={16} aria-hidden="true" />
           Import data
         </button>
-        <button
-          type="button"
-          data-action="export-v2"
-          className={buttonClass}
-          disabled={exportV2Disabled}
-          onClick={() => {
-            void onExportV2();
-          }}
-        >
-          <Download size={16} aria-hidden="true" />
-          Export v2 archive
-        </button>
-        {exportV2Busy && (
-          <button
-            type="button"
-            data-action="cancel-export"
-            className={buttonClass}
-            onClick={onExportV2Cancel}
-          >
-            <XCircle size={16} aria-hidden="true" />
-            Cancel export v2
-          </button>
-        )}
         <input
           ref={fileRef}
           type="file"
@@ -405,52 +288,16 @@ export function DataArchiveActions(): ReactElement | null {
         </p>
       )}
 
-      {preview !== null && preview.format === "unsupported_fusion_archive_shape" && (
-        <div
-          role="status"
-          className="flex flex-col gap-2 rounded border border-edge bg-card p-3 text-xs text-text-secondary"
-        >
-          <p className="font-medium text-text">Unsupported legacy archive format</p>
-          <p className="text-text">
-            This archive contains retired Fusion Study collections (
-            {preview.unsupportedReceipt?.rejectedCollections.map((c, i) => (
-              <span key={c}>
-                {i > 0 ? ", " : ""}
-                <code className="font-mono text-text">{c}</code>
-              </span>
-            ))}
-            ) and cannot be imported. Export a new archive from an upgraded RSemble instead.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              data-action="close-unsupported"
-              className={buttonClass}
-              onClick={onCancelImport}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {preview !== null && preview.format !== "unsupported_fusion_archive_shape" && (
+      {preview !== null && (
         <div
           role="status"
           className="flex flex-col gap-2 rounded border border-edge bg-card p-3 text-xs text-text-secondary"
         >
           <p className="text-text">
-            Import preview ({JSON.stringify(preview.sourceLabel)}) — format {preview.format},{" "}
-            {preview.totalEntities} {preview.totalEntities === 1 ? "record" : "records"}:{" "}
-            {preview.create.length} to create, {preview.reuse.length} to reuse,{" "}
-            {preview.collisions.length}{" "}
-            {preview.format === "v3" && preview.collisions.length > 0
-              ? preview.collisions.length === 1
-                ? "planned remap"
-                : "planned remaps"
-              : preview.collisions.length === 1
-                ? "collision"
-                : "collisions"}
+            Import preview ({JSON.stringify(preview.sourceLabel)}) — {preview.totalEntities}{" "}
+            {preview.totalEntities === 1 ? "record" : "records"}: {preview.create.length} to create,{" "}
+            {preview.reuse.length} to reuse, {preview.collisions.length}{" "}
+            {preview.collisions.length === 1 ? "planned remap" : "planned remaps"}
             {preview.invalid.length > 0
               ? `, ${preview.invalid.length} invalid (will not import)`
               : ""}
@@ -469,9 +316,7 @@ export function DataArchiveActions(): ReactElement | null {
           </ul>
           {preview.collisions.length > 0 && (
             <p className="text-text">
-              {preview.format === "v3"
-                ? "Colliding records will be imported under new IDs: "
-                : "Colliding records will be left unchanged: "}{" "}
+              Colliding records will be imported under new IDs:{" "}
               {preview.collisions
                 .slice(0, MAX_LISTED_ERRORS)
                 .map((c) => `${c.collection}/${c.key}`)
@@ -510,21 +355,6 @@ export function DataArchiveActions(): ReactElement | null {
       {result !== null && (
         <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
           <p>{result}</p>
-        </div>
-      )}
-
-      {exportV2Busy && exportV2Progress !== null && (
-        <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
-          <p>
-            Exporting v2 archive — stage {exportV2Progress.stage} · {exportV2Progress.done}/
-            {exportV2Progress.total}
-          </p>
-        </div>
-      )}
-
-      {!exportV2Busy && exportV2Total !== null && (
-        <div role="status" className="flex flex-col gap-1 text-xs text-text-secondary">
-          <p>Exported complete v2 archive — {exportV2Total} entities.</p>
         </div>
       )}
 
