@@ -25,8 +25,7 @@ import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-rep
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import { buildNextVersion } from "../../lib/tasks/task-versioning";
-import { TaskNewRoute, TaskDetailRoute, TaskVersionRoute } from "./TaskRoute";
-
+import { TaskNewRoute, TaskDetailRoute } from "./TaskRoute";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 // --- Fixtures ---------------------------------------------------------------
@@ -264,30 +263,22 @@ describe("TaskDetailRoute — dirty/saved draft state (spec §7.2)", () => {
   });
 });
 
-describe("TaskDetailRoute — explicit Create version N+1 confirmation (spec §7.2)", () => {
-  it("committing a dirty draft asks for confirmation, then appends version N+1 exactly once", async () => {
+describe("TaskDetailRoute — one working copy save (spec §7.2)", () => {
+  it("committing a dirty draft directly saves changes and appends next version internally", async () => {
     const repo = new InMemoryTaskRepository();
     await seedTask(repo, "t-1");
     const h = render(<TaskDetailRoute repo={repo} taskId="t-1" />);
     await settle();
-    const createButton = h.$("button[data-action='create-version']") as HTMLButtonElement;
-    // Clean state: the action labels what it will create but is inert.
-    expect(createButton).toBeTruthy();
-    expect(createButton.disabled).toBe(true);
+    const saveButton = h.$("button[data-action='save-task']") as HTMLButtonElement;
+    // Clean state: the action is disabled.
+    expect(saveButton).toBeTruthy();
+    expect(saveButton.disabled).toBe(true);
+    expect(saveButton.textContent).toMatch(/Save changes/);
     fillTitle(h, "Now different");
-    expect(createButton.disabled).toBe(false);
-    click(createButton);
+    expect(saveButton.disabled).toBe(false);
+    click(saveButton);
     await settle();
-    // Confirmation boundary: version 2 is NOT committed until the explicit
-    // confirm step — the button flips into a confirm/cancel pair.
-    expect(await repo.getTaskVersion("t-1", 2)).toBeNull();
-    const confirm = h.$("button[data-action='confirm-version']");
-    expect(confirm).toBeTruthy();
-    expect(confirm?.textContent).toMatch(/Create version 2/);
-    expect(h.$("button[data-action='cancel-version']")).toBeTruthy();
-    click(confirm);
-    await settle();
-    // Append CAS happened exactly once: v2 exists, latestVersion is 2.
+    // Append CAS happened: v2 exists, latestVersion is 2.
     const v2 = await repo.getTaskVersion("t-1", 2);
     expect(v2?.title).toBe("Now different");
     const record = (await repo.getTaskRecord("t-1"))!;
@@ -298,26 +289,6 @@ describe("TaskDetailRoute — explicit Create version N+1 confirmation (spec §7
     expect((h.$("input[data-editor-field='title']") as HTMLInputElement).value).toBe(
       "Now different",
     );
-  });
-
-  it("cancelling the Create version confirmation keeps the draft dirty and writes nothing", async () => {
-    const repo = new InMemoryTaskRepository();
-    await seedTask(repo, "t-1");
-    const h = render(<TaskDetailRoute repo={repo} taskId="t-1" />);
-    await settle();
-    fillTitle(h, "Cancelled change");
-    click(h.$("button[data-action='create-version']"));
-    await settle();
-    click(h.$("button[data-action='cancel-version']"));
-    await settle();
-    expect(await repo.getTaskVersion("t-1", 2)).toBeNull();
-    expect((await repo.getTaskRecord("t-1"))!.latestVersion).toBe(1);
-    // The draft survives cancellation — still dirty, still editable.
-    expect(h.$("[data-editor-status]")?.textContent).toMatch(/unsaved/i);
-    expect((h.$("input[data-editor-field='title']") as HTMLInputElement).value).toBe(
-      "Cancelled change",
-    );
-    cleanup(h);
   });
 
   it("a stale revision surfaces an honest conflict banner and recovers through Reload", async () => {
@@ -338,9 +309,7 @@ describe("TaskDetailRoute — explicit Create version N+1 confirmation (spec §7
     });
     await repo.appendTaskVersion(record, external, record.revision);
     // The UI's own commit now fights a stale revision → conflict, not a loss.
-    click(h.$("button[data-action='create-version']"));
-    await settle();
-    click(h.$("button[data-action='confirm-version']"));
+    click(h.$("button[data-action='save-task']"));
     await settle();
     const conflict = h.$("[data-task-conflict]");
     expect(conflict).toBeTruthy();
@@ -359,40 +328,6 @@ describe("TaskDetailRoute — explicit Create version N+1 confirmation (spec §7
     expect(h.$("[data-editor-status]")?.textContent).toMatch(/saved/i);
   });
 });
-
-describe("TaskVersionRoute — immutable historical versions (spec §3.2, §7.2)", () => {
-  it("renders a historical version read-only with a switcher — never editable", async () => {
-    const repo = new InMemoryTaskRepository();
-    await seedTask(repo, "t-1");
-    await seedV2(repo, "t-1");
-    const h = render(<TaskVersionRoute repo={repo} taskId="t-1" version={1} />);
-    await settle();
-    expect(h.$("[data-task-version='t-1@1']")).toBeTruthy();
-    // Read-only presentation: disabled labelled inputs and no edit actions.
-    const title = h.$("input[data-editor-field='title']") as HTMLInputElement | null;
-    expect(title).toBeTruthy();
-    expect(title!.disabled).toBe(true);
-    expect(title!.value).toBe("Task t-1 v1");
-    expect(h.$("button[data-action='create-version']")).toBeNull();
-    expect(h.$("button[data-action='create-task']")).toBeNull();
-    expect(h.container.textContent).toContain("read-only");
-    // Version switcher shows which of the committed versions is on screen.
-    const select = h.$("select[data-action='version-select']") as HTMLSelectElement | null;
-    expect(select).toBeTruthy();
-    expect(select!.value).toBe("1");
-    cleanup(h);
-  });
-
-  it("keeps an unknown historical version an explicit not-found state", async () => {
-    const repo = new InMemoryTaskRepository();
-    await seedTask(repo, "t-1");
-    const h = render(<TaskVersionRoute repo={repo} taskId="t-1" version={7} />);
-    await settle();
-    expect(h.$("[data-task-not-found]")).toBeTruthy();
-    cleanup(h);
-  });
-});
-
 describe("TaskDetailRoute — duplicate creates a new authored identity (spec §7.3)", () => {
   it("duplicating copies the latest content into a fresh Task with its own version 1", async () => {
     const repo = new InMemoryTaskRepository();

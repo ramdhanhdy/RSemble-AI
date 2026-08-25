@@ -249,9 +249,7 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col">
           <h1 className="text-lg font-semibold text-text">Tasks</h1>
-          <p className="text-sm text-text-secondary">
-            Tasks, saved versions, and origins. Historical tasks stay accessible after archive.
-          </p>
+          <p className="text-sm text-text-secondary">Create and manage tasks.</p>
         </div>
         <Link
           to="/tasks/new"
@@ -444,7 +442,6 @@ export function TaskCatalog({ repo }: { repo: TaskRepository | null }) {
                       {rowTitles.get(row.id) ?? row.id}
                     </span>
                     <span className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
-                      <span>v{row.latestVersion}</span>
                       <span>{row.origin}</span>
                       {rowFamilyNames.get(row.id) !== undefined ? (
                         <span data-row-family={row.id}>

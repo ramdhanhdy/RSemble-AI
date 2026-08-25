@@ -70,9 +70,8 @@ const ExperimentRoute = lazy(() =>
   import("./workspaces/evaluations/ExperimentRoute").then((m) => ({ default: m.ExperimentRoute })),
 );
 // Canonical Task routes (canonical-tasks spec §7): /tasks, /tasks/new,
-// /tasks/:taskId, /tasks/:taskId/versions/:version. Tasks are a secondary
-// surface — reachable from the command palette and direct links, never from
-// primary navigation.
+// /tasks/:taskId. Tasks are a secondary surface — reachable from the command
+// palette and direct links, never from primary navigation.
 const TaskCatalog = lazy(() =>
   import("./workspaces/tasks/TaskCatalog").then((m) => ({ default: m.TaskCatalog })),
 );
@@ -81,9 +80,6 @@ const TaskNewRoute = lazy(() =>
 );
 const TaskDetailRoute = lazy(() =>
   import("./workspaces/tasks/TaskRoute").then((m) => ({ default: m.TaskDetailRoute })),
-);
-const TaskVersionRoute = lazy(() =>
-  import("./workspaces/tasks/TaskRoute").then((m) => ({ default: m.TaskVersionRoute })),
 );
 const ComparisonResultRoute = lazy(() =>
   import("./workspaces/compare/ComparisonResultRoute").then((m) => ({
@@ -182,10 +178,6 @@ export function AppRoutes({
           element={withSuspense(<TaskSetEditorRoute models={models} />)}
         />
         <Route
-          path="sets/:taskSetId/versions/:version"
-          element={withSuspense(<TaskSetVersionRoute models={models} />)}
-        />
-        <Route
           path="sets/:taskSetId/tasks/:taskId"
           element={withSuspense(<SuiteTaskEditorRouteWrapper models={models} />)}
         />
@@ -229,10 +221,6 @@ export function AppRoutes({
       <Route path="/tasks" element={withSuspense(<TaskCatalogRoute />)} />
       <Route path="/tasks/new" element={withSuspense(<TaskNewRouteWrapper />)} />
       <Route path="/tasks/:taskId" element={withSuspense(<TaskDetailRouteWrapper />)} />
-      <Route
-        path="/tasks/:taskId/versions/:version"
-        element={withSuspense(<TaskVersionRouteWrapper />)}
-      />
       <Route path="/lab/*" element={withSuspense(<LabWorkspace />)} />
       <Route path="/models/*" element={withSuspense(<ModelsWorkspace />)} />
 
@@ -258,10 +246,6 @@ function TaskSetEditorRoute({ models }: { models: CatalogModel[] }) {
       </ModelProbeProvider>
     </ExecutionOwnerProvider>
   );
-}
-
-function TaskSetVersionRoute({ models }: { models: CatalogModel[] }) {
-  return <TaskSetEditorRoute models={models} />;
 }
 
 function TaskSetNewRoute() {
@@ -378,15 +362,6 @@ function TaskDetailRouteWrapper() {
   const repo = useTaskRepository();
   const { taskId } = useParams<{ taskId: string }>();
   return <TaskDetailRoute repo={repo} taskId={taskId ?? ""} />;
-}
-
-/** /tasks/:taskId/versions/:version route wrapper. Parses the version param;
- *  malformed params render the explicit invalid-version state, not a redirect. */
-function TaskVersionRouteWrapper() {
-  const repo = useTaskRepository();
-  const { taskId, version } = useParams<{ taskId: string; version: string }>();
-  const parsed = Number(version);
-  return <TaskVersionRoute repo={repo} taskId={taskId ?? ""} version={parsed} />;
 }
 
 /** RubricList route wrapper — canonical /evaluations/rubrics. Renders the

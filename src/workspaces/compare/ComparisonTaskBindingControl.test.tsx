@@ -259,7 +259,7 @@ describe("ComparisonTaskBindingControl", () => {
     // Verify open task detail link
     const detailLink = h.$("a[data-action='open-task-detail']");
     expect(detailLink).not.toBeNull();
-    expect(detailLink?.getAttribute("href")).toBe("/tasks/task-pinned/versions/2");
+    expect(detailLink?.getAttribute("href")).toBe("/tasks/task-pinned");
     expect(detailLink?.getAttribute("aria-label")).toBe("Open task detail");
   });
 

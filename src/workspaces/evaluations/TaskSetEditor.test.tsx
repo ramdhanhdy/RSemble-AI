@@ -1,9 +1,8 @@
 // @vitest-environment happy-dom
 //
-// Task Set editor surface (child 03 Task 5 / spec §4–§5). Canonical routes
-// /evaluations/sets/:taskSetId and /evaluations/sets/:taskSetId/versions/:version.
-// Historical versions are read-only. Frozen EvaluationSuite fields stay named
-// suiteId/suiteVersion on persisted records.
+// Task Set editor surface (child 03 Task 5 / spec §4–§5). Canonical route
+// /evaluations/sets/:taskSetId always loads the current Task Set.
+// Frozen EvaluationSuite fields stay named suiteId/suiteVersion on persisted records.
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -48,13 +47,8 @@ function renderWithRouter(node: React.ReactNode, initialPath = "/evaluations/set
           <ModelProbeProvider>
             <Routes>
               <Route path="/evaluations/sets/:taskSetId" element={node} />
-              <Route path="/evaluations/sets/:taskSetId/versions/:version" element={node} />
               <Route path="/evaluations/sets/:taskSetId/tasks/:taskId" element={node} />
               <Route path="/tasks/:taskId" element={<div data-route="task-detail" />} />
-              <Route
-                path="/tasks/:taskId/versions/:version"
-                element={<div data-route="task-version" />}
-              />
               <Route
                 path="/evaluations/results/:evaluationExecutionId"
                 element={<div data-route="experiment-progress" />}
@@ -336,19 +330,18 @@ describe("TaskSetEditor — loading & not found", () => {
 });
 
 describe("TaskSetEditor — header & dirty state", () => {
-  it("shows the task set name and persisted version", async () => {
+  it("shows the task set name", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 3 }));
     const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
     await settle();
     const text = h.container.textContent ?? "";
     expect(text).toContain("My Suite");
-    expect(text).toContain("v3");
     expect(text).toMatch(/saved/i);
     cleanup(h);
   });
 
-  it("dirty state shows unsaved changes and next version", async () => {
+  it("dirty state shows unsaved changes", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedSuite(repo, makeSuite("s1", { name: "My Suite", version: 2 }));
     const h = renderWithRouter(<TaskSetEditor repo={repo} models={[]} />);
@@ -364,7 +357,6 @@ describe("TaskSetEditor — header & dirty state", () => {
     await settle();
     const text = h.container.textContent ?? "";
     expect(text).toMatch(/unsaved changes/i);
-    expect(text).toMatch(/v3/);
     cleanup(h);
   });
 
@@ -624,7 +616,7 @@ describe("TaskSetEditor — run validation", () => {
     await settle();
     const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement;
     expect(runBtn.disabled).toBe(false);
-    expect(runBtn.textContent).toMatch(/run v1/i);
+    expect(runBtn.textContent).toMatch(/run/i);
     cleanup(h);
   });
 });
@@ -832,100 +824,6 @@ describe("TaskSetEditor — settings disclosure", () => {
   });
 });
 
-describe("TaskSetEditor — historical version is read-only", () => {
-  it("loads the exact historical membership and defaults instead of the latest suite payload", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    const taskRepo = new InMemoryTaskRepository();
-    const taskSetRepo = new InMemoryTaskSetRepository();
-    await seedCanonicalTask(taskRepo, "historical-task", "Historical Task");
-    await seedCanonicalTask(taskRepo, "latest-task", "Latest Task");
-
-    const v1 = makeValidSuite("s1");
-    v1.name = "Versioned Set";
-    v1.tasks = [
-      {
-        ...makeTask("historical-member", { title: "Historical Task" }),
-        taskVersionRef: { taskId: "historical-task", version: 1 },
-      } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
-    ];
-    v1.defaultEvaluation = { kind: "holistic" };
-
-    const v2 = {
-      ...makeValidSuite("s1"),
-      version: 2,
-      tasks: [
-        {
-          ...makeTask("latest-member", { title: "Latest Task" }),
-          taskVersionRef: { taskId: "latest-task", version: 1 },
-        } as EvaluationTask & { taskVersionRef: { taskId: string; version: number } },
-      ],
-      defaultEvaluation: {
-        kind: "profile" as const,
-        profile: { id: "latest-rubric", version: 1 },
-      },
-    };
-    await seedSuite(repo, v2);
-    await seedTaskSetVersion(taskSetRepo, v1, 0);
-    await seedTaskSetVersion(taskSetRepo, v2, 1);
-
-    const h = renderWithRouter(
-      <TaskSetEditor repo={repo} taskRepo={taskRepo} taskSetRepo={taskSetRepo} models={[]} />,
-      "/evaluations/sets/s1/versions/1",
-    );
-    await settle();
-
-    expect(h.$("[data-task-set-editor]")).toBeTruthy();
-    expect(h.container.textContent).toContain("Historical Task");
-    expect(h.container.textContent).not.toContain("Latest Task");
-    expect(h.container.textContent).toMatch(/holistic judgment/i);
-    expect(h.container.textContent).toMatch(/read-only/i);
-    const saveBtn = h.$("button[data-action='save-task-set']") as HTMLButtonElement | null;
-    const runBtn = h.$("button[data-action='run-task-set']") as HTMLButtonElement | null;
-    expect(saveBtn?.disabled ?? true).toBe(true);
-    expect(runBtn?.disabled ?? true).toBe(true);
-    cleanup(h);
-  });
-
-  it("renders an explicit missing-version state instead of falling back to latest", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    const taskSetRepo = new InMemoryTaskSetRepository();
-    const suite = makeValidSuite("s1");
-    await seedSuite(repo, suite);
-    await seedTaskSetVersion(taskSetRepo, suite, 0);
-
-    const h = renderWithRouter(
-      <TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />,
-      "/evaluations/sets/s1/versions/99",
-    );
-    await settle();
-
-    expect(h.$("[data-task-set-editor]")).toBeTruthy();
-    expect(h.container.textContent).toMatch(/version 99.*not found|not found.*version 99/i);
-    expect(h.container.textContent).not.toContain(suite.name);
-    cleanup(h);
-  });
-
-  it("rejects a latest-number historical route when its exact canonical row is absent", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    const taskSetRepo = new InMemoryTaskSetRepository();
-    const suite = makeValidSuite("s1");
-    await seedSuite(repo, suite);
-
-    const h = renderWithRouter(
-      <TaskSetEditor repo={repo} taskSetRepo={taskSetRepo} models={[]} />,
-      `/evaluations/sets/s1/versions/${suite.version}`,
-    );
-    await settle();
-
-    expect(h.$("[data-task-set-editor]")).toBeTruthy();
-    expect(h.container.textContent).toMatch(
-      new RegExp(`version ${suite.version}.*not found|not found.*version ${suite.version}`, "i"),
-    );
-    expect(h.container.textContent).not.toContain(suite.name);
-    cleanup(h);
-  });
-});
-
 describe("TaskSetEditor — Test selected models (spec §8.1)", () => {
   it("puts one model-specific test action inside each candidate row", async () => {
     const repo = new InMemoryEvaluationRepository();
@@ -1044,8 +942,8 @@ describe("TaskSetEditor — Test selected models (spec §8.1)", () => {
   });
 });
 
-describe("TaskSetEditor — canonical Task selection and version pinning", () => {
-  it("Add task opens TaskVersionSelector and adds selected canonical task version to the set", async () => {
+describe("TaskSetEditor — canonical Task selection", () => {
+  it("Add task opens TaskVersionSelector and adds selected canonical task to the set", async () => {
     const evalRepo = new InMemoryEvaluationRepository();
     const taskRepo = new InMemoryTaskRepository();
     await seedSuite(evalRepo, makeSuite("s1", { name: "Bench Suite", version: 1, tasks: [] }));
@@ -1082,96 +980,21 @@ describe("TaskSetEditor — canonical Task selection and version pinning", () =>
     });
     await settle();
 
-    // Confirm selection (defaults to latest v2)
+    // Confirm selection
     const selectBtn =
       h.$("button[data-action='confirm-select-task']") ??
-      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
+      h.$$("button").find((b) => b.textContent?.match(/add/i));
     expect(selectBtn).toBeTruthy();
     await act(async () => {
       selectBtn!.click();
     });
     await settle();
 
-    // Task is added to the set and shows pinned v2
+    // Task is added to the set
     expect(h.container.textContent).toContain("Code Review Task");
-    expect(h.container.textContent).toContain("v2");
     expect(h.container.textContent).toMatch(/unsaved changes/i);
-    cleanup(h);
-  });
-
-  it("allows selecting an older canonical task version without upgrading to latest on save", async () => {
-    const evalRepo = new InMemoryEvaluationRepository();
-    const taskRepo = new InMemoryTaskRepository();
-    await seedSuite(evalRepo, makeSuite("s1", { name: "Bench Suite", version: 1, tasks: [] }));
-    await seedCanonicalTask(taskRepo, "t-multi", "Multi Version Task", {
-      extraVersions: 3,
-    });
-
-    const h = renderWithRouter(<TaskSetEditor repo={evalRepo} taskRepo={taskRepo} models={[]} />);
-    await settle();
-
-    // Open selector
-    const addBtn =
-      h.$("button[data-action='add-task']") ??
-      h.$$("button").find((b) => b.textContent?.includes("Add task"));
-    await act(async () => {
-      addBtn!.click();
-    });
-    await settle();
-
-    // Pick task
-    const taskRow =
-      h.$("[data-task-id='t-multi']") ??
-      h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi Version Task"));
-    await act(async () => {
-      taskRow!.click();
-    });
-    await settle();
-
-    // Select older version v1
-    const v1Option =
-      h.$("[data-version-option='1']") ??
-      h
-        .$$("button, option")
-        .find((el) => el.textContent?.trim() === "v1" || el.getAttribute("value") === "1");
-    expect(v1Option).toBeTruthy();
-    if (v1Option?.tagName.toLowerCase() === "option") {
-      const select = v1Option.closest("select")!;
-      await act(async () => {
-        select.value = "1";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    } else {
-      await act(async () => {
-        v1Option!.click();
-      });
-    }
-    await settle();
-
-    // Confirm selection
-    const selectBtn =
-      h.$("button[data-action='confirm-select-task']") ??
-      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
-    await act(async () => {
-      selectBtn!.click();
-    });
-    await settle();
-
-    // Pinned version shows v1
-    expect(h.container.textContent).toContain("v1");
-
-    // Save task set
-    const saveBtn = h.$("button[data-action='save-task-set']") as HTMLButtonElement;
-    await act(async () => {
-      saveBtn.click();
-      await flush();
-    });
-    await settle();
-
-    const fresh = await evalRepo.getSuite("s1");
-    expect(fresh?.tasks.length).toBe(1);
-    // Verified: No latest-version substitution happened
-    expect(h.container.textContent).toContain("v1");
+    expect(h.container.textContent).not.toMatch(/Task Version \d/i);
+    expect(h.container.textContent).not.toMatch(/pinned version/i);
     cleanup(h);
   });
 });
@@ -1893,8 +1716,8 @@ describe("TaskSetEditor — empty draft and add first task flow", () => {
   });
 });
 
-describe("TaskSetEditor — canonical vs legacy unlinked member handling", () => {
-  it("renders working Edit task link for canonical members but legacy warning with no detail link for unlinked members", async () => {
+describe("TaskSetEditor — canonical vs missing task member handling", () => {
+  it("renders working Edit task link for canonical members and neutral Task unavailable warning for missing members", async () => {
     const repo = new InMemoryEvaluationRepository();
     const taskRepo = new InMemoryTaskRepository();
 
@@ -1903,7 +1726,7 @@ describe("TaskSetEditor — canonical vs legacy unlinked member handling", () =>
       instruction: "Canonical candidate prompt.",
     });
 
-    // Seed suite with one canonical member and one unresolved legacy member
+    // Seed suite with one canonical member and one missing member
     await seedSuite(
       repo,
       makeSuite("s-mixed", {
@@ -1915,9 +1738,9 @@ describe("TaskSetEditor — canonical vs legacy unlinked member handling", () =>
             prompt: "Canonical candidate prompt.",
             order: 0,
           }),
-          makeTask("t-legacy-synthetic", {
-            title: "Old Embedded Task",
-            prompt: "Legacy embedded prompt text.",
+          makeTask("t-missing", {
+            title: "Missing Task",
+            prompt: "Missing prompt text.",
             order: 1,
           }),
         ],
@@ -1946,29 +1769,29 @@ describe("TaskSetEditor — canonical vs legacy unlinked member handling", () =>
     expect(editLink?.getAttribute("href")).toBe("/tasks/t-canon");
     expect(h.$("[data-legacy-member-warning]")).toBeNull();
 
-    // 2. Select legacy unlinked task (t-legacy-synthetic)
-    const legacyItem =
-      h.$("[data-task-item='t-legacy-synthetic']") ??
-      h.$$("button").find((b) => b.textContent?.includes("Old Embedded Task"));
-    expect(legacyItem).toBeTruthy();
+    // 2. Select missing task (t-missing)
+    const missingItem =
+      h.$("[data-task-item='t-missing']") ??
+      h.$$("button").find((b) => b.textContent?.includes("Missing Task"));
+    expect(missingItem).toBeTruthy();
     await act(async () => {
-      legacyItem!.click();
+      missingItem!.click();
     });
     await settle();
 
-    // Legacy task MUST NOT have broken Edit task link
+    // Missing task MUST NOT have broken Edit task link
     const brokenEditLink = h.$("a[data-action='open-task-detail']");
     expect(brokenEditLink).toBeNull();
 
-    // Legacy task renders explicit warning banner explaining read-only candidate instruction & removal/replacement
-    const legacyWarning = h.$("[data-legacy-member-warning]");
-    expect(legacyWarning).toBeTruthy();
-    expect(legacyWarning?.textContent).toContain("not found in Tasks");
-    expect(legacyWarning?.textContent).toContain("Candidate instruction is read-only in task sets");
-    expect(legacyWarning?.textContent).toContain(
-      "remove it from the task set and add a saved task",
-    );
-    expect(h.container.textContent).toContain("Older unlinked task (not in Tasks)");
+    // Missing task renders explicit neutral warning banner with removal guidance
+    const warning = h.$("[data-legacy-member-warning]");
+    expect(warning).toBeTruthy();
+    expect(warning?.textContent).toContain("Task unavailable");
+    expect(warning?.textContent).toContain("not be found in Tasks");
+    expect(warning?.textContent).toContain("Remove it from the task set");
+    expect(h.container.textContent).not.toContain("Older");
+    expect(h.container.textContent).not.toContain("Legacy");
+    expect(h.container.textContent).not.toContain("Unlinked");
 
     cleanup(h);
   });

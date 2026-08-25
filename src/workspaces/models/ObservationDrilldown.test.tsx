@@ -93,12 +93,12 @@ describe("ObservationDrilldown — Fable §8 focused page", () => {
     cleanup(h);
   });
 
-  it("renders canonical Task / Version links plus family, and instance badge without instance link", () => {
+  it("renders canonical Task link plus family, and instance badge without instance link", () => {
     const h = renderDrilldown(makeDrilldownData());
     const links = h.$$("[data-canonical-link]");
     const hrefs = links.map((a) => a.getAttribute("href") ?? "");
     expect(hrefs.some((href) => href.includes("/tasks/code-transform-03"))).toBe(true);
-    expect(hrefs.some((href) => href.includes("/versions/2"))).toBe(true);
+    expect(hrefs.some((href) => href.includes("/versions/"))).toBe(false);
     expect(hrefs.some((href) => href.includes("/instances/"))).toBe(false);
     expect(h.$("[data-canonical-instance]")!.textContent).toContain("i-3");
     expect(h.text()).toContain("Code transformation");

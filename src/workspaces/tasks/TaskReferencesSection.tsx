@@ -1,4 +1,4 @@
-// Exact historical references and instance disclosure for Task detail.
+// References and instance disclosure for Task detail.
 import { useEffect, useState } from "react";
 import { StorageError } from "../../lib/persistence/database";
 import type { EvaluationRepository } from "../../lib/persistence/evaluation-repository";
@@ -9,6 +9,9 @@ import { loadTaskReferenceReadModel } from "./task-reference-load";
 
 function formatTimestamp(value: number): string {
   return new Date(value).toLocaleString();
+}
+function formatResolutionState(state: string): string {
+  return state === "resolved" ? "Linked" : "Unavailable";
 }
 
 export function TaskReferencesSection({
@@ -54,10 +57,10 @@ export function TaskReferencesSection({
         <p className="text-sm text-text-muted">Loading references…</p>
       ) : (
         <>
+          <p className="text-sm text-text-secondary">Shows where this task is used.</p>
           <p className="text-sm text-text-secondary">
             {model.counts.total} references · origin {model.origin}
           </p>
-          <p className="text-sm text-text-secondary">{model.originLimitation}</p>
 
           {model.currentSuites.length > 0 ? (
             <div className="flex flex-col gap-1">
@@ -65,12 +68,10 @@ export function TaskReferencesSection({
               <ul className="flex flex-col gap-1">
                 {model.currentSuites.map((item) => (
                   <li
-                    key={`${item.suiteId}:v${item.suiteVersion}:${item.legacyTaskId}`}
+                    key={`${item.suiteId}:${item.suiteVersion}:${item.legacyTaskId}`}
                     className="text-sm text-text-secondary"
                   >
-                    {item.suiteName ?? item.suiteId} v{item.suiteVersion} ·{" "}
-                    {item.state === "resolved" ? `exact v${item.taskVersion}` : item.state}
-                    {item.limitation ? ` · ${item.limitation}` : ""}
+                    {item.suiteName ?? item.suiteId} · {formatResolutionState(item.state)}
                   </li>
                 ))}
               </ul>
@@ -79,13 +80,11 @@ export function TaskReferencesSection({
 
           {model.experiments.length > 0 ? (
             <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-medium text-text">Historical experiments</h3>
+              <h3 className="text-sm font-medium text-text">Past evaluations</h3>
               <ul className="flex flex-col gap-1">
                 {model.experiments.map((item) => (
                   <li key={item.experimentId} className="text-sm text-text-secondary">
-                    {item.experimentId} · suite {item.suiteId} v{item.suiteVersion} ·{" "}
-                    {item.state === "resolved" ? `exact v${item.taskVersion}` : item.state}
-                    {item.limitation ? ` · ${item.limitation}` : ""}
+                    {item.experimentId} · suite {item.suiteId} · {formatResolutionState(item.state)}
                   </li>
                 ))}
               </ul>
@@ -98,7 +97,7 @@ export function TaskReferencesSection({
               <ul className="flex flex-col gap-1">
                 {model.unresolvedDefinitions.map((item) => (
                   <li key={item.key} className="text-sm text-text-secondary">
-                    {item.key} · {item.limitation}
+                    {item.key} · Unavailable
                   </li>
                 ))}
               </ul>
@@ -113,8 +112,8 @@ export function TaskReferencesSection({
               <ul className="flex flex-col gap-1">
                 {model.instances.map((item) => (
                   <li key={item.id} className="text-sm text-text-secondary">
-                    {item.inputDigestAbbreviation} · {item.sourceKind} · {item.state} ·{" "}
-                    {formatTimestamp(item.createdAt)}
+                    {item.inputDigestAbbreviation} · {item.sourceKind} ·{" "}
+                    {formatResolutionState(item.state)} · {formatTimestamp(item.createdAt)}
                   </li>
                 ))}
               </ul>

@@ -123,7 +123,6 @@ export function TaskSetTaskList({
 
             const extraInfo = resolveTaskInfo ? resolveTaskInfo(task.id, task) : undefined;
             const taskData = task as TaskSetMemberData;
-            const pinnedVersion = extraInfo?.pinnedVersion ?? taskData.taskVersionRef?.version;
             const role = extraInfo?.role ?? taskData.role;
             const stratum = extraInfo?.stratum ?? taskData.stratum;
             const weight = extraInfo?.weight ?? taskData.weight;
@@ -154,14 +153,6 @@ export function TaskSetTaskList({
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-1">
-                        {pinnedVersion !== undefined && (
-                          <span
-                            data-pinned-version
-                            className="rounded-sm border border-edge bg-card px-1 py-0.2 font-mono text-[10.5px] text-text-secondary"
-                          >
-                            v{pinnedVersion}
-                          </span>
-                        )}
                         {role && role !== "organic" && (
                           <span className="rounded-sm border border-edge px-1 py-0.2 font-mono text-[10.5px] uppercase tracking-wider text-text-secondary">
                             {role}

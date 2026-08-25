@@ -47,7 +47,7 @@ function renderRouted(
           <Route path="/compare/results/:comparisonId" element={element} />
           <Route path="/compare" element={<div>Compare workspace draft</div>} />
           <Route path="/runs/:runId" element={<div>Run detail view</div>} />
-          <Route path="/tasks/:taskId/versions/:version" element={<div>Task version view</div>} />
+          <Route path="/tasks/:taskId" element={<div>Task detail view</div>} />
           <Route path="/evaluations/rubrics/:rubricId" element={<div>Rubric detail view</div>} />
         </Routes>
       </MemoryRouter>,
@@ -841,7 +841,7 @@ describe("ComparisonResultRoute", () => {
     cleanup(h);
   });
 
-  it("renders canonical Task binding identity with link to task version", async () => {
+  it("renders canonical Task binding identity with link to task", async () => {
     const runsRepo = new InMemoryRunRepository();
     const comparisonRepo = new InMemoryComparisonRepository(runsRepo);
 
@@ -864,8 +864,7 @@ describe("ComparisonResultRoute", () => {
     await settle();
 
     expect(h.container.textContent).toContain("task-eval-42");
-    expect(h.container.textContent).toContain("v3");
-    const taskLink = h.$("a[href='/tasks/task-eval-42/versions/3']");
+    const taskLink = h.$("a[href='/tasks/task-eval-42']");
     expect(taskLink).not.toBeNull();
 
     cleanup(h);
@@ -1066,7 +1065,7 @@ describe("ComparisonResultRoute", () => {
       );
 
       // Links
-      const taskLink = h.$("a[href='/tasks/task-sentiment/versions/2']");
+      const taskLink = h.$("a[href='/tasks/task-sentiment']");
       expect(taskLink).not.toBeNull();
       const runLink = h.$("a[href='/runs/cmp-canon-receipt']");
       expect(runLink).not.toBeNull();

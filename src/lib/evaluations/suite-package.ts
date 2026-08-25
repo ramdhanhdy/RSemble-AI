@@ -32,11 +32,12 @@ import {
   type EvaluationTask,
   type RubricRecord,
 } from "./evaluation-types";
+import type { TaskRecord, TaskVersion } from "../tasks/task-types";
+import { isTaskRecord, isTaskVersion } from "../tasks/task-validation";
 import { validateSuiteForExecution } from "./suite-validation";
 import { validateRubric } from "./evaluation-rubric";
 import type { CriticRef, ProviderId } from "../providers/types";
 import type { ModelSlot } from "../../studio-data";
-
 export const SUITE_PACKAGE_KIND = "rsemble-suite-package";
 
 // --- Limits (mirroring archive import discipline) --------------------------------
@@ -82,7 +83,7 @@ export interface SuitePackageRubric {
   complianceInfluence?: EvaluationRubric["complianceInfluence"];
 }
 
-export interface SuitePackageV1 {
+export interface SuitePackage {
   kind: typeof SUITE_PACKAGE_KIND;
   schemaVersion: 1;
   name: string;
@@ -94,15 +95,16 @@ export interface SuitePackageV1 {
   profiles?: SuitePackageRubric[];
 }
 
+export type SuitePackageV1 = SuitePackage;
 export interface ImportedSuitePackage {
   suite: EvaluationSuite;
   profiles: Array<{ record: RubricRecord; profile: EvaluationRubric }>;
+  tasks: Array<{ record: TaskRecord; version: TaskVersion }>;
   /** True when the imported suite passes validateSuiteForExecution. */
   executionReady: boolean;
   /** Human-readable notes (e.g. conflict suffixes, non-executable draft). */
   notes: string[];
 }
-
 // --- Byte/depth walk ----------------------------------------------------------------
 
 export function validateSuitePackageBytes(byteLength: number): string | null {
@@ -202,7 +204,7 @@ function isValidPackageRubric(
 /** Structural parse of the raw JSON value into a typed package (no normalization). */
 export function parseSuitePackage(
   value: unknown,
-): { ok: true; pkg: SuitePackageV1 } | { ok: false; errors: string[] } {
+): { ok: true; pkg: SuitePackage } | { ok: false; errors: string[] } {
   const errors: string[] = [];
   if (!isRecord(value)) {
     return { ok: false, errors: ["Suite package must be a JSON object."] };
@@ -289,7 +291,7 @@ export interface NormalizeSuitePackageOptions {
  * neither embedded nor present locally.
  */
 export function normalizeSuitePackage(
-  pkg: SuitePackageV1,
+  pkg: SuitePackage,
   opts: NormalizeSuitePackageOptions,
 ): { ok: true; result: ImportedSuitePackage } | { ok: false; errors: string[] } {
   // Arrow wrapper required: Node's webcrypto rejects an unbound reference.
@@ -391,19 +393,52 @@ export function normalizeSuitePackage(
     return selection;
   };
 
-  const tasks: EvaluationTask[] = pkg.tasks.map((t, i) => ({
-    id: mintId(t.id, "Task"),
-    title: t.title,
-    prompt: t.prompt,
-    systemPrompt: t.systemPrompt ?? "",
-    evaluation: remapSelection(
-      t.evaluation,
-      `tasks[${i}].evaluation`,
-    ) as EvaluationTask["evaluation"],
-    judgeInstructionOverride: t.judgeInstructionOverride ?? "",
-    order: i,
-    ...(t.verification ? { verification: t.verification } : {}),
-  }));
+  const tasks: Array<EvaluationTask & { taskVersionRef: { taskId: string; version: number } }> = [];
+  const createdTasks: Array<{ record: TaskRecord; version: TaskVersion }> = [];
+  for (let i = 0; i < pkg.tasks.length; i++) {
+    const t = pkg.tasks[i]!;
+    const taskId = mintId(t.id, "Task");
+    const taskRecord: TaskRecord = {
+      id: taskId,
+      latestVersion: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      archivedAt: null,
+      origin: "authored",
+      revision: 0,
+    };
+    const taskVersion: TaskVersion = {
+      taskId,
+      version: 1,
+      title: t.title,
+      objective: t.title,
+      candidateInstruction: t.prompt,
+      defaultContextManifest: [],
+      responseContract: null,
+      taskVerifierRef: null,
+      source: { kind: "authored", legacyScopeKey: null, note: null },
+      createdAt: timestamp,
+    };
+    if (!isTaskRecord(taskRecord) || !isTaskVersion(taskVersion)) {
+      errors.push(`Task "${t.title}" fails the record guard.`);
+      continue;
+    }
+    createdTasks.push({ record: taskRecord, version: taskVersion });
+    tasks.push({
+      id: taskId,
+      title: t.title,
+      prompt: t.prompt,
+      systemPrompt: t.systemPrompt ?? "",
+      evaluation: remapSelection(
+        t.evaluation,
+        `tasks[${i}].evaluation`,
+      ) as EvaluationTask["evaluation"],
+      judgeInstructionOverride: t.judgeInstructionOverride ?? "",
+      order: i,
+      ...(t.verification ? { verification: t.verification } : {}),
+      taskVersionRef: { taskId, version: 1 },
+    });
+  }
   const modelSlots: ModelSlot[] = pkg.modelSlots.map((s) => ({
     id: mintId(s.id, "Model slot"),
     providerId: s.providerId,
@@ -445,6 +480,6 @@ export function normalizeSuitePackage(
   }
   return {
     ok: true,
-    result: { suite, profiles, executionReady: gate.valid, notes },
+    result: { suite, profiles, tasks: createdTasks, executionReady: gate.valid, notes },
   };
 }

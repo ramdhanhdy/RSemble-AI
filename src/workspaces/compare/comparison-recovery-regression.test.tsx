@@ -331,8 +331,8 @@ function renderRouted(
             element={<div data-testid="run-detail">Run Detail View</div>}
           />
           <Route
-            path="/tasks/:taskId/versions/:version"
-            element={<div data-testid="task-version">Task Version View</div>}
+            path="/tasks/:taskId"
+            element={<div data-testid="task-detail">Task Detail View</div>}
           />
         </Routes>
       </MemoryRouter>,

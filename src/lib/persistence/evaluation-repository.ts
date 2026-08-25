@@ -1131,11 +1131,17 @@ export class InMemoryEvaluationRepository implements EvaluationRepository {
       this.rubricVersions.set(record.id, new Map([[profile.version, profile]]));
       rubricIds.push(record.id);
     }
+    const taskIds: string[] = [];
+    for (const { record, version } of imported.tasks) {
+      if (!record.id) throw new StorageError("validation", "Invalid task record");
+      if (!version.taskId) throw new StorageError("validation", "Invalid task version");
+      taskIds.push(record.id);
+    }
     if (!isEvaluationSuite(imported.suite)) throw new StorageError("validation", "Invalid suite");
     if (this.suites.has(imported.suite.id)) {
       throw new StorageError("conflict", `Suite ${imported.suite.id} already exists`);
     }
     this.suites.set(imported.suite.id, imported.suite);
-    return { suiteId: imported.suite.id, rubricIds };
+    return { suiteId: imported.suite.id, rubricIds, taskIds };
   }
 }

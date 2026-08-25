@@ -246,13 +246,11 @@ export function TaskObservations({
 
   // Available filter options derived from current data
   const filterOptions = useMemo(() => {
-    const versions = new Set<number>();
     const instances = new Set<string>();
     const modelConfigIds = new Set<string>();
     const cohorts = new Set<string>();
 
     for (const o of scopedObservations) {
-      versions.add(o.taskVersion);
       instances.add(o.taskInstanceId);
       if (o.modelConfigurationId) modelConfigIds.add(o.modelConfigurationId);
       const dec = decisions.get(o.id);
@@ -260,7 +258,6 @@ export function TaskObservations({
     }
 
     return {
-      versions: Array.from(versions).sort((a, b) => a - b),
       instances: Array.from(instances).sort(),
       modelConfigIds: Array.from(modelConfigIds),
       cohorts: Array.from(cohorts).sort(),
@@ -428,10 +425,7 @@ export function TaskObservations({
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <Layers size={18} className="text-accent" aria-hidden="true" />
-            <h2 className="text-base font-semibold text-text">
-              Observations
-              {version !== undefined ? ` (v${version})` : ""}
-            </h2>
+            <h2 className="text-base font-semibold text-text">Observations</h2>
           </div>
           <p className="text-xs text-text-secondary">
             Derived observations, comparability cohorts, and eligibility details.
@@ -452,19 +446,13 @@ export function TaskObservations({
       {/* Honest Count Metrics Banner */}
       <div
         data-honest-counts
-        className="grid grid-cols-2 gap-2 rounded-md border border-edge bg-raised p-3 text-xs sm:grid-cols-3 md:grid-cols-6"
+        className="grid grid-cols-2 gap-2 rounded-md border border-edge bg-raised p-3 text-xs sm:grid-cols-3 md:grid-cols-5"
         aria-label="Task observation counts summary"
       >
         <div className="flex flex-col">
           <span className="text-[11px] text-text-muted">Tasks</span>
           <span data-count-tasks className="font-mono text-sm font-semibold text-text">
             {honestCounts.taskCount}
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[11px] text-text-muted">Versions</span>
-          <span data-count-versions className="font-mono text-sm font-semibold text-text">
-            {honestCounts.versionCount}
           </span>
         </div>
         <div className="flex flex-col">
@@ -560,32 +548,6 @@ export function TaskObservations({
           </div>
 
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Version filter (when not locked) */}
-            {version === undefined ? (
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor={`${filterIdPrefix}-ver`}
-                  className="font-mono text-[11px] uppercase tracking-wider text-text-muted"
-                >
-                  Version
-                </label>
-                <select
-                  id={`${filterIdPrefix}-ver`}
-                  data-filter-version
-                  value={activeVersionFilter}
-                  onChange={(e) => updateFilter("obs_ver", e.target.value)}
-                  className="min-h-[44px] rounded border border-edge bg-panel px-2 py-1 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  <option value="">All versions ({filterOptions.versions.length})</option>
-                  {filterOptions.versions.map((v) => (
-                    <option key={v} value={String(v)}>
-                      Version {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
             {/* Instance filter */}
             <div className="flex flex-col gap-1">
               <label
@@ -838,12 +800,12 @@ export function TaskObservations({
             >
               {/* Version Header */}
               <div className="flex items-center justify-between border-b border-edge pb-2">
-                <h3 className="text-sm font-semibold text-text">Task Version {ver}</h3>
+                <h3 className="text-sm font-semibold text-text">Task results</h3>
                 <Link
-                  to={`/tasks/${taskId}/versions/${ver}`}
+                  to={`/tasks/${taskId}`}
                   className="inline-flex min-h-[44px] items-center gap-1 text-xs text-accent transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  <span>View version definition</span>
+                  <span>View task</span>
                   <ExternalLink size={11} aria-hidden="true" />
                 </Link>
               </div>
@@ -981,8 +943,7 @@ export function TaskObservations({
                                 ) : null}
                                 {isLegacyLimited ? (
                                   <span>
-                                    Older source details recorded as-is without inferred task or
-                                    version.
+                                    Older source details recorded as-is without inferred task.
                                   </span>
                                 ) : null}
                               </div>
@@ -1038,11 +999,11 @@ export function TaskObservations({
                                 ) : null}
 
                                 <Link
-                                  to={`/tasks/${obs.taskId}/versions/${obs.taskVersion}`}
+                                  to={`/tasks/${obs.taskId}`}
                                   data-link-version
                                   className="inline-flex min-h-[44px] items-center gap-1 text-accent transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                 >
-                                  <span>Task v{obs.taskVersion}</span>
+                                  <span>Task</span>
                                 </Link>
 
                                 <Link

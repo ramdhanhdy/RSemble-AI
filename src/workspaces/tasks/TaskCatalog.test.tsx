@@ -240,7 +240,7 @@ describe("TaskCatalog — states", () => {
 });
 
 describe("TaskCatalog — rows and search (spec §7.1)", () => {
-  it("lists task rows linking to their detail routes with version and origin", async () => {
+  it("lists task rows linking to their detail routes with origin and no visible version", async () => {
     const repo = new InMemoryTaskRepository();
     await seedTask(repo, "t-1", "Summarize a report", { at: NOW });
     await seedTask(repo, "t-2", "Draft release notes", {
@@ -251,9 +251,9 @@ describe("TaskCatalog — rows and search (spec §7.1)", () => {
     await settle();
     // Newest first (updatedAt desc).
     expect(rowIds(h)).toEqual(["/tasks/t-2", "/tasks/t-1"]);
-    // Rows expose latest version and legacy origin honestly.
+    // Rows expose origin honestly without version badges.
     const text = h.container.textContent ?? "";
-    expect(text).toContain("v1");
+    expect(text).not.toContain("v1");
     expect(text).toContain("legacy-task-set");
     expect(rowIds(h)).not.toContainEqual(expect.stringContaining("/tasks/new"));
     cleanup(h);

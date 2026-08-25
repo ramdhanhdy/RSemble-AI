@@ -6,7 +6,7 @@
 // =============================================================================
 
 import "fake-indexeddb/auto";
-import type { EvaluationRubric } from "./evaluation-types";
+import type { EvaluationRubric, EvaluationTask } from "./evaluation-types";
 import { afterEach, describe, expect, it } from "vitest";
 import { RSembleEvaluationDB } from "../persistence/database";
 import { importSuitePackage } from "../persistence/suite-package-import";
@@ -96,11 +96,18 @@ describe("normalizeSuitePackage", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const [t1, t2] = result.result.suite.tasks;
+    const [t1, t2] = result.result.suite.tasks as Array<
+      EvaluationTask & { taskVersionRef: { taskId: string; version: number } }
+    >;
     expect(t1.id).toBe("gen-1");
+    expect(t1.taskVersionRef).toEqual({ taskId: "gen-1", version: 1 });
     expect(t2.id).toBe("task-custom"); // provided ids kept when free
+    expect(t2.taskVersionRef).toEqual({ taskId: "task-custom", version: 1 });
     expect(t2.order).toBe(1);
     expect(t2.systemPrompt).toBe("Be terse");
+    expect(result.result.tasks).toHaveLength(2);
+    expect(result.result.tasks[0].record.id).toBe("gen-1");
+    expect(result.result.tasks[0].version.candidateInstruction).toBe("Do thing one");
     expect(result.result.suite.modelSlots[1].enabled).toBe(false);
     expect(result.result.executionReady).toBe(false); // <2 enabled → draft
     expect(result.result.notes.some((n) => n.includes("draft"))).toBe(true);
@@ -220,7 +227,7 @@ describe("importSuitePackage", () => {
     }
   });
 
-  it("writes rubrics and suite transactionally; second import creates new entities", async () => {
+  it("writes rubrics, tasks, and suite transactionally; second import creates new entities", async () => {
     const db = new RSembleEvaluationDB(`pkg-test-${crypto.randomUUID()}`);
     dbs.push(db);
     const pkg = makePkg({ profiles: [{ id: "p1", name: "P", criteria: [criterion("c1")] }] });
@@ -233,19 +240,30 @@ describe("importSuitePackage", () => {
     const result1 = await importSuitePackage(db, first.result);
     expect((await db.suites.toArray()).length).toBe(1);
     expect((await db.profiles.toArray()).length).toBe(1);
+    expect((await db.tasks.toArray()).length).toBe(2);
+    expect((await db.taskVersions.toArray()).length).toBe(2);
+    expect(result1.taskIds).toHaveLength(2);
 
     // Same package again — suffixed, never skipped.
     const second = normalizeSuitePackage(pkg, {
-      takenIds: new Set([result1.suiteId, ...result1.rubricIds, "p1"]),
+      takenIds: new Set([
+        result1.suiteId,
+        ...result1.rubricIds,
+        ...result1.taskIds,
+        "p1",
+        "task-custom",
+      ]),
       existingRubricIds: new Set(),
       generateId: () => crypto.randomUUID(),
     });
     if (!second.ok) throw new Error("normalize failed");
-    await importSuitePackage(db, second.result);
+    const result2 = await importSuitePackage(db, second.result);
     expect((await db.suites.toArray()).length).toBe(2);
     expect((await db.profiles.toArray()).length).toBe(2);
+    expect((await db.tasks.toArray()).length).toBe(4);
+    expect((await db.taskVersions.toArray()).length).toBe(4);
+    expect(result2.taskIds).toHaveLength(2);
   });
-
   it("InMemoryEvaluationRepository mirrors the writer contract", async () => {
     const repo = new InMemoryEvaluationRepository();
     const pkg = makePkg({ profiles: [{ name: "P", criteria: [criterion("c1")] }] });

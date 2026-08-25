@@ -1337,7 +1337,11 @@ describe("Fable §14.10 — observation drilldown contents", () => {
         </Routes>
       </MemoryRouter>,
     );
-    expect(h.$$("[data-canonical-link]").length).toBeGreaterThanOrEqual(2);
+    const canonicalLinks = h.$$("[data-canonical-link]");
+    expect(canonicalLinks.length).toBe(1);
+    const canonicalHref = (canonicalLinks[0] as HTMLAnchorElement).getAttribute("href") ?? "";
+    expect(canonicalHref).toContain("/tasks/code-transform-03");
+    expect(canonicalHref).not.toContain("/versions/");
     expect(h.$("[data-eligibility]")).not.toBeNull();
     expect((h.$("[data-source-backlink]") as HTMLAnchorElement).getAttribute("href")).toContain(
       "/compare/results/cmp-77",
@@ -1674,10 +1678,10 @@ describe("Fable §14.16 — Routed integration through live ModelsWorkspace & in
     expect(h.$("[data-evidence-class=verified]")).not.toBeNull();
     expect(h.$("[data-eligibility]")!.textContent).toContain("eligible");
 
-    // Canonical links (Task & Version links, instance badge without instance link)
+    // Canonical links (Task link, instance badge without instance link)
     const links = h.$$("[data-canonical-link]").map((a) => a.getAttribute("href"));
     expect(links.some((l) => l?.includes("/tasks/t-code-1"))).toBe(true);
-    expect(links.some((l) => l?.includes("/versions/1"))).toBe(true);
+    expect(links.some((l) => l?.includes("/versions/"))).toBe(false);
     expect(links.some((l) => l?.includes("/instances/"))).toBe(false);
     expect(h.$("[data-canonical-instance]")!.textContent).toContain("inst-t-code-1");
 

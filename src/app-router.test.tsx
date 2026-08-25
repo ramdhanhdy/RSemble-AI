@@ -644,18 +644,7 @@ describe("AppRouter — canonical Task routes (spec §7)", () => {
     expect(h.$("[data-task-detail='t-1']")).toBeTruthy();
     expect(h.$("input[data-editor-field='title']")).toBeTruthy();
     expect(h.$("[data-editor-status]")?.textContent).toMatch(/saved/i);
-    expect(h.$("button[data-action='create-version']")).toBeTruthy();
-    cleanup(h);
-  });
-
-  it("direct-loads /tasks/:taskId/versions/:version as a read-only version view", async () => {
-    const taskRepo = new InMemoryTaskRepository();
-    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
-    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/1"], taskRepo });
-    expect(h.$("[data-task-version='t-1@1']")).toBeTruthy();
-    const title = h.$("input[data-editor-field='title']") as HTMLInputElement | null;
-    expect(title?.disabled).toBe(true);
-    expect(title?.value).toBe("Summarize a report");
+    expect(h.$("button[data-action='save-task']")).toBeTruthy();
     cleanup(h);
   });
 
@@ -668,14 +657,6 @@ describe("AppRouter — canonical Task routes (spec §7)", () => {
     cleanup(h);
   });
 
-  it("direct-loads /tasks/:taskId/versions/:version and renders the version shell with observations section", async () => {
-    const taskRepo = new InMemoryTaskRepository();
-    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
-    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/1"], taskRepo });
-    expect(h.$("[data-task-version='t-1@1']")).toBeTruthy();
-    expect(h.$("[data-task-observations-section]")).toBeTruthy();
-    cleanup(h);
-  });
   it("renders an explicit not-found state for an unknown task id (no silent redirect)", async () => {
     const taskRepo = new InMemoryTaskRepository();
     const h = await renderRouterAsync({ initialEntries: ["/tasks/no-such-task"], taskRepo });
@@ -683,23 +664,6 @@ describe("AppRouter — canonical Task routes (spec §7)", () => {
     // The URL is preserved — unknown IDs surface explicitly, they never bounce
     // the user back to the catalog silently (spec §7: "work from direct loads").
     expect(h.loc.current?.pathname).toBe("/tasks/no-such-task");
-    cleanup(h);
-  });
-
-  it("renders an explicit not-found state for an unknown version number", async () => {
-    const taskRepo = new InMemoryTaskRepository();
-    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
-    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/99"], taskRepo });
-    expect(h.$("[data-task-not-found]")).toBeTruthy();
-    cleanup(h);
-  });
-
-  it("renders an explicit invalid-version state for a malformed version param", async () => {
-    const taskRepo = new InMemoryTaskRepository();
-    await seedCatalogTask(taskRepo, "t-1", "Summarize a report");
-    const h = await renderRouterAsync({ initialEntries: ["/tasks/t-1/versions/nope"], taskRepo });
-    expect(h.$("[data-task-invalid-version]")).toBeTruthy();
-    expect(h.loc.current?.pathname).toBe("/tasks/t-1/versions/nope");
     cleanup(h);
   });
 
@@ -831,19 +795,6 @@ describe("AppRouter — canonical Task Set routes (spec §4)", () => {
     expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1");
     expect(h.container.textContent).toContain("Battery Alpha");
     expect(h.$("[data-task-set-editor]")).toBeTruthy();
-    cleanup(h);
-  });
-
-  it("direct-loads /evaluations/sets/:taskSetId/versions/:version as a historical view", async () => {
-    const repo = new InMemoryEvaluationRepository();
-    await seedSuite(repo, makeRoutedSuite("s1", "Battery Alpha"));
-    const h = await renderRouterAsync({
-      initialEntries: ["/evaluations/sets/s1/versions/1"],
-      repo,
-    });
-    expect(h.loc.current?.pathname).toBe("/evaluations/sets/s1/versions/1");
-    expect(h.$("[data-task-set-editor]")).toBeTruthy();
-    expect(h.container.textContent).toMatch(/read-only/i);
     cleanup(h);
   });
 

@@ -87,8 +87,8 @@ describe("resolveRecordOwner", () => {
       source: "legacy",
       ownerCrosswalk: {
         ownerKind: "task",
-        ownerHref: "/tasks/task-1/versions/2",
-        ownerLabel: "Task v2",
+        ownerHref: "/tasks/task-1",
+        ownerLabel: "Task",
         reason: "Mapped via the canonical Task migration crosswalk",
       },
     };
@@ -99,7 +99,7 @@ describe("resolveRecordOwner", () => {
     };
     expect(resolveRecordOwner(mapped)).toMatchObject({
       confidence: "crosswalk",
-      ownerHref: "/tasks/task-1/versions/2",
+      ownerHref: "/tasks/task-1",
     });
     expect(resolveRecordOwner(unresolved)).toEqual({
       ownerKind: "legacy",

@@ -219,7 +219,6 @@ describe("TaskObservations — Section rendering and empty state", () => {
 
     // Honest counts present even in empty state
     expect(h.$("[data-count-tasks]")?.textContent).toContain("1");
-    expect(h.$("[data-count-versions]")?.textContent).toContain("0");
     expect(h.$("[data-count-instances]")?.textContent).toContain("0");
     expect(h.$("[data-count-active-observations]")?.textContent).toContain("0");
     expect(h.$("[data-count-selected-attempts]")?.textContent).toContain("0");
@@ -245,8 +244,8 @@ describe("TaskObservations — Section rendering and empty state", () => {
   });
 });
 
-describe("TaskObservations — Grouping by Version and Instance", () => {
-  it("groups observations by Task Version and Task Instance", async () => {
+describe("TaskObservations — Grouping by Task results and Instance", () => {
+  it("groups observations by Task results and Task Instance without Task Version N headings", async () => {
     const repo = new InMemoryEvidenceRepository();
 
     const m1 = makeModelConfig("anthropic", "claude-3-5-sonnet");
@@ -278,6 +277,8 @@ describe("TaskObservations — Grouping by Version and Instance", () => {
     // Verify version groups exist
     expect(h.$('[data-version-group="1"]')).toBeTruthy();
     expect(h.$('[data-version-group="2"]')).toBeTruthy();
+    expect(h.container.textContent).toContain("Task results");
+    expect(h.container.textContent).not.toMatch(/Task Version \d/i);
 
     // Verify instance groups exist inside version 1
     expect(h.$('[data-instance-group="inst-1"]')).toBeTruthy();
@@ -286,8 +287,6 @@ describe("TaskObservations — Grouping by Version and Instance", () => {
 
     // Verify all 4 observation rows are rendered
     expect(h.$$("[data-observation-row]").length).toBe(4);
-
-    cleanup(h);
   });
 
   it("scopes observations to the specified version when version prop is provided", async () => {
@@ -317,7 +316,7 @@ describe("TaskObservations — Grouping by Version and Instance", () => {
 });
 
 describe("TaskObservations — Honest counts differentiation", () => {
-  it("differentiates Tasks, versions, instances, active observations, selected attempts, and all attempts", async () => {
+  it("differentiates Tasks, instances, active observations, selected attempts, and all attempts", async () => {
     const repo = new InMemoryEvidenceRepository();
     const m1 = makeModelConfig("anthropic", "claude-3-5-sonnet");
     await repo.putModelConfiguration(m1);
@@ -347,7 +346,6 @@ describe("TaskObservations — Honest counts differentiation", () => {
     await settle();
 
     expect(h.$("[data-count-tasks]")?.textContent).toContain("1");
-    expect(h.$("[data-count-versions]")?.textContent).toContain("2");
     expect(h.$("[data-count-instances]")?.textContent).toContain("3");
     expect(h.$("[data-count-active-observations]")?.textContent).toContain("3");
     expect(h.$("[data-count-selected-attempts]")?.textContent).toContain("3");
@@ -728,7 +726,7 @@ describe("TaskObservations — Disclosures of unknown and legacy provenance", ()
 });
 
 describe("TaskObservations — Deep links to exact Observation and source Record", () => {
-  it("renders deep links to exact Observation, source Record, Task Version, and Rubric", async () => {
+  it("renders deep links to exact Observation, source Record, Task, and Rubric", async () => {
     const repo = new InMemoryEvidenceRepository();
     const m = makeModelConfig("anthropic", "claude-3-5-sonnet");
     await repo.putModelConfiguration(m);
@@ -762,12 +760,11 @@ describe("TaskObservations — Deep links to exact Observation and source Record
     expect(recordLink).toBeTruthy();
     expect(recordLink?.getAttribute("href")).toContain("/runs/eval-run-999");
 
-    // Deep link to task version
+    // Deep link to task
     const versionLink = row?.querySelector<HTMLAnchorElement>("a[data-link-version]");
     expect(versionLink).toBeTruthy();
-    expect(versionLink?.getAttribute("href")).toBe("/tasks/t-1/versions/2");
-
-    // Deep link to rubric
+    expect(versionLink?.getAttribute("href")).toBe("/tasks/t-1");
+    expect(versionLink?.textContent?.trim()).toBe("Task");
     const rubricLink = row?.querySelector<HTMLAnchorElement>("a[data-link-rubric]");
     expect(rubricLink).toBeTruthy();
     expect(rubricLink?.getAttribute("href")).toBe("/evaluations/rubrics/rubric-custom");

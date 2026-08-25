@@ -12,7 +12,7 @@
 //  - Partial, interrupted, and stale-running states rendered honestly;
 //  - After a failed re-judge, earlier accepted report remains authoritative;
 //  - Source/index revision repair warning with one-click repair action;
-//  - Semantic links to exact Record (/runs/:id) and Task (/tasks/:id/versions/:v);
+//  - Semantic links to exact Record (/runs/:id) and Task (/tasks/:id);
 //  - Open in Compare configuration preload via onOpenInCompare;
 //  - 390px mobile responsive layout.
 // =============================================================================
@@ -303,15 +303,13 @@ function TaskBindingBadge({ binding }: { binding: ComparisonTaskBinding }) {
   if (binding.kind === "canonical") {
     return (
       <Link
-        to={`/tasks/${binding.taskId}/versions/${binding.taskVersion}`}
+        to={`/tasks/${binding.taskId}`}
         data-task-binding="canonical"
-        title={`View saved task ${binding.taskId} v${binding.taskVersion}`}
+        title={`View saved task ${binding.taskId}`}
         className="flex min-h-[28px] items-center gap-1 rounded-sm border border-accent/30 bg-accent/[0.06] px-2 font-mono text-xs text-accent transition-colors hover:border-accent hover:bg-accent/10"
       >
         <Sparkles size={12} />
-        <span>
-          Task {binding.taskId} v{binding.taskVersion}
-        </span>
+        <span>Task {binding.taskId}</span>
       </Link>
     );
   }
@@ -828,10 +826,10 @@ export function ComparisonResultRoute({
           >
             <span className="font-semibold text-text">Evidence status:</span> Evidence bound to Task{" "}
             <Link
-              to={`/tasks/${index.taskBinding.taskId}/versions/${index.taskBinding.taskVersion}`}
+              to={`/tasks/${index.taskBinding.taskId}`}
               className="font-medium text-accent underline hover:text-accent-deep"
             >
-              {index.taskBinding.taskId} v{index.taskBinding.taskVersion}
+              {index.taskBinding.taskId}
             </Link>
             .
           </div>

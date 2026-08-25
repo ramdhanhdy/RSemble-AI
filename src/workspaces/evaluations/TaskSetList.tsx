@@ -23,6 +23,7 @@ import { StatusMark } from "../../ui/StatusMark";
 import { KindEyebrow } from "../../ui/KindEyebrow";
 import { RubricRefChip } from "../../ui/RubricRefChip";
 import { StorageError } from "../../lib/persistence/database";
+import { useTaskRepository } from "../../lib/persistence/repository-context";
 import { DEFAULT_CRITIC_REF } from "../../studio-data";
 import {
   normalizeSuitePackage,
@@ -87,6 +88,7 @@ function blankSuite(): EvaluationSuite {
 }
 
 export function TaskSetList({ repo }: TaskSetListProps) {
+  const taskRepo = useTaskRepository();
   const [state, setState] = useState<TaskSetListState>({
     suites: [],
     loading: true,
@@ -222,8 +224,16 @@ export function TaskSetList({ repo }: TaskSetListProps) {
         setImportErrors(check.errors);
         return;
       }
-      const [suites, rubrics] = await Promise.all([repo.listSuites(true), repo.listRubrics(true)]);
-      const takenIds = new Set<string>([...suites.map((s) => s.id), ...rubrics.map((p) => p.id)]);
+      const [suites, rubrics, tasks] = await Promise.all([
+        repo.listSuites(true),
+        repo.listRubrics(true),
+        taskRepo ? taskRepo.listTasks({ includeArchived: true }) : Promise.resolve([]),
+      ]);
+      const takenIds = new Set<string>([
+        ...suites.map((s) => s.id),
+        ...rubrics.map((p) => p.id),
+        ...tasks.map((t) => t.id),
+      ]);
       const normalized = normalizeSuitePackage(check.pkg, {
         takenIds,
         existingRubricIds: new Set(rubrics.map((p) => p.id)),
@@ -351,7 +361,7 @@ export function TaskSetList({ repo }: TaskSetListProps) {
           No evaluation task sets yet
         </h2>
         <p className="max-w-md text-sm text-text-secondary">
-          A task set groups several tasks into a versioned set, executed one at a time through the
+          A task set groups several tasks into an evaluation set, executed one at a time through the
           comparison pipeline. Build a task set to compare models across a shared workload with a
           consistent judge and evaluation rubric.
         </p>
@@ -548,7 +558,6 @@ export function TaskSetList({ repo }: TaskSetListProps) {
                     </span>
                   ) : undefined
                 }
-                provenance={`v${suite.version}`}
                 href={`/evaluations/sets/${suite.id}`}
               >
                 <div className="flex items-center gap-0.5">

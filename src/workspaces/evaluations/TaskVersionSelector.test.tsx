@@ -178,8 +178,8 @@ describe("TaskVersionSelector — dialog visibility and search", () => {
   });
 });
 
-describe("TaskVersionSelector — version pinning and selection", () => {
-  it("defaults to latest task version with exact pin visible", async () => {
+describe("TaskVersionSelector — task selection", () => {
+  it("selects latest task version internally without exposing version choice or badges", async () => {
     const repo = new InMemoryTaskRepository();
     await seedTask(repo, "t-multi", "Multi-version Task", { extraVersions: 3 });
 
@@ -189,7 +189,7 @@ describe("TaskVersionSelector — version pinning and selection", () => {
     );
     await settle();
 
-    // Select the task row to view versions
+    // Select the task row to preview
     const taskRow =
       h.$("[data-task-id='t-multi']") ??
       h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi-version Task"));
@@ -198,19 +198,20 @@ describe("TaskVersionSelector — version pinning and selection", () => {
       taskRow!.click();
     });
     await settle();
+    // No version selector / pin badge in preview
+    expect(h.$("#task-version-select")).toBeNull();
+    expect(h.$("[data-pinned-version]")).toBeNull();
+    expect(h.container.textContent).not.toMatch(/Task Version/i);
+    expect(h.container.textContent).not.toMatch(/pinned version/i);
+    expect(h.container.textContent).not.toMatch(/inspect versions/i);
 
-    // Latest is v3 and pinned version is visible
-    expect(h.container.textContent).toMatch(/v3/);
-    const pinBadge = h.$("[data-pinned-version]") ?? h.container;
-    expect(pinBadge.textContent).toContain("v3");
-
-    // Add / Select button triggers onSelect with v3
-    const addBtn =
-      h.$("button[data-action='confirm-select-task']") ??
-      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
+    // Add button triggers onSelect with latest version 3
+    const addBtn = (h.$("button[data-action='confirm-select-task']") ??
+      h.$$("button").find((b) => b.textContent?.match(/add/i))) as HTMLButtonElement;
     expect(addBtn).toBeTruthy();
+    expect(addBtn.disabled).toBe(false);
     await act(async () => {
-      addBtn!.click();
+      addBtn.click();
     });
     await settle();
 
@@ -220,64 +221,6 @@ describe("TaskVersionSelector — version pinning and selection", () => {
     expect(selection.version).toBe(3);
     cleanup(h);
   });
-
-  it("allows intentionally selecting an older version", async () => {
-    const repo = new InMemoryTaskRepository();
-    await seedTask(repo, "t-multi", "Multi-version Task", { extraVersions: 3 });
-
-    const onSelect = vi.fn();
-    const h = render(
-      <TaskVersionSelector repo={repo} open={true} onClose={vi.fn()} onSelect={onSelect} />,
-    );
-    await settle();
-
-    // Select the task
-    const taskRow =
-      h.$("[data-task-id='t-multi']") ??
-      h.$$("button, [role='button']").find((b) => b.textContent?.includes("Multi-version Task"));
-    await act(async () => {
-      taskRow!.click();
-    });
-    await settle();
-
-    // Choose older version v1
-    const v1Option =
-      h.$("[data-version-option='1']") ??
-      h
-        .$$("button, option")
-        .find((el) => el.textContent?.trim() === "v1" || el.getAttribute("value") === "1");
-    expect(v1Option).toBeTruthy();
-    if (v1Option?.tagName.toLowerCase() === "option") {
-      const select = v1Option.closest("select")!;
-      await act(async () => {
-        select.value = "1";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    } else {
-      await act(async () => {
-        v1Option!.click();
-      });
-    }
-    await settle();
-
-    // Pinned version shows v1
-    expect(h.container.textContent).toMatch(/v1/);
-
-    const addBtn =
-      h.$("button[data-action='confirm-select-task']") ??
-      h.$$("button").find((b) => b.textContent?.match(/add|select|pin/i));
-    await act(async () => {
-      addBtn!.click();
-    });
-    await settle();
-
-    expect(onSelect).toHaveBeenCalledTimes(1);
-    const selection = onSelect.mock.calls[0][0] as TaskVersionSelection;
-    expect(selection.taskId).toBe("t-multi");
-    expect(selection.version).toBe(1);
-    cleanup(h);
-  });
-
   it("shows candidate instruction and objective preview", async () => {
     const repo = new InMemoryTaskRepository();
     await seedTask(repo, "t-preview", "Article Summarizer", {
@@ -330,6 +273,10 @@ describe("TaskVersionSelector — archived tasks warning & confirmation", () => 
     const warning = h.$("[data-archived-warning]") ?? h.$("[role='alert']");
     expect(warning).toBeTruthy();
     expect(warning?.textContent?.toLowerCase()).toContain("archived");
+    expect(h.container.textContent).toContain(
+      "I confirm adding this archived task to the task set",
+    );
+    expect(h.container.textContent).not.toContain("archived task version");
 
     // Confirmation control is present
     const confirmBox = h.$("input[data-action='confirm-archived']") as HTMLInputElement | null;

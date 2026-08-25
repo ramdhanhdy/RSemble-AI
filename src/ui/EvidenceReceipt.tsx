@@ -547,13 +547,7 @@ export function EvidenceReceipt({
       ? `/runs/${runId}`
       : null;
 
-  const taskDeepHref = obs?.taskId
-    ? obs.taskVersion
-      ? `/tasks/${obs.taskId}/versions/${obs.taskVersion}`
-      : `/tasks/${obs.taskId}`
-    : taskId
-      ? `/tasks/${taskId}`
-      : null;
+  const taskDeepHref = obs?.taskId ? `/tasks/${obs.taskId}` : taskId ? `/tasks/${taskId}` : null;
 
   const rubricDeepHref = obs?.rubricRef?.id ? `/evaluations/rubrics/${obs.rubricRef.id}` : null;
 

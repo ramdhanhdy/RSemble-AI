@@ -97,7 +97,7 @@ describe("TaskSetTaskList — deterministic order and member rendering", () => {
     cleanup(h);
   });
 
-  it("displays pinned version, role, stratum, and weight metadata when provided", async () => {
+  it("displays role, stratum, and weight metadata when provided, omitting version badge", async () => {
     const tasks = [makeTask("t-1", 0, { title: "Classification Task" })];
 
     const h = render(
@@ -118,7 +118,7 @@ describe("TaskSetTaskList — deterministic order and member rendering", () => {
     );
     await settle();
 
-    expect(h.container.textContent).toContain("v2");
+    expect(h.container.textContent).not.toContain("v2");
     expect(h.container.textContent).toContain("anchor");
     expect(h.container.textContent).toContain("biology");
     expect(h.container.textContent).toContain("1.5");

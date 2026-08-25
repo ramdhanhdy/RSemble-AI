@@ -411,11 +411,7 @@ function ObservationDetail({
           <dt className="text-text-muted">Task</dt>
           <dd className="break-all font-mono text-text-secondary">
             <Link
-              to={
-                observation.taskVersion
-                  ? `/tasks/${encodeURIComponent(observation.taskId)}/versions/${observation.taskVersion}`
-                  : `/tasks/${encodeURIComponent(observation.taskId)}`
-              }
+              to={`/tasks/${encodeURIComponent(observation.taskId)}`}
               className="hover:text-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               {observation.taskId}@{observation.taskVersion}

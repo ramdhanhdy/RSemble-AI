@@ -213,7 +213,6 @@ export function ObservationDrilldown({
   }
 
   const taskHref = `/tasks/${data.taskId}`;
-  const versionHref = `/tasks/${data.taskId}/versions/${data.taskVersion}`;
   const observed = new Date(data.observedAt).toISOString();
 
   return (
@@ -272,9 +271,6 @@ export function ObservationDrilldown({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Link data-canonical-link to={taskHref} className={LINK_CLASS}>
             Task {data.taskId}
-          </Link>
-          <Link data-canonical-link to={versionHref} className={LINK_CLASS}>
-            Version {data.taskVersion}
           </Link>
           <span
             data-canonical-instance

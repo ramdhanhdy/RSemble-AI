@@ -145,7 +145,7 @@ describe("TaskSetList — rows", () => {
     cleanup(h);
   });
 
-  it("shows version, task count, and model count", async () => {
+  it("shows task count and model count, omitting version provenance", async () => {
     const repo = new InMemoryEvaluationRepository();
     await seedRepo(repo, [
       makeSuite("s1", {
@@ -192,9 +192,9 @@ describe("TaskSetList — rows", () => {
     const h = renderWithRouter(<TaskSetList repo={repo} />);
     await settle();
     const text = h.container.textContent ?? "";
-    expect(text).toContain("v3");
     expect(text).toContain("1 task");
     expect(text).toContain("2 models");
+    expect(text).not.toContain("v3");
     cleanup(h);
   });
 

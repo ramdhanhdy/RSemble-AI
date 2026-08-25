@@ -1,11 +1,9 @@
 // =============================================================================
-// TaskVersionSelector — searchable canonical Task/Version selection dialog.
+// TaskVersionSelector — searchable canonical Task selection dialog.
 //
-// Spec §5.1 / §5.3 (Child 03 Task 6):
-//  - Add Task opens a searchable canonical Task/Version selector.
-//  - Default selection is latest Task Version, but the pinned version is
-//    visible before save.
-//  - Older versions are intentionally selectable.
+// Canonical Task Selection:
+//  - Add Task opens a searchable canonical Task selector.
+//  - Default selection resolves the latest Task snapshot internally.
 //  - Archived tasks warn and require explicit confirmation before selection.
 //  - Exact Task Version refs ({ taskId, version }) are returned.
 // =============================================================================
@@ -45,9 +43,8 @@ export function TaskVersionSelector({
   const [error, setError] = useState<string | null>(null);
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [versions, setVersions] = useState<TaskVersion[]>([]);
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [selectedVersionNum, setSelectedVersionNum] = useState<number | null>(null);
+  const [taskVersion, setTaskVersion] = useState<TaskVersion | null>(null);
+  const [loadingTaskVersion, setLoadingTaskVersion] = useState(false);
   const [archivedConfirmed, setArchivedConfirmed] = useState(false);
 
   // Load tasks on open or search change
@@ -56,8 +53,7 @@ export function TaskVersionSelector({
       setTasks([]);
       setTaskTitles(new Map());
       setSelectedTaskId(null);
-      setVersions([]);
-      setSelectedVersionNum(null);
+      setTaskVersion(null);
       setArchivedConfirmed(false);
       return;
     }
@@ -102,34 +98,32 @@ export function TaskVersionSelector({
     };
   }, [open, repo, search]);
 
-  // Load versions when selectedTaskId changes
+  // Load latest task version snapshot when selectedTaskId changes
   useEffect(() => {
     if (!open || !repo || !selectedTaskId) {
-      setVersions([]);
-      setSelectedVersionNum(null);
+      setTaskVersion(null);
       setArchivedConfirmed(false);
       return;
     }
 
     let cancelled = false;
-    setLoadingVersions(true);
+    setLoadingTaskVersion(true);
+
+    const taskRec = tasks.find((t) => t.id === selectedTaskId);
+    const versionNum = taskRec ? taskRec.latestVersion : 1;
 
     void repo
-      .listTaskVersions(selectedTaskId)
-      .then((verList) => {
+      .getTaskVersion(selectedTaskId, versionNum)
+      .then((ver) => {
         if (cancelled) return;
-        const sorted = [...verList].sort((a, b) => b.version - a.version);
-        setVersions(sorted);
-        setLoadingVersions(false);
-        const taskRec = tasks.find((t) => t.id === selectedTaskId);
-        const defaultVer = taskRec ? taskRec.latestVersion : (sorted[0]?.version ?? 1);
-        setSelectedVersionNum(defaultVer);
+        setTaskVersion(ver);
+        setLoadingTaskVersion(false);
         setArchivedConfirmed(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setLoadingVersions(false);
-        setVersions([]);
+        setLoadingTaskVersion(false);
+        setTaskVersion(null);
       });
 
     return () => {
@@ -138,25 +132,23 @@ export function TaskVersionSelector({
   }, [open, repo, selectedTaskId, tasks]);
 
   const selectedRecord = tasks.find((t) => t.id === selectedTaskId) ?? null;
-  const selectedVersionObj =
-    versions.find((v) => v.version === selectedVersionNum) ?? versions[0] ?? null;
   const isArchived = selectedRecord?.archivedAt != null;
 
   const handleConfirmSelect = useCallback(() => {
-    if (!selectedRecord || !selectedVersionObj) return;
+    if (!selectedRecord || !taskVersion) return;
     if (isArchived && !archivedConfirmed) return;
     onSelect({
       taskId: selectedRecord.id,
-      version: selectedVersionObj.version,
+      version: selectedRecord.latestVersion,
       taskRecord: selectedRecord,
-      taskVersion: selectedVersionObj,
+      taskVersion,
     });
     onClose();
-  }, [selectedRecord, selectedVersionObj, isArchived, archivedConfirmed, onSelect, onClose]);
+  }, [selectedRecord, taskVersion, isArchived, archivedConfirmed, onSelect, onClose]);
 
   if (!open) return null;
 
-  const canConfirm = selectedRecord && selectedVersionObj && (!isArchived || archivedConfirmed);
+  const canConfirm = selectedRecord && taskVersion && (!isArchived || archivedConfirmed);
 
   return (
     <div
@@ -172,7 +164,7 @@ export function TaskVersionSelector({
           <div className="flex items-center gap-2">
             <Layers size={18} className="text-accent" aria-hidden="true" />
             <h2 id="task-version-selector-title" className="text-base font-medium text-text">
-              Select Task Version
+              Add Task
             </h2>
           </div>
           <button
@@ -273,9 +265,6 @@ export function TaskVersionSelector({
                                 In set
                               </span>
                             )}
-                            <span className="rounded-sm border border-edge px-1.5 py-0.5 font-mono text-xs text-text-secondary">
-                              v{task.latestVersion}
-                            </span>
                           </div>
                         </div>
                       </button>
@@ -286,7 +275,7 @@ export function TaskVersionSelector({
             )}
           </div>
 
-          {/* Right Column: Version Picker & Preview */}
+          {/* Right Column: Task Preview */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 md:w-1/2">
             {selectedRecord ? (
               <div className="flex flex-col gap-4">
@@ -294,61 +283,11 @@ export function TaskVersionSelector({
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-base font-semibold text-text">
-                      {selectedVersionObj?.title ||
-                        taskTitles.get(selectedRecord.id) ||
-                        selectedRecord.id}
+                      {taskVersion?.title || taskTitles.get(selectedRecord.id) || selectedRecord.id}
                     </h3>
-                    <span
-                      data-pinned-version
-                      className="shrink-0 rounded-sm border border-accent/40 bg-accent/[0.08] px-2 py-0.5 font-mono text-xs text-accent"
-                    >
-                      Pinned: v{selectedVersionNum ?? selectedRecord.latestVersion}
-                    </span>
                   </div>
-                  {selectedVersionObj?.objective && (
-                    <p className="mt-1 text-xs text-text-secondary">
-                      {selectedVersionObj.objective}
-                    </p>
-                  )}
-                </div>
-
-                {/* Version Selector */}
-                <div className="flex flex-col gap-1.5">
-                  <label
-                    htmlFor="task-version-select"
-                    className="font-mono text-xs uppercase tracking-wide text-text-muted"
-                  >
-                    Version Pin
-                  </label>
-                  {loadingVersions ? (
-                    <div className="flex items-center gap-2 py-2 text-xs text-text-muted">
-                      <Loader2 size={12} className="animate-spin-ease" aria-hidden="true" />
-                      <span>Loading versions…</span>
-                    </div>
-                  ) : versions.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <select
-                        id="task-version-select"
-                        value={selectedVersionNum ?? selectedRecord.latestVersion}
-                        onChange={(e) => setSelectedVersionNum(Number(e.target.value))}
-                        className="flex min-h-[44px] flex-1 rounded-md border border-edge bg-card px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      >
-                        {versions.map((ver) => (
-                          <option
-                            key={ver.version}
-                            value={ver.version}
-                            data-version-option={ver.version}
-                          >
-                            v{ver.version}{" "}
-                            {ver.version === selectedRecord.latestVersion ? "(latest)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <span className="font-mono text-xs text-text-secondary">
-                      v{selectedRecord.latestVersion} (latest)
-                    </span>
+                  {taskVersion?.objective && (
+                    <p className="mt-1 text-xs text-text-secondary">{taskVersion.objective}</p>
                   )}
                 </div>
 
@@ -358,7 +297,14 @@ export function TaskVersionSelector({
                     Candidate Instruction Preview
                   </span>
                   <div className="max-h-[160px] overflow-y-auto rounded-md border border-edge bg-card p-3 font-mono text-xs text-text-secondary scroll-thin whitespace-pre-wrap">
-                    {selectedVersionObj?.candidateInstruction || "(No candidate instruction text)"}
+                    {loadingTaskVersion ? (
+                      <div className="flex items-center gap-2 py-2 text-text-muted">
+                        <Loader2 size={14} className="animate-spin-ease" aria-hidden="true" />
+                        <span>Loading preview…</span>
+                      </div>
+                    ) : (
+                      taskVersion?.candidateInstruction || "(No candidate instruction text)"
+                    )}
                   </div>
                 </div>
 
@@ -387,14 +333,14 @@ export function TaskVersionSelector({
                         onChange={(e) => setArchivedConfirmed(e.target.checked)}
                         className="h-4 w-4 rounded-sm border-edge text-accent focus-visible:ring-2 focus-visible:ring-accent"
                       />
-                      <span>I confirm adding this archived task version to the task set</span>
+                      <span>I confirm adding this archived task to the task set</span>
                     </label>
                   </div>
                 )}
               </div>
             ) : (
               <div className="flex min-h-[200px] items-center justify-center text-center text-sm text-text-muted">
-                Select a task on the left to inspect versions and preview instructions.
+                Select a task on the left to preview instructions.
               </div>
             )}
           </div>

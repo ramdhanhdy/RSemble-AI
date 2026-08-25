@@ -3,16 +3,13 @@
 //
 // Child 02 (Canonical Tasks) Milestone D, Tasks 6-7.
 //
-//   /tasks/new                     → atomic Task + version 1 create editor
-//   /tasks/:taskId                 → detail editor: draft latest version with
-//                                    dirty/saved state, explicit version N+1,
-//                                    duplicate identity, archive/restore CAS;
-//                                    archived Tasks stay routable (§4.5)
-//   /tasks/:taskId/versions/:v    → immutable read-only version view
+//   /tasks/new                     → atomic Task create editor
+//   /tasks/:taskId                 → detail editor: working copy with dirty/saved
+//                                    state, Save changes, duplicate identity,
+//                                    archive/restore CAS; archived Tasks stay routable
 //
-// Unknown task IDs, unknown version numbers, and malformed version params
-// render explicit not-found / invalid states — never a silent redirect back to
-// the catalog.
+// Unknown task IDs render explicit not-found states — never a silent redirect
+// back to the catalog.
 // =============================================================================
 
 import { useEffect, useState } from "react";
@@ -24,12 +21,12 @@ import type { EvidenceRepository } from "../../lib/persistence/evidence-reposito
 import { useEvaluationRepository } from "../../lib/persistence/repository-context";
 
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
-import { TaskNewEditor, TaskDetailEditor, TaskVersionView } from "./TaskEditor";
-import { TaskFacetEditor } from "./TaskFacetEditor";
+import { TaskNewEditor, TaskDetailEditor } from "./TaskEditor";
 import { TaskFamilyRegistry } from "./TaskFamilyRegistry";
 import { TaskFamilyAssignmentSection } from "./TaskFamilyAssignment";
 import { TaskReferencesSection } from "./TaskReferencesSection";
 import { TaskObservations } from "./TaskObservations";
+import { TaskFacetEditor } from "./TaskFacetEditor";
 function StorageUnavailable() {
   return (
     <div
@@ -210,7 +207,6 @@ export function TaskDetailRoute({
           <h1 className="text-lg font-semibold text-text">{version?.title ?? record.id}</h1>
           <p className="flex flex-wrap items-center gap-2 text-sm text-text-secondary">
             <span className="font-mono text-xs">{record.id}</span>
-            <span>v{record.latestVersion}</span>
             <span>{record.origin}</span>
             {record.archivedAt !== null && (
               <span className="rounded-sm border border-edge bg-raised px-2 py-0.5 text-xs">
@@ -269,110 +265,6 @@ export function TaskDetailRoute({
           <TaskObservations taskId={record.id} evidenceRepo={evidenceRepo} />
         </>
       ) : null}
-    </div>
-  );
-}
-
-// --- /tasks/:taskId/versions/:version ---------------------------------------
-
-/** Immutable version shell for direct loads and deep links. Unknown versions
- *  and malformed params are explicit; nothing redirects. */
-export function TaskVersionRoute({
-  repo,
-  taskId,
-  version,
-  evidenceRepo,
-}: {
-  repo: TaskRepository | null;
-  taskId: string;
-  version: number;
-  evidenceRepo?: EvidenceRepository | null;
-}) {
-  const validVersion = Number.isFinite(version) && Number.isInteger(version) && version > 0;
-  const { state, retry } = useTaskRecord(repo, validVersion ? taskId : "");
-  const [versionState, setVersionState] = useState<
-    | { kind: "idle" }
-    | { kind: "loading" }
-    | { kind: "ready"; version: TaskVersion }
-    | { kind: "not-found" }
-  >({ kind: "idle" });
-
-  useEffect(() => {
-    if (repo === null || !validVersion) return;
-    let cancelled = false;
-    setVersionState({ kind: "loading" });
-    repo
-      .getTaskVersion(taskId, version)
-      .then((v) => {
-        if (cancelled) return;
-        setVersionState(v ? { kind: "ready", version: v } : { kind: "not-found" });
-      })
-      .catch(() => {
-        if (!cancelled) setVersionState({ kind: "not-found" });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [repo, taskId, version, validVersion]);
-
-  if (repo === null) return <StorageUnavailable />;
-  if (!validVersion) {
-    return (
-      <div
-        data-task-invalid-version
-        role="alert"
-        className="mx-auto flex w-full max-w-3xl flex-col items-center gap-2 px-4 py-12 text-center"
-      >
-        <AlertCircle size={20} className="text-text-muted" aria-hidden="true" />
-        <p className="text-sm font-medium text-text">Invalid task version.</p>
-        <p className="text-sm text-text-secondary">
-          Version route params must be positive integers; nothing was redirected.
-        </p>
-        <BackToCatalog />
-      </div>
-    );
-  }
-  if (state.kind === "not-found" || versionState.kind === "not-found") {
-    return (
-      <NotFound
-        label={`Task version “${taskId}@${version}” was not found.`}
-        taskId={`${taskId}@${version}`}
-      />
-    );
-  }
-  if (state.kind === "error") {
-    return <LoadFailure error={state.error} onRetry={retry} />;
-  }
-  if (versionState.kind === "loading" || versionState.kind === "idle") {
-    return (
-      <div
-        data-task-loading
-        className="mx-auto flex w-full max-w-3xl items-center justify-center px-4 py-12 text-sm text-text-muted"
-      >
-        Loading task version…
-      </div>
-    );
-  }
-
-  const v = versionState.version;
-  const latestVersion = state.kind === "ready" ? state.record.latestVersion : v.version;
-  return (
-    <div
-      data-task-version={`${taskId}@${version}`}
-      className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6"
-    >
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="text-lg font-semibold text-text">{v.title}</h1>
-          <p className="flex flex-wrap items-center gap-2 text-sm text-text-secondary">
-            <span className="font-mono text-xs">{v.taskId}</span>
-            <span>Version {v.version} (read-only)</span>
-          </p>
-        </div>
-        <BackToCatalog />
-      </header>
-      <TaskVersionView version={v} latestVersion={latestVersion} />
-      <TaskObservations taskId={taskId} version={v.version} evidenceRepo={evidenceRepo} />
     </div>
   );
 }

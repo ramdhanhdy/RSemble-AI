@@ -2,14 +2,12 @@
 // TaskSetEditor — two-pane Task Set authoring surface (spec §4–§5, Child 03 Task 6).
 //
 // Desktop: two-pane split (task list | selected task member editor). Header shows
-// task set name, persisted version, dirty/save state, settings disclosure,
-// and Run evaluation button. Save and Run are distinct controls. Historical
-// versions at /evaluations/sets/:taskSetId/versions/:version are read-only.
-// Frozen EvaluationSuite fields stay named suiteId/suiteVersion on records.
+// task set name, dirty/save state, settings disclosure, and Run evaluation button.
+// Save and Run are distinct controls. Frozen EvaluationSuite fields stay named
+// suiteId/suiteVersion on records.
 //
-// Task 6 canonical selection:
-//  - Add task opens TaskVersionSelector to pick exact canonical Task Versions.
-//  - Pinned version is visible and selectable (no latest-version substitution).
+// Canonical task selection:
+//  - Add task opens TaskVersionSelector to pick canonical Tasks.
 //  - Preserves deterministic order, role, stratum, weight, overrides.
 //  - Editing a task navigates to /tasks/:taskId (never mutates canonical tasks here).
 //  - Archived tasks display warning banner and require confirmation.
@@ -57,11 +55,7 @@ import {
   type RubricRecord,
   type TaskEvaluationSelection,
 } from "../../lib/evaluations/evaluation-types";
-import type {
-  TaskSetMemberRole,
-  TaskSetRecord,
-  TaskSetVersion,
-} from "../../lib/evaluations/task-set-types";
+import type { TaskSetMemberRole } from "../../lib/evaluations/task-set-types";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import type { CatalogModel } from "../../lib/providers/types";
 import { DialogSurface } from "../../ui/DialogSurface";
@@ -99,21 +93,11 @@ export function TaskSetEditor({
   controller: controllerProp,
   executionOwner: ownerProp,
 }: TaskSetEditorProps) {
-  const {
-    taskSetId,
-    suiteId: legacySuiteId,
-    version: versionParam,
-  } = useParams<{
+  const { taskSetId, suiteId: legacySuiteId } = useParams<{
     taskSetId?: string;
     suiteId?: string;
-    version?: string;
   }>();
   const taskSetIdResolved = taskSetId ?? legacySuiteId;
-  const requestedVersion = Number(versionParam);
-  const historical =
-    versionParam !== undefined && Number.isInteger(requestedVersion) && requestedVersion > 0
-      ? requestedVersion
-      : null;
   const navigate = useNavigate();
 
   // Context resolution with prop overrides (test seams).
@@ -161,41 +145,19 @@ export function TaskSetEditor({
     setLoading(true);
     setLoadError(null);
     try {
-      if (versionParam !== undefined && historical === null) {
-        throw new StorageError("validation", `Invalid task set version "${versionParam}".`);
-      }
-      const [latestSuite, rubrics, historicalVersion, taskSetRecord] = await Promise.all([
+      const [latestSuite, rubrics] = await Promise.all([
         repo.getSuite(taskSetIdResolved),
         repo.listRubrics(true),
-        historical !== null && taskSetRepo
-          ? taskSetRepo.getTaskSetVersion(taskSetIdResolved, historical)
-          : Promise.resolve(null),
-        historical !== null && taskSetRepo
-          ? taskSetRepo.getTaskSetRecord(taskSetIdResolved)
-          : Promise.resolve(null),
       ]);
       if (id !== requestIdRef.current) return;
       if (!latestSuite) {
         setPersisted(null);
         setDraft(null);
         setLoadError("Task set not found.");
-      } else if (historical !== null && (!taskSetRepo || !historicalVersion || !taskSetRecord)) {
-        setPersisted(null);
-        setDraft(null);
-        setLoadError(
-          taskSetRepo
-            ? `Task set version ${historical} not found.`
-            : `Task set version ${historical} is unavailable because storage is unavailable.`,
-        );
       } else {
-        const suite =
-          historicalVersion && taskSetRecord
-            ? await projectHistoricalSuite(latestSuite, taskSetRecord, historicalVersion, taskRepo)
-            : latestSuite;
-        if (id !== requestIdRef.current) return;
-        setPersisted(suite);
-        setDraft(structuredClone(suite));
-        setSelectedTaskId(suite.tasks[0]?.id ?? null);
+        setPersisted(latestSuite);
+        setDraft(structuredClone(latestSuite));
+        setSelectedTaskId(latestSuite.tasks[0]?.id ?? null);
       }
       setRubricRecords(rubrics.filter((p) => !p.archivedAt));
       setLoading(false);
@@ -206,7 +168,7 @@ export function TaskSetEditor({
       setLoadError(err instanceof Error ? err.message : "Failed to load task set.");
       setLoading(false);
     }
-  }, [historical, repo, taskRepo, taskSetIdResolved, taskSetRepo, versionParam]);
+  }, [repo, taskSetIdResolved]);
 
   useEffect(() => {
     void load();
@@ -313,8 +275,6 @@ export function TaskSetEditor({
     [draft],
   );
 
-  const nextVersion = (persisted?.version ?? 0) + 1;
-
   // Resolve rubric label
   const resolveRubricLabel = useCallback(
     (ref: RubricVersionRef): string => {
@@ -331,12 +291,9 @@ export function TaskSetEditor({
       const taskData = task as TaskSetMemberData;
       const canonicalTaskId = taskData.taskVersionRef?.taskId || taskId;
       const meta = taskMeta.get(canonicalTaskId);
-      const pinnedVersion =
-        taskData.taskVersionRef?.version ?? (meta?.record ? meta.record.latestVersion : undefined);
       const isArchived = meta?.record?.archivedAt != null;
 
       return {
-        pinnedVersion,
         role: taskData.role,
         stratum: taskData.stratum,
         weight: taskData.weight,
@@ -589,15 +546,9 @@ export function TaskSetEditor({
 
   if (loadError || !persisted || !draft) {
     return (
-      <div
-        className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center"
-        data-task-set-editor={versionParam !== undefined ? "" : undefined}
-      >
+      <div className="flex min-h-[120px] flex-col items-center justify-center gap-2 rounded-md border border-error/30 bg-error/[0.06] p-4 text-center">
         <AlertCircle size={16} className="text-error" aria-hidden="true" />
         <p className="text-sm text-error">{loadError ?? "Task set not found."}</p>
-        {versionParam !== undefined && (
-          <p className="text-xs text-text-muted">Historical versions are read-only.</p>
-        )}
         <button
           type="button"
           onClick={() => navigate("/evaluations/sets")}
@@ -610,18 +561,15 @@ export function TaskSetEditor({
   }
 
   const selectedTask = draft.tasks.find((t) => t.id === selectedTaskId) ?? null;
-  const isHistorical = historical !== null;
-  const runDisabledReason = isHistorical
-    ? "Historical versions are read-only"
-    : !execValidation.valid
-      ? (execValidation.errors[0]?.message ?? "Task set is not ready to run.")
-      : !controller
-        ? "Storage unavailable — cannot start an experiment"
-        : executionOwner
-          ? "Another execution is active"
-          : persisted.archivedAt != null
-            ? "Archived task sets cannot run"
-            : null;
+  const runDisabledReason = !execValidation.valid
+    ? (execValidation.errors[0]?.message ?? "Task set is not ready to run.")
+    : !controller
+      ? "Storage unavailable — cannot start an experiment"
+      : executionOwner
+        ? "Another execution is active"
+        : persisted.archivedAt != null
+          ? "Archived task sets cannot run"
+          : null;
   const canRun = runDisabledReason === null;
 
   // Selected task canonical metadata
@@ -630,11 +578,7 @@ export function TaskSetEditor({
     selectedTaskData?.taskVersionRef?.taskId || selectedTask?.id || "";
   const selectedMeta = taskMeta.get(selectedCanonicalTaskId);
   const selectedRecord = selectedMeta?.record ?? null;
-  const availableVersions = selectedMeta?.versions ?? [];
   const isCanonical = selectedRecord !== null;
-  const pinnedVersionNum =
-    selectedTaskData?.taskVersionRef?.version ??
-    (selectedRecord ? selectedRecord.latestVersion : 1);
   const isSelectedTaskArchived = selectedRecord?.archivedAt != null;
   const inheritDescription =
     draft.defaultEvaluation.kind === "holistic"
@@ -652,9 +596,6 @@ export function TaskSetEditor({
             <h1 className="min-w-0 truncate text-base text-text">
               {draft.name || "Untitled task set"}
             </h1>
-            <span className="shrink-0 rounded-sm border border-edge px-1.5 py-0.5 font-mono text-xs text-text-secondary tabular-nums">
-              v{isHistorical ? historical : persisted.version}
-            </span>
             {persisted.defaultEvaluation.kind === "profile" && pinnedRubricLoaded ? (
               pinnedRubric ? (
                 <RubricRefChip
@@ -704,18 +645,18 @@ export function TaskSetEditor({
               type="button"
               data-action="save-task-set"
               onClick={handleSave}
-              disabled={!dirty || saving || isHistorical}
+              disabled={!dirty || saving}
               className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-edge bg-panel px-3 text-sm text-text-secondary transition-colors duration-150 hover:border-edge-bright hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Save size={14} aria-hidden="true" />
-              {saving ? "Saving…" : "Save"}
+              {saving ? "Saving…" : "Save changes"}
             </button>
             <button
               type="button"
               data-action="run-task-set"
               onClick={handleRun}
               disabled={!canRun || runState !== "idle"}
-              title={runDisabledReason ?? `Run v${persisted.version}`}
+              title={runDisabledReason ?? "Run"}
               className="flex min-h-[44px] min-w-[96px] items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               {runState === "materializing" ? (
@@ -727,22 +668,16 @@ export function TaskSetEditor({
                 ? "Preparing…"
                 : runState === "running"
                   ? "Running…"
-                  : dirty || isHistorical
-                    ? "Run"
-                    : `Run v${persisted.version}`}
+                  : "Run"}
             </button>
           </div>
         </div>
 
         <div className="flex items-center gap-3 text-xs">
-          {isHistorical ? (
-            <span className="text-text-secondary">
-              v{historical} · latest v{persisted.version} · read-only
-            </span>
-          ) : dirty ? (
-            <span className="text-warning">Unsaved changes · next version v{nextVersion}</span>
+          {dirty ? (
+            <span className="text-warning">Unsaved changes</span>
           ) : (
-            <span className="text-success">Saved · v{persisted.version}</span>
+            <span className="text-success">Saved</span>
           )}
           {runDisabledReason && <span className="text-text-secondary">· {runDisabledReason}</span>}
         </div>
@@ -767,7 +702,7 @@ export function TaskSetEditor({
         >
           <SuiteSettings
             suite={draft}
-            onChange={isHistorical ? () => undefined : patchDraft}
+            onChange={patchDraft}
             models={models}
             rubricRecords={rubricRecords}
             resolveRubricLabel={resolveRubricLabel}
@@ -789,10 +724,10 @@ export function TaskSetEditor({
                 void navigate(`/evaluations/sets/${taskSetIdResolved}/tasks/${id}`);
               }
             }}
-            onAddClick={isHistorical ? () => undefined : () => setTaskSelectorOpen(true)}
-            onMove={isHistorical ? () => undefined : moveTask}
-            onDelete={isHistorical ? () => undefined : deleteTask}
-            readOnly={isHistorical}
+            onAddClick={() => setTaskSelectorOpen(true)}
+            onMove={moveTask}
+            onDelete={deleteTask}
+            readOnly={false}
             resolveTaskInfo={resolveTaskInfo}
           />
           <div className="mt-3 min-w-0 border-t border-edge pt-3">
@@ -820,12 +755,6 @@ export function TaskSetEditor({
                       <h2 className="min-w-0 truncate text-base font-semibold text-text">
                         {selectedTask.title || selectedCanonicalTaskId}
                       </h2>
-                      <span
-                        data-pinned-version
-                        className="shrink-0 rounded-sm border border-accent/40 bg-accent/[0.08] px-1.5 py-0.5 font-mono text-xs text-accent"
-                      >
-                        v{pinnedVersionNum}
-                      </span>
                       {isSelectedTaskArchived && (
                         <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-warning">
                           Archived
@@ -842,8 +771,7 @@ export function TaskSetEditor({
                     </Link>
                   </div>
                   <p className="text-xs text-text-muted">
-                    Tasks are managed globally. Editing this task navigates to the Task editor and
-                    will not change saved task sets.
+                    Tasks are managed globally. Editing this task navigates to the Task editor.
                   </p>
                 </div>
               ) : (
@@ -859,7 +787,7 @@ export function TaskSetEditor({
                         {selectedTask.title || selectedTask.id}
                       </h2>
                       <span className="shrink-0 rounded-sm border border-warning/40 bg-warning/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-warning">
-                        Older / Unlinked
+                        Task unavailable
                       </span>
                     </div>
                   </div>
@@ -870,12 +798,10 @@ export function TaskSetEditor({
                       aria-hidden="true"
                     />
                     <div>
-                      <p className="font-medium text-warning">
-                        This task is an older unlinked member not found in Tasks.
-                      </p>
+                      <p className="font-medium text-warning">Task unavailable</p>
                       <p className="mt-0.5 text-text-muted">
-                        Candidate instruction is read-only in task sets. To update this task, remove
-                        it from the task set and add a saved task.
+                        This referenced task could not be found in Tasks. Remove it from the task
+                        set to continue.
                       </p>
                     </div>
                   </div>
@@ -893,8 +819,7 @@ export function TaskSetEditor({
                   <div>
                     <p className="font-medium">Warning: This referenced task is archived.</p>
                     <p className="text-text-secondary mt-0.5">
-                      Archived tasks remain executable in previously saved sets, but cannot receive
-                      new versions.
+                      Archived tasks remain executable in previously saved sets, but are read-only.
                     </p>
                   </div>
                 </div>
@@ -909,52 +834,6 @@ export function TaskSetEditor({
                 </div>
               </div>
 
-              {/* Version Pinning Controls */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="member-version-select"
-                  className="font-mono text-xs uppercase tracking-wide text-text-muted"
-                >
-                  Pinned Version
-                </label>
-                {isCanonical && availableVersions.length > 1 ? (
-                  <select
-                    id="member-version-select"
-                    data-field="member-version"
-                    disabled={isHistorical}
-                    value={pinnedVersionNum}
-                    onChange={(e) => {
-                      const newVer = Number(e.target.value);
-                      const verObj = availableVersions.find((v) => v.version === newVer);
-                      patchTask(selectedTask.id, {
-                        title: verObj?.title || verObj?.objective || selectedTask.title,
-                        prompt: verObj?.candidateInstruction ?? selectedTask.prompt,
-                        taskVersionRef: {
-                          taskId: selectedCanonicalTaskId,
-                          version: newVer,
-                        },
-                      } as Partial<EvaluationTask>);
-                    }}
-                    className="flex min-h-[44px] rounded-md border border-edge bg-card px-3 font-mono text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
-                  >
-                    {availableVersions.map((v) => (
-                      <option key={v.version} value={v.version}>
-                        v{v.version} {v.version === selectedRecord?.latestVersion ? "(latest)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                ) : isCanonical ? (
-                  <span className="font-mono text-xs text-text-secondary">
-                    v{pinnedVersionNum}{" "}
-                    {selectedRecord?.latestVersion === pinnedVersionNum ? "(latest)" : ""}
-                  </span>
-                ) : (
-                  <span className="font-mono text-xs text-text-muted">
-                    Older unlinked task (not in Tasks)
-                  </span>
-                )}
-              </div>
-
               {/* Member Roles, Strata, and Weights */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
@@ -967,7 +846,6 @@ export function TaskSetEditor({
                   <select
                     id="member-role-select"
                     data-field="member-role"
-                    disabled={isHistorical}
                     value={selectedTaskData?.role ?? "organic"}
                     onChange={(e) => {
                       patchTask(selectedTask.id, {
@@ -994,7 +872,6 @@ export function TaskSetEditor({
                     id="member-stratum-input"
                     data-field="member-stratum"
                     type="text"
-                    disabled={isHistorical}
                     value={selectedTaskData?.stratum ?? ""}
                     onChange={(e) => {
                       const val = e.target.value.trim();
@@ -1020,7 +897,6 @@ export function TaskSetEditor({
                     type="number"
                     min="0.01"
                     step="0.1"
-                    disabled={isHistorical}
                     value={selectedTaskData?.weight ?? 1}
                     onChange={(e) => {
                       const parsed = parseFloat(e.target.value);
@@ -1041,9 +917,9 @@ export function TaskSetEditor({
                 inheritDescription={inheritDescription}
                 rubricRecords={rubricRecords}
                 resolveRubricLabel={resolveRubricLabel}
-                disabled={isHistorical}
+                disabled={false}
                 onChange={(sel) => {
-                  if (!isHistorical) patchTask(selectedTask.id, { evaluation: sel });
+                  patchTask(selectedTask.id, { evaluation: sel });
                 }}
               />
 
@@ -1060,12 +936,9 @@ export function TaskSetEditor({
                   data-field="judge-instruction-override"
                   name="judgeInstructionOverride"
                   rows={3}
-                  disabled={isHistorical}
                   value={selectedTask.judgeInstructionOverride}
                   onChange={(e) => {
-                    if (!isHistorical) {
-                      patchTask(selectedTask.id, { judgeInstructionOverride: e.target.value });
-                    }
+                    patchTask(selectedTask.id, { judgeInstructionOverride: e.target.value });
                   }}
                   placeholder="Evaluator-only guidance override for this task in this task set..."
                   className="rounded-md border border-edge bg-card p-3 font-mono text-xs text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
@@ -1103,7 +976,7 @@ export function TaskSetEditor({
               disabled={saving || runState !== "idle"}
               className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md border border-accent/40 bg-accent/[0.06] px-3 text-sm text-accent transition-colors duration-150 hover:bg-accent/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Save a new version and run
+              Save changes and run
             </button>
             <button
               type="button"
@@ -1277,83 +1150,6 @@ function TaskEvaluationPicker({
       )}
     </div>
   );
-}
-
-/** Reconstruct the read-only compatibility view from one exact immutable Task Set Version. */
-async function projectHistoricalSuite(
-  latestSuite: EvaluationSuite,
-  record: TaskSetRecord,
-  version: TaskSetVersion,
-  taskRepo: TaskRepository | null,
-): Promise<EvaluationSuite> {
-  const tasks = await Promise.all(
-    [...version.members]
-      .sort((a, b) => a.order - b.order)
-      .map(async (member): Promise<EvaluationTask> => {
-        const latestTask = latestSuite.tasks.find(
-          (task) =>
-            task.id === member.id ||
-            (task as TaskSetMemberData).taskVersionRef?.taskId === member.taskVersionRef.taskId,
-        );
-        const taskVersion = taskRepo
-          ? await taskRepo.getTaskVersion(
-              member.taskVersionRef.taskId,
-              member.taskVersionRef.version,
-            )
-          : null;
-        const evaluation =
-          member.executionOverrides?.evaluation ??
-          (member.rubricOverrideRef
-            ? { kind: "profile" as const, profile: { ...member.rubricOverrideRef } }
-            : { kind: "inherit" as const });
-        return {
-          id: member.id,
-          title:
-            taskVersion?.title ??
-            latestTask?.title ??
-            `${member.taskVersionRef.taskId} v${member.taskVersionRef.version}`,
-          prompt: taskVersion?.candidateInstruction ?? latestTask?.prompt ?? "",
-          systemPrompt: latestTask?.systemPrompt ?? "",
-          evaluation,
-          judgeInstructionOverride:
-            member.executionOverrides?.judgeInstructionOverride ??
-            latestTask?.judgeInstructionOverride ??
-            "",
-          order: member.order,
-          ...(member.executionOverrides?.verification
-            ? { verification: { ...member.executionOverrides.verification } }
-            : latestTask?.verification
-              ? { verification: { ...latestTask.verification } }
-              : {}),
-          taskVersionRef: { ...member.taskVersionRef },
-          role: member.role,
-          stratum: member.stratum,
-          weight: member.weight,
-        } as EvaluationTask & TaskSetMemberData;
-      }),
-  );
-  return {
-    ...latestSuite,
-    revision: record.revision,
-    version: version.version,
-    name: record.name,
-    description: record.description,
-    tasks,
-    modelSlots: version.defaultModelSlots.map((slot) => ({ ...slot })),
-    defaultJudge: {
-      providerId: version.defaultJudge.providerId,
-      model: version.defaultJudge.model,
-    },
-    defaultEvaluation: version.defaultRubricRef
-      ? { kind: "profile", profile: { ...version.defaultRubricRef } }
-      : { kind: "holistic" },
-    ...(version.protocolDefaults.reasoningPolicy
-      ? { reasoningPolicy: { ...version.protocolDefaults.reasoningPolicy } }
-      : { reasoningPolicy: undefined }),
-    createdAt: record.createdAt,
-    updatedAt: version.createdAt,
-    archivedAt: record.archivedAt,
-  };
 }
 
 function projectTaskSetVersion(suite: EvaluationSuite) {

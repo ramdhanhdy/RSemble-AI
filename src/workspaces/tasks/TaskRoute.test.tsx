@@ -17,9 +17,7 @@ import { InMemoryTaskRepository } from "../../lib/persistence/in-memory-task-rep
 import type { TaskRepository } from "../../lib/persistence/task-repository";
 import type { TaskRecord, TaskVersion } from "../../lib/tasks/task-types";
 import { computeInstanceInputDigest } from "../../lib/tasks/task-instance";
-import { TaskNewRoute, TaskDetailRoute, TaskVersionRoute } from "./TaskRoute";
-
-(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+import { TaskNewRoute, TaskDetailRoute } from "./TaskRoute";
 
 // --- Fixtures ---------------------------------------------------------------
 
@@ -122,7 +120,7 @@ describe("TaskRoute — /tasks/:taskId detail shell", () => {
     await settle();
     expect(h.$("[data-task-detail='t-1']")).toBeTruthy();
     expect(h.container.textContent).toContain("Summarize a report");
-    expect(h.container.textContent).toContain("v1");
+    expect(h.container.textContent).not.toContain("v1");
     cleanup(h);
   });
 
@@ -151,44 +149,6 @@ describe("TaskRoute — /tasks/:taskId detail shell", () => {
     const h = render(<TaskDetailRoute repo={null} taskId="t-1" />);
     await settle();
     expect(h.$("[data-task-error-state]")).toBeTruthy();
-    cleanup(h);
-  });
-});
-
-describe("TaskRoute — /tasks/:taskId/versions/:version shell", () => {
-  it("renders a specific historical version", async () => {
-    const repo = new InMemoryTaskRepository();
-    await seedTask(repo, "t-1", "Versioned task");
-    const h = render(<TaskVersionRoute repo={repo} taskId="t-1" version={1} />);
-    await settle();
-    expect(h.$("[data-task-version='t-1@1']")).toBeTruthy();
-    expect(h.container.textContent).toContain("Versioned task");
-    cleanup(h);
-  });
-
-  it("renders an explicit not-found state for an unknown version number", async () => {
-    const repo = new InMemoryTaskRepository();
-    await seedTask(repo, "t-1", "Versioned task");
-    const h = render(<TaskVersionRoute repo={repo} taskId="t-1" version={99} />);
-    await settle();
-    expect(h.$("[data-task-not-found]")).toBeTruthy();
-    cleanup(h);
-  });
-
-  it("renders an explicit invalid-version state for a malformed version param", async () => {
-    const repo = new InMemoryTaskRepository();
-    await seedTask(repo, "t-1", "Versioned task");
-    const h = render(<TaskVersionRoute repo={repo} taskId="t-1" version={Number.NaN} />);
-    await settle();
-    expect(h.$("[data-task-invalid-version]")).toBeTruthy();
-    cleanup(h);
-  });
-
-  it("renders not-found for an unknown task id on the version route", async () => {
-    const repo = new InMemoryTaskRepository();
-    const h = render(<TaskVersionRoute repo={repo} taskId="ghost" version={1} />);
-    await settle();
-    expect(h.$("[data-task-not-found]")).toBeTruthy();
     cleanup(h);
   });
 });

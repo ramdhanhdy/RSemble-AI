@@ -112,7 +112,6 @@ describe("REV-7 deriveWorkspace — named routes never own Compare execution", (
     "/tasks",
     "/tasks/new",
     "/tasks/task-1",
-    "/tasks/task-1/versions/2",
     "/compare/results/comparison-1",
     "/compare/results/abc/extra",
     "/definitely/not/a/route",

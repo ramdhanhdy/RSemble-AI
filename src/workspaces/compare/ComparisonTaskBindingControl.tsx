@@ -409,7 +409,7 @@ export function ComparisonTaskBindingControl({
 
               {/* Open Task Detail Link */}
               <Link
-                to={`/tasks/${binding.taskId}/versions/${binding.taskVersion}`}
+                to={`/tasks/${binding.taskId}`}
                 data-action="open-task-detail"
                 aria-label="Open task detail"
                 target="_blank"

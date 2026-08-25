@@ -609,8 +609,7 @@ describe("Typed details — Task 8 canonical completion", () => {
       "This result is policy evidence about the configuration, not evidence about this model.",
     );
     // Owner backlink to the Task context.
-    // Owner backlink to the canonical Task context.
-    expect(harness.container.querySelector("a[href='/tasks/task-1/versions/2']")).not.toBeNull();
+    expect(harness.container.querySelector("a[href='/tasks/task-1']")).not.toBeNull();
     expect(harness.container.querySelector("a[href='/models/model-config-1']")).not.toBeNull();
     act(() => harness.root.unmount());
   });

@@ -23,7 +23,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { AlertCircle, Archive, Copy, RotateCcw } from "lucide-react";
 import { StorageError } from "../../lib/persistence/database";
 import type { TaskRepository } from "../../lib/persistence/task-repository";
@@ -85,48 +85,6 @@ function ConfirmFocus({ children }: { children: React.ReactNode }) {
   );
 }
 
-// --- version selector (spec §7.2) -------------------------------------------
-
-export function TaskVersionSelect({
-  taskId,
-  current,
-  latestVersion,
-}: {
-  taskId: string;
-  current: number;
-  latestVersion: number;
-}) {
-  const navigate = useNavigate();
-  const options: number[] = [];
-  for (let n = 1; n <= latestVersion; n++) options.push(n);
-  return (
-    <label className="flex min-h-[44px] items-center gap-2 text-sm text-text-secondary">
-      <span>Version</span>
-      <select
-        data-action="version-select"
-        aria-label="Select task version"
-        value={current}
-        onChange={(event) => {
-          const next = Number(event.currentTarget.value);
-          if (next === latestVersion) {
-            void navigate(`/tasks/${taskId}`);
-          } else {
-            void navigate(`/tasks/${taskId}/versions/${next}`);
-          }
-        }}
-        className="min-h-[44px] rounded-md border border-edge bg-card px-2 text-sm text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
-        {options.map((n) => (
-          <option key={n} value={n}>
-            v{n}
-            {n === latestVersion ? " (latest)" : ""}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 // --- /tasks/new — atomic create (spec §7.3) ---------------------------------
 
 export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
@@ -173,7 +131,7 @@ export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-12">
         <h1 className="text-lg font-semibold text-text">Task created</h1>
-        <p className="text-sm text-text-secondary">Task and version 1 were saved.</p>
+        <p className="text-sm text-text-secondary">Task saved.</p>
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to={`/tasks/${created.id}`}
@@ -198,7 +156,7 @@ export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
       <header className="flex flex-col gap-1">
         <h1 className="text-lg font-semibold text-text">Create task</h1>
         <p className="text-sm text-text-secondary">
-          Creating a task saves version 1. Saved versions do not change once created.
+          Create a task to evaluate candidate outputs against your requirements.
         </p>
       </header>
 
@@ -263,8 +221,7 @@ export function TaskNewEditor({ repo }: { repo: TaskRepository }) {
 
 // --- /tasks/:taskId — draft latest + lifecycle (spec §7.2) ------------------
 
-type DetailConfirm = "version" | "archive" | null;
-
+type DetailConfirm = "archive" | null;
 export function TaskDetailEditor({
   repo,
   initialRecord,
@@ -299,7 +256,6 @@ export function TaskDetailEditor({
     draft.title !== latest.title ||
     draft.objective !== latest.objective ||
     draft.instruction !== latest.candidateInstruction;
-  const nextVersion = record.latestVersion + 1;
   const canCommitVersion = dirty && draft.title.trim() !== "" && draft.objective.trim() !== "";
 
   /** Classify a failed write: CAS conflicts surface the honest conflict
@@ -459,7 +415,7 @@ export function TaskDetailEditor({
       {duplicate ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-edge bg-card p-3 text-sm text-text-secondary">
           <Copy size={16} aria-hidden="true" />
-          <span>Duplicated as a new authored task.</span>
+          <span>Duplicated task.</span>
           <Link
             to={`/tasks/${duplicate.id}`}
             data-action="open-duplicate"
@@ -517,13 +473,7 @@ export function TaskDetailEditor({
             >
               {dirty ? "Unsaved changes" : "Saved"}
             </span>
-            <TaskVersionSelect
-              taskId={record.id}
-              current={record.latestVersion}
-              latestVersion={record.latestVersion}
-            />
           </div>
-
           <label className={FIELD_LABEL}>
             <span>Title</span>
             <input
@@ -554,46 +504,15 @@ export function TaskDetailEditor({
           </label>
 
           <div className="flex flex-wrap items-center gap-2">
-            {confirm === "version" ? (
-              <ConfirmFocus>
-                <span className="text-sm text-text-secondary">
-                  Editing a saved task creates a new version. Saved versions do not change once
-                  created.
-                </span>
-                <button
-                  type="button"
-                  data-action="confirm-version"
-                  disabled={busy}
-                  onClick={() => void handleConfirmVersion()}
-                  className={CONFIRM_BUTTON}
-                >
-                  {busy ? "Creating…" : `Create version ${nextVersion}`}
-                </button>
-                <button
-                  type="button"
-                  data-action="cancel-version"
-                  disabled={busy}
-                  onClick={() => setConfirm(null)}
-                  className={ACTION_BUTTON}
-                >
-                  Keep editing
-                </button>
-              </ConfirmFocus>
-            ) : (
-              <button
-                type="button"
-                data-action="create-version"
-                disabled={!canCommitVersion}
-                onClick={() => {
-                  setActionError(null);
-                  setConfirm("version");
-                }}
-                className={PRIMARY_BUTTON}
-              >
-                Create version {nextVersion}
-              </button>
-            )}
-
+            <button
+              type="button"
+              data-action="save-task"
+              disabled={!canCommitVersion || busy}
+              onClick={() => void handleConfirmVersion()}
+              className={PRIMARY_BUTTON}
+            >
+              {busy ? "Saving…" : "Save changes"}
+            </button>
             {confirm === "archive" ? (
               <ConfirmFocus>
                 <span className="text-sm text-text-secondary">
@@ -655,68 +574,6 @@ export function TaskDetailEditor({
         </div>
       )}
       {/* No delete control: referenced Tasks are never deletable (spec §4.4). */}
-    </div>
-  );
-}
-
-// --- /tasks/:taskId/versions/:version — immutable read-only view (§3.2) -----
-
-export function TaskVersionView({
-  version,
-  latestVersion,
-}: {
-  version: TaskVersion;
-  latestVersion: number;
-}) {
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <TaskVersionSelect
-          taskId={version.taskId}
-          current={version.version}
-          latestVersion={latestVersion}
-        />
-        <span className="rounded-sm border border-edge bg-raised px-2 py-1 text-xs text-text-secondary">
-          Version {version.version} — read-only
-        </span>
-      </div>
-
-      <label className={FIELD_LABEL}>
-        <span>Title</span>
-        <input
-          type="text"
-          data-editor-field="title"
-          value={version.title}
-          disabled
-          readOnly
-          className={FIELD_INPUT}
-        />
-      </label>
-      <label className={FIELD_LABEL}>
-        <span>Objective</span>
-        <textarea
-          data-editor-field="objective"
-          value={version.objective}
-          disabled
-          readOnly
-          className={FIELD_AREA}
-        />
-      </label>
-      <label className={FIELD_LABEL}>
-        <span>Candidate instruction</span>
-        <textarea
-          data-editor-field="instruction"
-          value={version.candidateInstruction}
-          disabled
-          readOnly
-          className={FIELD_AREA}
-        />
-      </label>
-
-      <p className="text-xs text-text-muted">
-        Saved versions do not change once created; this view is always read-only. Edit the latest
-        version from the task detail page to create version {latestVersion + 1}.
-      </p>
     </div>
   );
 }
